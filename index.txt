@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Wegwijzer — Jouw Inwerkcoach</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --oranje: #E8720C;
+    --oranje-licht: #F59340;
+    --oranje-donker: #C55A00;
+    --wit: #FFFFFF;
+    --lichtgrijs: #F5F5F3;
+    --grijs: #E8E6E1;
+    --donkergrijs: #2C2C2C;
+    --tekst: #1A1A1A;
+    --subtiel: #999;
+    --chat-bg: #F9F7F4;
+    --shadow: 0 4px 24px rgba(0,0,0,0.07);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; font-family:'Inter',sans-serif; background:var(--lichtgrijs); color:var(--tekst); }
+  .app { display:flex; flex-direction:column; height:100%; max-width:480px; margin:0 auto; background:white; box-shadow:0 0 60px rgba(0,0,0,0.1); }
+
+/* HEADER */
+.header { background:linear-gradient(135deg,var(–oranje) 0%,var(–oranje-donker) 100%); padding:14px 18px; display:flex; align-items:center; gap:13px; flex-shrink:0; position:relative; overflow:hidden; }
+.header::before { content:’’; position:absolute; top:-35px; right:-20px; width:110px; height:110px; background:rgba(255,255,255,0.07); border-radius:50%; pointer-events:none; }
+.logo-wrap { width:48px; height:48px; background:rgba(255,255,255,0.22); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; border:1.5px solid rgba(255,255,255,0.3); }
+.header-info { flex:1; min-width:0; }
+.header-title { font-family:‘Sora’,sans-serif; font-size:18px; font-weight:700; color:white; line-height:1.2; }
+.header-sub { font-size:11px; color:rgba(255,255,255,0.82); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.status { display:flex; align-items:center; gap:5px; font-size:11px; color:rgba(255,255,255,0.92); flex-shrink:0; }
+.dot { width:7px; height:7px; background:#4ADE80; border-radius:50%; animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1;}50%{opacity:0.5;} }
+
+/* CHIPS */
+.chips { display:flex; gap:7px; padding:10px 14px; overflow-x:auto; flex-shrink:0; background:white; border-bottom:1px solid var(–grijs); scrollbar-width:none; }
+.chips::-webkit-scrollbar { display:none; }
+.chip { flex-shrink:0; background:var(–lichtgrijs); border:1.5px solid var(–grijs); border-radius:20px; padding:6px 13px; font-size:12px; font-weight:500; color:var(–oranje-donker); cursor:pointer; transition:all 0.18s; white-space:nowrap; user-select:none; }
+.chip:hover,.chip:active { background:var(–oranje); color:white; border-color:var(–oranje); }
+
+/* CHAT */
+.chat { flex:1; overflow-y:auto; padding:16px 14px; display:flex; flex-direction:column; gap:14px; background:var(–chat-bg); -webkit-overflow-scrolling:touch; }
+.chat::-webkit-scrollbar { width:3px; }
+.chat::-webkit-scrollbar-thumb { background:var(–grijs); border-radius:2px; }
+
+/* MESSAGES */
+.msg { display:flex; gap:9px; animation:rise 0.28s ease; }
+.msg.user { flex-direction:row-reverse; }
+@keyframes rise { from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);} }
+.av { width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; align-self:flex-end; }
+.av.bot { background:linear-gradient(135deg,var(–oranje),var(–oranje-donker)); box-shadow:0 2px 8px rgba(232,114,12,0.3); }
+.av.user { background:var(–donkergrijs); }
+.bubble-wrap { max-width:calc(100% - 50px); }
+.bubble { padding:11px 15px; border-radius:18px; font-size:14px; line-height:1.65; box-shadow:var(–shadow); }
+.msg.bot .bubble { background:white; border-bottom-left-radius:4px; border:1px solid var(–grijs); color:var(–tekst); }
+.msg.user .bubble { background:linear-gradient(135deg,var(–oranje),var(–oranje-donker)); border-bottom-right-radius:4px; color:white; }
+.bubble b { color:var(–oranje); font-weight:600; }
+.msg.user .bubble b { color:rgba(255,255,255,0.9); }
+.sec-title { display:block; font-weight:700; color:var(–oranje); margin:10px 0 3px; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; }
+.bubble ul { margin:6px 0 4px 16px; }
+.bubble ul li { margin-bottom:4px; }
+.tag { display:inline-block; background:rgba(232,114,12,0.1); color:var(–oranje-donker); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:500; margin:2px 2px 0 0; }
+.tip-box { background:rgba(232,114,12,0.07); border-left:3px solid var(–oranje); padding:8px 10px; border-radius:0 8px 8px 0; font-size:13px; margin-top:8px; }
+.welcome { background:linear-gradient(135deg,rgba(232,114,12,0.08),rgba(232,114,12,0.02)); border:1px solid rgba(232,114,12,0.18); border-radius:14px; padding:14px; margin-bottom:8px; }
+.welcome .org { font-size:10px; font-weight:700; color:var(–oranje); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:5px; }
+.ts { font-size:10px; color:var(–subtiel); margin-top:4px; }
+.msg.user .ts { text-align:right; }
+
+/* FEEDBACK */
+.feedback { display:flex; gap:6px; margin-top:6px; }
+.fb { background:none; border:1px solid var(–grijs); border-radius:12px; padding:3px 10px; font-size:11px; cursor:pointer; color:var(–subtiel); transition:all 0.15s; font-family:‘Inter’,sans-serif; }
+.fb:hover { border-color:var(–oranje); color:var(–oranje); }
+.fb.on { background:rgba(232,114,12,0.1); border-color:var(–oranje); color:var(–oranje); }
+
+/* TYPING */
+.typing-wrap { display:flex; gap:9px; align-items:flex-end; animation:rise 0.28s ease; }
+.typing-bubble { background:white; border:1px solid var(–grijs); padding:11px 16px; border-radius:18px; border-bottom-left-radius:4px; display:flex; gap:5px; align-items:center; }
+.td { width:7px; height:7px; background:var(–oranje); border-radius:50%; animation:bounce 1.1s infinite; }
+.td:nth-child(2){animation-delay:0.18s;} .td:nth-child(3){animation-delay:0.36s;}
+@keyframes bounce { 0%,60%,100%{transform:translateY(0);}30%{transform:translateY(-6px);} }
+
+/* INPUT */
+.input-bar { background:white; border-top:1px solid var(–grijs); padding:10px 14px; display:flex; gap:9px; align-items:flex-end; flex-shrink:0; }
+.input-wrap { flex:1; background:var(–lichtgrijs); border:1.5px solid var(–grijs); border-radius:22px; display:flex; align-items:center; padding:0 15px; transition:border-color 0.2s,background 0.2s; min-height:44px; }
+.input-wrap:focus-within { border-color:var(–oranje); background:white; }
+#inp { flex:1; border:none; background:transparent; font-size:14px; font-family:‘Inter’,sans-serif; color:var(–tekst); outline:none; padding:10px 0; resize:none; max-height:90px; line-height:1.4; }
+#inp::placeholder { color:var(–subtiel); }
+.send { width:44px; height:44px; background:linear-gradient(135deg,var(–oranje),var(–oranje-donker)); border:none; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform 0.15s,box-shadow 0.15s; box-shadow:0 2px 10px rgba(232,114,12,0.4); }
+.send:hover { transform:scale(1.06); box-shadow:0 4px 16px rgba(232,114,12,0.5); }
+.send:active { transform:scale(0.96); }
+.send:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+.send svg { width:18px; height:18px; fill:white; }
+.disc { text-align:center; font-size:10px; color:var(–subtiel); padding:5px 12px 7px; background:white; border-top:1px solid var(–grijs); flex-shrink:0; line-height:1.5; }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="logo-wrap">🗺️</div>
+    <div class="header-info">
+      <div class="header-title">Wegwijzer</div>
+      <div class="header-sub">Ambulante Hulpverlening Midden Nederland</div>
+    </div>
+    <div class="status"><div class="dot"></div>Online</div>
+  </div>
+
+  <div class="chips">
+    <div class="chip" onclick="ask('Wat zijn mijn taken in week 1 van het inwerktraject?')">📋 Week 1 inwerktaken</div>
+    <div class="chip" onclick="ask('Wat is ambulant werken precies?')">🚗 Wat is ambulant werken?</div>
+    <div class="chip" onclick="ask('Bij wie kan ik terecht met vragen?')">👤 Contactpersonen</div>
+    <div class="chip" onclick="ask('Wat is de missie van de organisatie?')">🎯 Missie & visie</div>
+    <div class="chip" onclick="ask('Welke zorgvormen bieden wij aan?')">❤️ Zorgvormen</div>
+    <div class="chip" onclick="ask('Hoe ga ik om met een cliënt thuis?')">🤝 Cliëntcontact</div>
+    <div class="chip" onclick="ask('Wat zijn de financieringsvormen?')">💶 Financiering</div>
+    <div class="chip" onclick="ask('In welke gemeenten werkt AHMN?')">📍 Werkgebied</div>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="msg bot">
+      <div class="av bot">🗺️</div>
+      <div class="bubble-wrap">
+        <div class="bubble">
+          <div class="welcome">
+            <div class="org">Ambulante Hulpverlening Midden Nederland</div>
+            <p>Hallo en welkom! Fijn dat je er bent 🎉</p>
+          </div>
+          Ik ben <b>Wegwijzer</b>, jouw persoonlijke inwerkcoach bij AHMN. Ik help je op weg tijdens jouw eerste weken.<br><br>
+          Stel me vragen over het inwerktraject, onze werkwijze, zorgvormen of alles wat je wilt weten over werken bij Ambulante Hulpverlening Midden Nederland.<br><br>
+          <b>Waar kan ik je mee helpen?</b>
+        </div>
+        <div class="ts">Nu</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-wrap">
+      <textarea id="inp" placeholder="Stel hier je vraag aan Wegwijzer..." rows="1" onkeydown="onKey(event)" oninput="resize(this)"></textarea>
+    </div>
+    <button class="send" id="sendBtn" onclick="sendMsg()">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+  <div class="disc">⚠️ Deel geen persoonlijke gegevens of cliëntinformatie. • Mogelijk gemaakt door <b style="color:var(--oranje)">Wegwijzer</b></div>
+</div>
+
+<script>
+const KB = {
+  "week1": {
+    key: ['week 1','eerste week','eerste taken','inwerktaken','week één','begin'],
+    title: "📋 Jouw taken in Week 1",
+    intro: "Welkom bij jouw eerste week bij AHMN! Dit staat er op het programma:",
+    items: ["Kennismakingsgesprek met je <b>teamleider</b> en directe collega's","Rondleiding op het kantoor (Harderwijk of Almere)","Lezen van het inwerkplan en organisatiebeleid","Kennismaken met de missie: <b>Samen. Durven. Doen.</b>","Inloggegevens en systemen instellen","Je <b>buddy/begeleider</b> leren kennen","Eerste kennismaking met cliëntdossiers (onder begeleiding)"],
+    tip: "💡 Schrijf al je vragen op — geen vraag is te klein!"
+  },
+  "ambulant": {
+    key: ['ambulant werk','wat is ambulant','ambulante werk','ambulante begeleid'],
+    title: "🚗 Wat is Ambulant Werken?",
+    intro: "Ambulant werken betekent dat <b>jij naar de cliënt toe gaat</b> — niet andersom. Je werkt in de eigen leefomgeving van de cliënt:",
+    items: ["Je gaat naar de cliënt thuis of op zijn/haar eigen woonplek","Frequentie afhankelijk van hulpvraag: 1x per week tot dagelijks","Je werkt aan doelen uit het <b>persoonlijk plan</b> van de cliënt","Financiering via WMO, WLZ of PGB","Je bent flexibel — geen situatie is hetzelfde","Je werkt vanuit gelijkwaardigheid en respect"],
+    tip: "💡 De ambulante gedachte: de cliënt bepaalt mee. Jij faciliteert, de cliënt leidt."
+  },
+  "missie": {
+    key: ['missie','visie','samen durven','waarden','waar staat'],
+    title: "🎯 Missie & Visie AHMN",
+    intro: "De missie van AHMN is samengevat in drie krachtige woorden:",
+    sections: [
+      {label:"SAMEN", text:"Gelijkwaardigheid, vertrouwen en transparantie. Wat de cliënt wil staat voorop. Samen stellen we doelen."},
+      {label:"DURVEN", text:"Lef tonen, oplossingsgericht werken, buiten de kaders denken. Nieuwe collega's krijgen volop begeleiding."},
+      {label:"DOEN", text:"Korte lijntjes, platte organisatie, iedereen is aanspreekbaar. Creatief, flexibel en positief."}
+    ],
+    tip: "🌟 Visie: een gelijkwaardige wereld waarin iedereen mag zijn wie die is."
+  },
+  "zorgvorm": {
+    key: ['zorgvorm','zorgaanbod','welke zorg','begeleid zelfstandig','bzw','avond','nachtdienst','diensten'],
+    title: "❤️ Zorgvormen bij AHMN",
+    intro: "AHMN biedt drie hoofdvormen van zorg:",
+    sections: [
+      {label:"Ambulante begeleiding", text:"Ondersteuning bij de cliënt thuis. Frequentie afhankelijk van zorgbehoefte. Financiering via WMO, WLZ of PGB."},
+      {label:"Begeleid Zelfstandig Wonen (BZW)", text:"Begeleiding voor mensen die zelfstandig willen leren wonen. Stap-voor-stap meer zelfstandigheid opbouwen."},
+      {label:"Avond- en nachtdienst", text:"Voor cliënten die ook buiten kantooruren begeleiding nodig hebben."}
+    ],
+    tip: "📌 Werkgebied: Noord-Veluwe en Flevoland regio."
+  },
+  "contact": {
+    key: ['contact','bereikbaar','terecht','vragen stellen','teamleider','buddy','hulp nodig','wie'],
+    title: "👤 Contactpersonen & Bereikbaarheid",
+    intro: "Bij AHMN heb je altijd iemand om op terug te vallen:",
+    items: ["Je <b>buddy/begeleider</b>: voor dagelijkse vragen tijdens inwerken","Je <b>teamleider</b>: voor grotere vragen, escalaties en evaluaties","Kantoor <b>Harderwijk</b>: Gelreweg 3, 3843 AN Harderwijk","Kantoor <b>Almere</b>: Rabdstad 22-125, 1316 BW Almere","📞 Telefoon: <b>085 - 049 2717</b>","✉️ Email: <b>info@ambulantehulpverlening.nl</b>"],
+    tip: "💡 Kleine vragen → buddy. Grote vragen → teamleider. Calamiteiten → direct bellen!"
+  },
+  "client": {
+    key: ['cliënt','client','omgaan','gesprek','bezoek','thuis','huis','privacy','avg'],
+    title: "🤝 Omgaan met Cliënten",
+    intro: "AHMN werkt met kwetsbare doelgroepen. De belangrijkste principes:",
+    items: ["Werk altijd vanuit <b>gelijkwaardigheid en respect</b>","De cliënt bepaalt mee — jij faciliteert","Stel samen doelen op in het persoonlijk plan","Pas begeleiding aan op de behoefte van de cliënt","<b>Nooit</b> persoonlijke relaties aangaan met cliënten","Altijd rapporteren in het cliëntendossier na elk contact","Bij crisis of calamiteit: direct contact met teamleider"],
+    tip: "⚠️ AVG: nooit cliëntinformatie delen buiten de organisatie!"
+  },
+  "financier": {
+    key: ['financier','wmo','wlz','pgb','budget','betaling','indicatie','vergoeding'],
+    title: "💶 Financieringsvormen",
+    intro: "Ambulante begeleiding kan via drie financieringsvormen:",
+    items: ["<b>WMO</b> — Wet Maatschappelijke Ondersteuning: via de gemeente voor individuele begeleiding","<b>WLZ</b> — Wet Langdurige Zorg: voor cliënten met grondslag VG of GGZ (VPT of MPT)","<b>PGB</b> — Persoonsgebonden Budget: cliënt beheert zelf het budget"],
+    tip: "💡 Niet zeker welke financieringsvorm van toepassing is? Vraag je teamleider."
+  },
+  "werkgebied": {
+    key: ['werkgebied','gemeente','regio','waar werk','harderwijk','almere','nijkerk','lelystad','locatie'],
+    title: "📍 Werkgebied AHMN",
+    intro: "AHMN biedt ambulante begeleiding in de volgende gemeenten:",
+    tags: ["Nijkerk","Hoevelaken","Putten","Ermelo","Harderwijk","Nunspeet","Oldebroek","Elburg","Almere","Zeewolde","Lelystad"],
+    tip: "🏢 Twee kantoren: Harderwijk (Noord-Veluwe) en Almere (Flevoland)."
+  },
+  "outreach": {
+    key: ['outreach','zorgmijder','eenzaam','geïsoleerd','outreachend'],
+    title: "🌍 Het Outreachend Team",
+    intro: "Het outreachend team bereikt mensen die zelf geen hulp (kunnen) zoeken:",
+    items: ["Richt zich op eenzame en geïsoleerde mensen","Laagdrempelige, niet-oordelende aanpak","Bouwt langzaam vertrouwen op — kan een langdurig proces zijn","Helpt mensen inzicht te krijgen in hun situatie","Verlaagt drempels om zorg te accepteren"],
+    tip: "💡 Geduld en flexibiliteit zijn key bij outreachend werken."
+  },
+  "doelgroep": {
+    key: ['doelgroep','lvb','ggz','verslaving','beperking','psychiatr','wie helpen'],
+    title: "👥 Doelgroepen AHMN",
+    intro: "AHMN ondersteunt mensen met verschillende achtergronden:",
+    items: ["<b>LVB</b> — Lichte Verstandelijke Beperking","<b>GGZ</b> — Psychiatrische problematiek","<b>Verslavingsproblematiek</b>","Mensen die hulp nodig hebben bij dagelijks leven","Zorgmijders (via outreachend team)"],
+    tip: "💡 Geen situatie is hetzelfde. Maatwerk en flexibiliteit zijn essentieel."
+  },
+  "inwerktraject": {
+    key: ['inwerktraject','inwerk','6 week','vier weken','hoelang','hoe lang','wanneer klaar','traject'],
+    title: "📅 Het Volledige Inwerktraject (4–6 weken)",
+    intro: "Jouw inwerktraject bij AHMN ziet er zo uit:",
+    sections: [
+      {label:"Week 1–2: Kennismaken", text:"Organisatie leren kennen, collega's ontmoeten, beleid lezen, systemen instellen, buddy leren kennen."},
+      {label:"Week 3–4: Meelopen", text:"Meelopen met ervaren collega, eerste cliëntcontacten onder begeleiding, werkwijze leren in de praktijk."},
+      {label:"Week 5–6: Zelfstandiger", text:"Steeds zelfstandiger werken, begeleider nog beschikbaar voor vragen, eigen cliëntcontacten voeren."}
+    ],
+    tip: "✅ Na 4 weken kan het traject al klaar zijn. Uitloop naar 6 weken is normaal — geen probleem!"
+  }
+};
+
+function findEntry(q) {
+  const l = q.toLowerCase();
+  for (const [,entry] of Object.entries(KB)) {
+    if (entry.key.some(k => l.includes(k))) return entry;
+  }
+  return null;
+}
+
+function render(entry, q) {
+  if (!entry) {
+    return `Goede vraag over "<b>${q}</b>"! Ik heb hier nu geen direct antwoord op in mijn kennisbank.<br><br>Neem contact op met je <b>teamleider</b> of <b>buddy</b> voor het juiste antwoord. Die helpen je graag verder! 😊<br><br><i style="font-size:12px;color:var(--subtiel)">Tip: probeer je vraag anders te formuleren — misschien kan ik je dan toch helpen.</i>`;
+  }
+  let h = `<b>${entry.title}</b><br><br>${entry.intro}<br>`;
+  if (entry.items) {
+    h += `<ul style="margin:8px 0 4px 16px">`;
+    entry.items.forEach(i => { h += `<li style="margin-bottom:5px">${i}</li>`; });
+    h += `</ul>`;
+  }
+  if (entry.sections) {
+    entry.sections.forEach(s => { h += `<span class="sec-title">${s.label}</span>${s.text}<br>`; });
+  }
+  if (entry.tags) {
+    h += `<br>`;
+    entry.tags.forEach(t => { h += `<span class="tag">${t}</span>`; });
+    h += `<br>`;
+  }
+  if (entry.tip) {
+    h += `<div class="tip-box">${entry.tip}</div>`;
+  }
+  return h;
+}
+
+let busy = false;
+function getTime() { return new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}); }
+function resize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,90)+'px'; }
+function onKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} }
+function scrollBot() { const c=document.getElementById('chat'); setTimeout(()=>{c.scrollTop=c.scrollHeight;},50); }
+
+function addMsg(role, html) {
+  const c = document.getElementById('chat');
+  const isUser = role==='user';
+  const d = document.createElement('div');
+  d.className = `msg ${isUser?'user':'bot'}`;
+  d.innerHTML = `
+    <div class="av ${isUser?'user':'bot'}">${isUser?'👤':'🗺️'}</div>
+    <div class="bubble-wrap">
+      <div class="bubble">${html}</div>
+      ${!isUser?`<div class="feedback">
+        <button class="fb" onclick="fb(this,'👍')">👍 Nuttig</button>
+        <button class="fb" onclick="fb(this,'👎')">👎 Niet handig</button>
+      </div>`:''}
+      <div class="ts">${getTime()}</div>
+    </div>`;
+  c.appendChild(d);
+  scrollBot();
+}
+
+function fb(btn, type) {
+  btn.parentElement.querySelectorAll('.fb').forEach(b=>{b.classList.remove('on');});
+  btn.classList.add('on');
+  btn.textContent = type==='👍' ? '👍 Bedankt!' : '👎 Noteer ik!';
+}
+
+function showTyping() {
+  const c=document.getElementById('chat');
+  const d=document.createElement('div');
+  d.className='typing-wrap'; d.id='typing';
+  d.innerHTML=`<div class="av bot">🗺️</div><div class="typing-bubble"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
+  c.appendChild(d); scrollBot();
+}
+
+function hideTyping() { const t=document.getElementById('typing'); if(t) t.remove(); }
+function ask(text) { document.getElementById('inp').value=text; sendMsg(); }
+
+function sendMsg() {
+  const inp=document.getElementById('inp');
+  const txt=inp.value.trim();
+  if(!txt||busy) return;
+  busy=true;
+  inp.value=''; inp.style.height='auto';
+  document.getElementById('sendBtn').disabled=true;
+  addMsg('user', txt);
+  showTyping();
+  setTimeout(()=>{
+    hideTyping();
+    const entry=findEntry(txt);
+    addMsg('bot', render(entry, txt));
+    busy=false;
+    document.getElementById('sendBtn').disabled=false;
+  }, 400+Math.random()*500);
+}
+</script>
+
+</body>
+</html>
