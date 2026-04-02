@@ -9,6 +9,7 @@
   :root {
     --oranje: #E8720C;
     --oranje-donker: #C55A00;
+    --oranje-licht: #F59340;
     --lichtgrijs: #F5F5F3;
     --grijs: #E8E6E1;
     --donkergrijs: #2C2C2C;
@@ -17,17 +18,197 @@
     --chat-bg: #F9F7F4;
     --shadow: 0 4px 24px rgba(0,0,0,0.07);
   }
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body { height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background:var(--lichtgrijs); color:var(--tekst); }
-  .app { display:flex; flex-direction:column; height:100%; max-width:480px; margin:0 auto; background:white; box-shadow:0 0 60px rgba(0,0,0,0.1); }
+
+- { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,‘Segoe UI’,Roboto,Helvetica,Arial,sans-serif; background:#E8720C; color:var(–tekst); }
+
+/* ── VIEWS ── */
+.view { position:absolute; top:0; left:0; width:100%; height:100%; transition:transform 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease; }
+.view.hidden { transform:translateX(100%); opacity:0; pointer-events:none; }
+.view.active { transform:translateX(0); opacity:1; }
+
+/* ══════════════════════════════════
+BEGINSCHERM
+══════════════════════════════════ */
+#splash {
+background:linear-gradient(160deg, #E8720C 0%, #C55A00 60%, #9A3E00 100%);
+display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+padding:60px 32px 50px;
+overflow:hidden;
+position:relative;
+}
+
+/* Decoratieve cirkels achtergrond */
+#splash::before {
+content:’’;
+position:absolute;
+top:-80px; right:-80px;
+width:300px; height:300px;
+background:rgba(255,255,255,0.06);
+border-radius:50%;
+}
+#splash::after {
+content:’’;
+position:absolute;
+bottom:-60px; left:-60px;
+width:250px; height:250px;
+background:rgba(255,255,255,0.05);
+border-radius:50%;
+}
+
+.splash-top { text-align:center; z-index:1; }
+
+.splash-logo {
+width:100px; height:100px;
+background:rgba(255,255,255,0.18);
+border-radius:28px;
+display:flex; align-items:center; justify-content:center;
+font-size:52px;
+margin:0 auto 28px;
+border:2px solid rgba(255,255,255,0.3);
+box-shadow:0 8px 32px rgba(0,0,0,0.2);
+animation:float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+0%,100% { transform:translateY(0); }
+50% { transform:translateY(-8px); }
+}
+
+.splash-title {
+font-size:42px;
+font-weight:900;
+color:white;
+letter-spacing:-1px;
+line-height:1;
+margin-bottom:10px;
+}
+
+.splash-tagline {
+font-size:15px;
+color:rgba(255,255,255,0.85);
+font-weight:400;
+line-height:1.5;
+}
+
+.splash-org {
+margin-top:12px;
+background:rgba(255,255,255,0.15);
+border:1px solid rgba(255,255,255,0.25);
+border-radius:20px;
+padding:6px 16px;
+display:inline-block;
+font-size:11px;
+font-weight:700;
+color:rgba(255,255,255,0.9);
+text-transform:uppercase;
+letter-spacing:0.8px;
+}
+
+/* Feature kaartjes */
+.splash-features {
+z-index:1;
+width:100%;
+display:flex;
+flex-direction:column;
+gap:10px;
+margin:32px 0;
+}
+
+.feature-card {
+background:rgba(255,255,255,0.12);
+border:1px solid rgba(255,255,255,0.2);
+border-radius:16px;
+padding:14px 18px;
+display:flex;
+align-items:center;
+gap:14px;
+backdrop-filter:blur(10px);
+}
+
+.feature-icon {
+font-size:26px;
+flex-shrink:0;
+}
+
+.feature-text { flex:1; }
+.feature-title {
+font-size:14px;
+font-weight:700;
+color:white;
+margin-bottom:2px;
+}
+.feature-desc {
+font-size:12px;
+color:rgba(255,255,255,0.75);
+}
+
+/* Start knop */
+.splash-bottom { z-index:1; width:100%; }
+
+.start-btn {
+width:100%;
+background:white;
+color:#C55A00;
+border:none;
+border-radius:18px;
+padding:18px;
+font-size:17px;
+font-weight:800;
+cursor:pointer;
+display:flex;
+align-items:center;
+justify-content:center;
+gap:10px;
+box-shadow:0 8px 32px rgba(0,0,0,0.2);
+transition:transform 0.15s, box-shadow 0.15s;
+letter-spacing:-0.3px;
+}
+
+.start-btn:hover { transform:translateY(-2px); box-shadow:0 12px 40px rgba(0,0,0,0.25); }
+.start-btn:active { transform:translateY(0); }
+.start-btn-arrow { font-size:20px; }
+
+.splash-version {
+text-align:center;
+margin-top:14px;
+font-size:10px;
+color:rgba(255,255,255,0.45);
+}
+
+/* ══════════════════════════════════
+CHATSCHERM
+══════════════════════════════════ */
+#chatview {
+display:flex;
+flex-direction:column;
+background:white;
+max-width:480px;
+margin:0 auto;
+}
 
 /* HEADER */
 .header { background:linear-gradient(135deg,#E8720C 0%,#C55A00 100%); padding:14px 18px; display:flex; align-items:center; gap:13px; flex-shrink:0; position:relative; overflow:hidden; }
 .header::before { content:’’; position:absolute; top:-35px; right:-20px; width:110px; height:110px; background:rgba(255,255,255,0.07); border-radius:50%; pointer-events:none; }
-.logo-wrap { width:48px; height:48px; background:rgba(255,255,255,0.22); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; border:1.5px solid rgba(255,255,255,0.3); }
+
+.back-btn {
+width:36px; height:36px;
+background:rgba(255,255,255,0.2);
+border:1.5px solid rgba(255,255,255,0.3);
+border-radius:10px;
+display:flex; align-items:center; justify-content:center;
+cursor:pointer;
+font-size:18px;
+flex-shrink:0;
+transition:background 0.15s;
+color:white;
+}
+.back-btn:hover { background:rgba(255,255,255,0.3); }
+
+.logo-wrap { width:40px; height:40px; background:rgba(255,255,255,0.22); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; border:1.5px solid rgba(255,255,255,0.3); }
 .header-info { flex:1; min-width:0; }
-.header-title { font-size:19px; font-weight:800; color:white; line-height:1.2; letter-spacing:-0.3px; }
-.header-sub { font-size:11px; color:rgba(255,255,255,0.82); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.header-title { font-size:17px; font-weight:800; color:white; line-height:1.2; }
+.header-sub { font-size:10px; color:rgba(255,255,255,0.82); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .status { display:flex; align-items:center; gap:5px; font-size:11px; color:rgba(255,255,255,0.92); flex-shrink:0; }
 .dot { width:7px; height:7px; background:#4ADE80; border-radius:50%; animation:blink 2s infinite; }
 @keyframes blink { 0%,100%{opacity:1;}50%{opacity:0.5;} }
@@ -86,7 +267,7 @@
 #inp { flex:1; border:none; background:transparent; font-size:14px; font-family:inherit; color:var(–tekst); outline:none; padding:10px 0; resize:none; max-height:90px; line-height:1.4; }
 #inp::placeholder { color:var(–subtiel); }
 .send { width:44px; height:44px; background:linear-gradient(135deg,#E8720C,#C55A00); border:none; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform 0.15s,box-shadow 0.15s; box-shadow:0 2px 10px rgba(232,114,12,0.4); }
-.send:hover { transform:scale(1.06); box-shadow:0 4px 16px rgba(232,114,12,0.5); }
+.send:hover { transform:scale(1.06); }
 .send:active { transform:scale(0.96); }
 .send:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
 .send svg { width:18px; height:18px; fill:white; }
@@ -96,8 +277,55 @@
 
 </head>
 <body>
-<div class="app">
+
+<!-- ══ BEGINSCHERM ══ -->
+
+<div id="splash" class="view active">
+  <div class="splash-top">
+    <div class="splash-logo">🗺️</div>
+    <div class="splash-title">Wegwijzer</div>
+    <div class="splash-tagline">Jouw persoonlijke inwerkcoach</div>
+    <div class="splash-org">Ambulante Hulpverlening Midden Nederland</div>
+  </div>
+
+  <div class="splash-features">
+    <div class="feature-card">
+      <div class="feature-icon">📋</div>
+      <div class="feature-text">
+        <div class="feature-title">Inwerktraject</div>
+        <div class="feature-desc">Stap voor stap door jouw eerste weken</div>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <div class="feature-text">
+        <div class="feature-title">24/7 Vragen stellen</div>
+        <div class="feature-desc">Altijd een antwoord, dag en nacht</div>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏥</div>
+      <div class="feature-text">
+        <div class="feature-title">Zorgspecifiek</div>
+        <div class="feature-desc">Protocollen, werkwijze en organisatie</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="splash-bottom">
+    <button class="start-btn" onclick="showChat()">
+      Start gesprek
+      <span class="start-btn-arrow">→</span>
+    </button>
+    <div class="splash-version">Wegwijzer v1.0 • © 2026 Wegwijzer</div>
+  </div>
+</div>
+
+<!-- ══ CHATSCHERM ══ -->
+
+<div id="chatview" class="view hidden">
   <div class="header">
+    <div class="back-btn" onclick="showSplash()">←</div>
     <div class="logo-wrap">🗺️</div>
     <div class="header-info">
       <div class="header-title">Wegwijzer</div>
@@ -108,7 +336,7 @@
 
   <div class="chips">
     <div class="chip" onclick="ask('Wat zijn mijn taken in week 1 van het inwerktraject?')">📋 Week 1 inwerktaken</div>
-    <div class="chip" onclick="ask('Wat is ambulant werken precies?')">🚗 Wat is ambulant werken?</div>
+    <div class="chip" onclick="ask('Wat is ambulant werken precies?')">🚗 Ambulant werken</div>
     <div class="chip" onclick="ask('Bij wie kan ik terecht met vragen?')">👤 Contactpersonen</div>
     <div class="chip" onclick="ask('Wat is de missie van de organisatie?')">🎯 Missie & visie</div>
     <div class="chip" onclick="ask('Welke zorgvormen bieden wij aan?')">❤️ Zorgvormen</div>
@@ -127,7 +355,7 @@
             <p>Hallo en welkom! Fijn dat je er bent 🎉</p>
           </div>
           Ik ben <b>Wegwijzer</b>, jouw persoonlijke inwerkcoach bij AHMN. Ik help je op weg tijdens jouw eerste weken.<br><br>
-          Stel me vragen over het inwerktraject, onze werkwijze, zorgvormen of alles wat je wilt weten over werken bij Ambulante Hulpverlening Midden Nederland.<br><br>
+          Stel me vragen over het inwerktraject, onze werkwijze, zorgvormen of alles wat je wilt weten over werken bij AHMN.<br><br>
           <b>Waar kan ik je mee helpen?</b>
         </div>
         <div class="ts">Nu</div>
@@ -147,111 +375,44 @@
 </div>
 
 <script>
-const KB = {
-  week1: {
-    key:['week 1','eerste week','eerste taken','inwerktaken','week één','begin'],
-    title:"📋 Jouw taken in Week 1",
-    intro:"Welkom bij jouw eerste week bij AHMN! Dit staat er op het programma:",
-    items:["Kennismakingsgesprek met je <b>teamleider</b> en directe collega's","Rondleiding op het kantoor (Harderwijk of Almere)","Lezen van het inwerkplan en organisatiebeleid","Kennismaken met de missie: <b>Samen. Durven. Doen.</b>","Inloggegevens en systemen instellen","Je <b>buddy/begeleider</b> leren kennen","Eerste kennismaking met cliëntdossiers (onder begeleiding)"],
-    tip:"💡 Schrijf al je vragen op — geen vraag is te klein!"
-  },
-  ambulant: {
-    key:['ambulant werk','wat is ambulant','ambulante werk','ambulante begeleid'],
-    title:"🚗 Wat is Ambulant Werken?",
-    intro:"Ambulant werken betekent dat <b>jij naar de cliënt toe gaat</b> — niet andersom. Je werkt in de eigen leefomgeving van de cliënt:",
-    items:["Je gaat naar de cliënt thuis of op zijn/haar eigen woonplek","Frequentie afhankelijk van hulpvraag: 1x per week tot dagelijks","Je werkt aan doelen uit het <b>persoonlijk plan</b> van de cliënt","Financiering via WMO, WLZ of PGB","Je bent flexibel — geen situatie is hetzelfde","Je werkt vanuit gelijkwaardigheid en respect"],
-    tip:"💡 De ambulante gedachte: de cliënt bepaalt mee. Jij faciliteert, de cliënt leidt."
-  },
-  missie: {
-    key:['missie','visie','samen durven','waarden','waar staat'],
-    title:"🎯 Missie & Visie AHMN",
-    intro:"De missie van AHMN is samengevat in drie krachtige woorden:",
-    sections:[
-      {label:"SAMEN",text:"Gelijkwaardigheid, vertrouwen en transparantie. Wat de cliënt wil staat voorop. Samen stellen we doelen."},
-      {label:"DURVEN",text:"Lef tonen, oplossingsgericht werken, buiten de kaders denken. Nieuwe collega's krijgen volop begeleiding."},
-      {label:"DOEN",text:"Korte lijntjes, platte organisatie, iedereen is aanspreekbaar. Creatief, flexibel en positief."}
-    ],
-    tip:"🌟 Visie: een gelijkwaardige wereld waarin iedereen mag zijn wie die is."
-  },
-  zorgvorm: {
-    key:['zorgvorm','zorgaanbod','welke zorg','begeleid zelfstandig','bzw','avond','nachtdienst','diensten'],
-    title:"❤️ Zorgvormen bij AHMN",
-    intro:"AHMN biedt drie hoofdvormen van zorg:",
-    sections:[
-      {label:"Ambulante begeleiding",text:"Ondersteuning bij de cliënt thuis. Frequentie afhankelijk van zorgbehoefte. Financiering via WMO, WLZ of PGB."},
-      {label:"Begeleid Zelfstandig Wonen (BZW)",text:"Begeleiding voor mensen die zelfstandig willen leren wonen."},
-      {label:"Avond- en nachtdienst",text:"Voor cliënten die ook buiten kantooruren begeleiding nodig hebben."}
-    ],
-    tip:"📌 Werkgebied: Noord-Veluwe en Flevoland regio."
-  },
-  contact: {
-    key:['contact','bereikbaar','terecht','vragen stellen','teamleider','buddy','hulp nodig','wie'],
-    title:"👤 Contactpersonen & Bereikbaarheid",
-    intro:"Bij AHMN heb je altijd iemand om op terug te vallen:",
-    items:["Je <b>buddy/begeleider</b>: voor dagelijkse vragen tijdens inwerken","Je <b>teamleider</b>: voor grotere vragen, escalaties en evaluaties","Kantoor <b>Harderwijk</b>: Gelreweg 3, 3843 AN Harderwijk","Kantoor <b>Almere</b>: Rabdstad 22-125, 1316 BW Almere","📞 Telefoon: <b>085 - 049 2717</b>","✉️ Email: <b>info@ambulantehulpverlening.nl</b>"],
-    tip:"💡 Kleine vragen → buddy. Grote vragen → teamleider. Calamiteiten → direct bellen!"
-  },
-  client: {
-    key:['cliënt','client','omgaan','gesprek','bezoek','thuis','huis','privacy','avg'],
-    title:"🤝 Omgaan met Cliënten",
-    intro:"AHMN werkt met kwetsbare doelgroepen. De belangrijkste principes:",
-    items:["Werk altijd vanuit <b>gelijkwaardigheid en respect</b>","De cliënt bepaalt mee — jij faciliteert","Stel samen doelen op in het persoonlijk plan","Pas begeleiding aan op de behoefte van de cliënt","<b>Nooit</b> persoonlijke relaties aangaan met cliënten","Altijd rapporteren in het cliëntendossier na elk contact","Bij crisis of calamiteit: direct contact met teamleider"],
-    tip:"⚠️ AVG: nooit cliëntinformatie delen buiten de organisatie!"
-  },
-  financier: {
-    key:['financier','wmo','wlz','pgb','budget','betaling','indicatie','vergoeding'],
-    title:"💶 Financieringsvormen",
-    intro:"Ambulante begeleiding kan via drie financieringsvormen:",
-    items:["<b>WMO</b> — Wet Maatschappelijke Ondersteuning: via de gemeente","<b>WLZ</b> — Wet Langdurige Zorg: grondslag VG of GGZ (VPT of MPT)","<b>PGB</b> — Persoonsgebonden Budget: cliënt beheert zelf het budget"],
-    tip:"💡 Niet zeker welke financieringsvorm? Vraag je teamleider."
-  },
-  werkgebied: {
-    key:['werkgebied','gemeente','regio','waar werk','harderwijk','almere','nijkerk','lelystad','locatie'],
-    title:"📍 Werkgebied AHMN",
-    intro:"AHMN biedt ambulante begeleiding in de volgende gemeenten:",
-    tags:["Nijkerk","Hoevelaken","Putten","Ermelo","Harderwijk","Nunspeet","Oldebroek","Elburg","Almere","Zeewolde","Lelystad"],
-    tip:"🏢 Twee kantoren: Harderwijk (Noord-Veluwe) en Almere (Flevoland)."
-  },
-  outreach: {
-    key:['outreach','zorgmijder','eenzaam','geïsoleerd','outreachend'],
-    title:"🌍 Het Outreachend Team",
-    intro:"Het outreachend team bereikt mensen die zelf geen hulp (kunnen) zoeken:",
-    items:["Richt zich op eenzame en geïsoleerde mensen","Laagdrempelige, niet-oordelende aanpak","Bouwt langzaam vertrouwen op","Helpt mensen inzicht te krijgen in hun situatie","Verlaagt drempels om zorg te accepteren"],
-    tip:"💡 Geduld en flexibiliteit zijn key bij outreachend werken."
-  },
-  doelgroep: {
-    key:['doelgroep','lvb','ggz','verslaving','beperking','psychiatr','wie helpen'],
-    title:"👥 Doelgroepen AHMN",
-    intro:"AHMN ondersteunt mensen met verschillende achtergronden:",
-    items:["<b>LVB</b> — Lichte Verstandelijke Beperking","<b>GGZ</b> — Psychiatrische problematiek","<b>Verslavingsproblematiek</b>","Mensen die hulp nodig hebben bij dagelijks leven","Zorgmijders (via outreachend team)"],
-    tip:"💡 Geen situatie is hetzelfde. Maatwerk en flexibiliteit zijn essentieel."
-  },
-  inwerktraject: {
-    key:['inwerktraject','inwerk','6 week','vier weken','hoelang','hoe lang','wanneer klaar','traject'],
-    title:"📅 Het Volledige Inwerktraject (4–6 weken)",
-    intro:"Jouw inwerktraject bij AHMN ziet er zo uit:",
-    sections:[
-      {label:"Week 1–2: Kennismaken",text:"Organisatie leren kennen, collega's ontmoeten, beleid lezen, systemen instellen, buddy leren kennen."},
-      {label:"Week 3–4: Meelopen",text:"Meelopen met ervaren collega, eerste cliëntcontacten onder begeleiding, werkwijze leren."},
-      {label:"Week 5–6: Zelfstandiger",text:"Steeds zelfstandiger werken, begeleider nog beschikbaar, eigen cliëntcontacten voeren."}
-    ],
-    tip:"✅ Na 4 weken kan het traject al klaar zijn. Uitloop naar 6 weken is normaal!"
-  }
-};
-
-function findEntry(q) {
-  const l=q.toLowerCase();
-  for(const e of Object.values(KB)) if(e.key.some(k=>l.includes(k))) return e;
-  return null;
+// ── NAVIGATIE ────────────────────────────────
+function showChat() {
+  document.getElementById('splash').classList.remove('active');
+  document.getElementById('splash').classList.add('hidden');
+  document.getElementById('chatview').classList.remove('hidden');
+  document.getElementById('chatview').classList.add('active');
 }
 
-function render(entry,q) {
-  if(!entry) return `Goede vraag! Ik heb hier geen direct antwoord op in mijn kennisbank.<br><br>Neem contact op met je <b>teamleider</b> of <b>buddy</b> — die helpen je verder! 😊<br><br><i style="font-size:12px;color:#999">Tip: probeer je vraag anders te formuleren.</i>`;
+function showSplash() {
+  document.getElementById('chatview').classList.remove('active');
+  document.getElementById('chatview').classList.add('hidden');
+  document.getElementById('splash').classList.remove('hidden');
+  document.getElementById('splash').classList.add('active');
+}
+
+// ── KENNISBANK ───────────────────────────────
+const KB = {
+  week1:{key:['week 1','eerste week','eerste taken','inwerktaken','week één','begin'],title:"📋 Jouw taken in Week 1",intro:"Welkom bij jouw eerste week bij AHMN! Dit staat er op het programma:",items:["Kennismakingsgesprek met je <b>teamleider</b> en directe collega's","Rondleiding op het kantoor (Harderwijk of Almere)","Lezen van het inwerkplan en organisatiebeleid","Kennismaken met de missie: <b>Samen. Durven. Doen.</b>","Inloggegevens en systemen instellen","Je <b>interne begeleider</b> leren kennen","Eerste kennismaking met cliëntdossiers (onder begeleiding)"],tip:"💡 Schrijf al je vragen op — geen vraag is te klein!"},
+  ambulant:{key:['ambulant werk','wat is ambulant','ambulante werk','ambulante begeleid'],title:"🚗 Wat is Ambulant Werken?",intro:"Ambulant werken betekent dat <b>jij naar de cliënt toe gaat</b> — niet andersom:",items:["Je gaat naar de cliënt thuis of op zijn/haar eigen woonplek","Frequentie: 1x per week tot dagelijks afhankelijk van hulpvraag","Je werkt aan doelen uit het <b>persoonlijk plan</b>","Financiering via WMO, WLZ of PGB","Je bent flexibel — geen situatie is hetzelfde","Je werkt vanuit gelijkwaardigheid en respect"],tip:"💡 De cliënt bepaalt mee. Jij faciliteert, de cliënt leidt."},
+  missie:{key:['missie','visie','samen durven','waarden','waar staat'],title:"🎯 Missie & Visie AHMN",intro:"De missie van AHMN is samengevat in drie woorden:",sections:[{label:"SAMEN",text:"Gelijkwaardigheid, vertrouwen en transparantie. Wat de cliënt wil staat voorop."},{label:"DURVEN",text:"Lef tonen, oplossingsgericht werken, buiten de kaders denken."},{label:"DOEN",text:"Korte lijntjes, platte organisatie, iedereen is aanspreekbaar."}],tip:"🌟 Visie: een gelijkwaardige wereld waarin iedereen mag zijn wie die is."},
+  zorgvorm:{key:['zorgvorm','zorgaanbod','welke zorg','begeleid zelfstandig','bzw','avond','nachtdienst'],title:"❤️ Zorgvormen bij AHMN",intro:"AHMN biedt drie hoofdvormen van zorg:",sections:[{label:"Ambulante begeleiding",text:"Ondersteuning bij de cliënt thuis. Financiering via WMO, WLZ of PGB."},{label:"Begeleid Zelfstandig Wonen (BZW)",text:"Begeleiding voor mensen die zelfstandig willen leren wonen."},{label:"Avond- en nachtdienst",text:"Voor cliënten die ook buiten kantooruren begeleiding nodig hebben."}],tip:"📌 Werkgebied: Noord-Veluwe en Flevoland regio."},
+  contact:{key:['contact','bereikbaar','terecht','vragen stellen','teamleider','interne begeleider','wie'],title:"👤 Contactpersonen & Bereikbaarheid",intro:"Bij AHMN heb je altijd iemand om op terug te vallen:",items:["Je <b>interne begeleider</b>: voor dagelijkse vragen","Je <b>teamleider</b>: voor grotere vragen en escalaties","Kantoor <b>Harderwijk</b>: Gelreweg 3, 3843 AN","Kantoor <b>Almere</b>: Rabdstad 22-125, 1316 BW","📞 <b>085 - 049 2717</b>","✉️ <b>info@ambulantehulpverlening.nl</b>"],tip:"💡 Kleine vragen → interne begeleider. Grote vragen → teamleider. Calamiteiten → direct bellen!"},
+  client:{key:['cliënt','client','omgaan','gesprek','bezoek','thuis','privacy','avg'],title:"🤝 Omgaan met Cliënten",intro:"De belangrijkste principes bij cliëntcontact:",items:["Werk altijd vanuit <b>gelijkwaardigheid en respect</b>","De cliënt bepaalt mee — jij faciliteert","Stel samen doelen op in het persoonlijk plan","<b>Nooit</b> persoonlijke relaties aangaan met cliënten","Altijd rapporteren in het cliëntendossier na elk contact","Bij crisis: direct contact met teamleider"],tip:"⚠️ AVG: nooit cliëntinformatie delen buiten de organisatie!"},
+  financier:{key:['financier','wmo','wlz','pgb','budget','indicatie','vergoeding'],title:"💶 Financieringsvormen",intro:"Ambulante begeleiding via drie financieringsvormen:",items:["<b>WMO</b> — via de gemeente voor individuele begeleiding","<b>WLZ</b> — grondslag VG of GGZ (VPT of MPT)","<b>PGB</b> — cliënt beheert zelf het budget"],tip:"💡 Niet zeker welke financieringsvorm? Vraag je teamleider."},
+  werkgebied:{key:['werkgebied','gemeente','regio','harderwijk','almere','nijkerk','lelystad','locatie'],title:"📍 Werkgebied AHMN",intro:"AHMN werkt in de volgende gemeenten:",tags:["Nijkerk","Hoevelaken","Putten","Ermelo","Harderwijk","Nunspeet","Oldebroek","Elburg","Almere","Zeewolde","Lelystad"],tip:"🏢 Twee kantoren: Harderwijk en Almere."},
+  outreach:{key:['outreach','zorgmijder','eenzaam','geïsoleerd'],title:"🌍 Het Outreachend Team",intro:"Bereikt mensen die zelf geen hulp (kunnen) zoeken:",items:["Laagdrempelige, niet-oordelende aanpak","Bouwt langzaam vertrouwen op","Helpt mensen inzicht te krijgen in hun situatie","Verlaagt drempels om zorg te accepteren"],tip:"💡 Geduld en flexibiliteit zijn key."},
+  inwerktraject:{key:['inwerktraject','inwerk','6 week','vier weken','hoelang','hoe lang','traject'],title:"📅 Het Inwerktraject (4–6 weken)",intro:"Jouw inwerktraject bij AHMN:",sections:[{label:"Week 1–2: Kennismaken",text:"Organisatie leren kennen, collega's ontmoeten, beleid lezen, systemen instellen."},{label:"Week 3–4: Meelopen",text:"Meelopen met ervaren collega, eerste cliëntcontacten onder begeleiding."},{label:"Week 5–6: Zelfstandiger",text:"Steeds zelfstandiger werken, begeleider nog beschikbaar."}],tip:"✅ Na 4 weken kan het traject al klaar zijn. Uitloop is normaal!"}
+};
+
+function findEntry(q){const l=q.toLowerCase();for(const e of Object.values(KB))if(e.key.some(k=>l.includes(k)))return e;return null;}
+
+function render(entry,q){
+  if(!entry)return `Goede vraag! Ik heb hier geen direct antwoord op in mijn kennisbank.<br><br>Neem contact op met je <b>teamleider</b> of <b>interne begeleider</b> — die helpen je verder! 😊<br><br><i style="font-size:12px;color:#999">Tip: probeer je vraag anders te formuleren.</i>`;
   let h=`<b>${entry.title}</b><br><br>${entry.intro}<br>`;
   if(entry.items){h+=`<ul style="margin:8px 0 4px 16px">`;entry.items.forEach(i=>{h+=`<li style="margin-bottom:5px">${i}</li>`;});h+=`</ul>`;}
-  if(entry.sections) entry.sections.forEach(s=>{h+=`<span class="sec-title">${s.label}</span>${s.text}<br>`;});
+  if(entry.sections)entry.sections.forEach(s=>{h+=`<span class="sec-title">${s.label}</span>${s.text}<br>`;});
   if(entry.tags){h+=`<br>`;entry.tags.forEach(t=>{h+=`<span class="tag">${t}</span>`;});h+=`<br>`;}
-  if(entry.tip) h+=`<div class="tip-box">${entry.tip}</div>`;
+  if(entry.tip)h+=`<div class="tip-box">${entry.tip}</div>`;
   return h;
 }
 
@@ -266,34 +427,12 @@ function addMsg(role,html){
   const isUser=role==='user';
   const d=document.createElement('div');
   d.className=`msg ${isUser?'user':'bot'}`;
-  d.innerHTML=`
-    <div class="av ${isUser?'user':'bot'}">${isUser?'👤':'🗺️'}</div>
-    <div class="bubble-wrap">
-      <div class="bubble">${html}</div>
-      ${!isUser?`<div class="feedback">
-        <button class="fb" onclick="fb(this,'👍')">👍 Nuttig</button>
-        <button class="fb" onclick="fb(this,'👎')">👎 Niet handig</button>
-      </div>`:''}
-      <div class="ts">${getTime()}</div>
-    </div>`;
-  c.appendChild(d);
-  scrollBot();
-}
-
-function fb(btn,type){
-  btn.parentElement.querySelectorAll('.fb').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-  btn.textContent=type==='👍'?'👍 Bedankt!':'👎 Noteer ik!';
-}
-
-function showTyping(){
-  const c=document.getElementById('chat');
-  const d=document.createElement('div');
-  d.className='typing-wrap';d.id='typing';
-  d.innerHTML=`<div class="av bot">🗺️</div><div class="typing-bubble"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
+  d.innerHTML=`<div class="av ${isUser?'user':'bot'}">${isUser?'👤':'🗺️'}</div><div class="bubble-wrap"><div class="bubble">${html}</div>${!isUser?`<div class="feedback"><button class="fb" onclick="fb(this,'👍')">👍 Nuttig</button><button class="fb" onclick="fb(this,'👎')">👎 Niet handig</button></div>`:''}<div class="ts">${getTime()}</div></div>`;
   c.appendChild(d);scrollBot();
 }
 
+function fb(btn,type){btn.parentElement.querySelectorAll('.fb').forEach(b=>b.classList.remove('on'));btn.classList.add('on');btn.textContent=type==='👍'?'👍 Bedankt!':'👎 Noteer ik!';}
+function showTyping(){const c=document.getElementById('chat');const d=document.createElement('div');d.className='typing-wrap';d.id='typing';d.innerHTML=`<div class="av bot">🗺️</div><div class="typing-bubble"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;c.appendChild(d);scrollBot();}
 function hideTyping(){const t=document.getElementById('typing');if(t)t.remove();}
 function ask(text){document.getElementById('inp').value=text;sendMsg();}
 
@@ -301,17 +440,10 @@ function sendMsg(){
   const inp=document.getElementById('inp');
   const txt=inp.value.trim();
   if(!txt||busy)return;
-  busy=true;
-  inp.value='';inp.style.height='auto';
+  busy=true;inp.value='';inp.style.height='auto';
   document.getElementById('sendBtn').disabled=true;
-  addMsg('user',txt);
-  showTyping();
-  setTimeout(()=>{
-    hideTyping();
-    addMsg('bot',render(findEntry(txt),txt));
-    busy=false;
-    document.getElementById('sendBtn').disabled=false;
-  },400+Math.random()*500);
+  addMsg('user',txt);showTyping();
+  setTimeout(()=>{hideTyping();addMsg('bot',render(findEntry(txt),txt));busy=false;document.getElementById('sendBtn').disabled=false;},400+Math.random()*500);
 }
 </script>
 
