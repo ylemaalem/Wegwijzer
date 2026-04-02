@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="nl" data-required-role="medewerker">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E8720C">
+  <title>Wegwijzer — Mijn inwerkcoach</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/medewerker.css">
+</head>
+<body class="medewerker-page">
+  <div class="page-container">
+
+    <!-- ===== HEADER ===== -->
+    <header class="app-header">
+      <button class="header-back-btn hidden" id="back-btn" aria-label="Terug">←</button>
+      <span class="logo-emoji" aria-hidden="true">🗺️</span>
+      <div class="header-title-group">
+        <h1>Wegwijzer</h1>
+        <span class="header-status" id="header-status">
+          <span class="status-dot"></span> Online
+        </span>
+      </div>
+      <div class="header-spacer"></div>
+      <button class="header-btn" id="logout-btn">Uitloggen</button>
+    </header>
+
+    <!-- ===== CONTENT ===== -->
+    <main class="page-content">
+
+      <!-- ========== WELKOMSCHERM ========== -->
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-emoji">🗺️</div>
+        <h2 class="welcome-title" id="welcome-title">Welkom!</h2>
+        <p class="welcome-subtitle" id="welcome-subtitle">
+          Ik ben jouw inwerkcoach. Stel me vragen over je inwerktraject, werkwijze en protocollen.
+        </p>
+        <div class="welcome-week" id="welcome-week">Week 1 van 6</div>
+
+        <!-- Voortgangsmeter -->
+        <div class="progress-labels" id="progress-labels"></div>
+        <div class="progress-meter" id="progress-meter"></div>
+
+        <button class="btn btn-primary welcome-start-btn" id="start-chat-btn">
+          Start gesprek →
+        </button>
+      </div>
+
+      <!-- ========== CHATSCHERM ========== -->
+      <div class="chat-screen" id="chat-screen">
+
+        <!-- AVG Disclaimer -->
+        <div class="disclaimer-banner" id="disclaimer-banner">
+          <span class="disclaimer-icon">⚠️</span>
+          Deel geen persoonsgegevens of cliëntinformatie in deze chat.
+        </div>
+
+        <!-- Suggestie chips -->
+        <div class="chips-bar" id="chips-bar">
+          <button class="chip" data-vraag="Wat zijn mijn taken in week 1?">📋 Wat zijn mijn taken in week 1?</button>
+          <button class="chip" data-vraag="Wat is ambulant werken?">🚗 Wat is ambulant werken?</button>
+          <button class="chip" data-vraag="Bij wie kan ik terecht?">👤 Bij wie kan ik terecht?</button>
+          <button class="chip" data-vraag="Wat is de missie?">🎯 Wat is de missie?</button>
+          <button class="chip" data-vraag="Welke zorgvormen zijn er?">❤️ Welke zorgvormen zijn er?</button>
+          <button class="chip" data-vraag="Hoe ga ik om met een cliënt?">🤝 Hoe ga ik om met een cliënt?</button>
+        </div>
+
+        <!-- Berichten -->
+        <div class="chat-messages" id="chat-messages">
+          <!-- Typing indicator -->
+          <div class="typing-row hidden" id="typing-indicator">
+            <div class="avatar avatar-bot">🗺️</div>
+            <div class="typing-bubble">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="chat-input-bar">
+          <textarea
+            class="chat-input"
+            id="chat-input"
+            placeholder="Stel hier je vraag aan Wegwijzer..."
+            rows="1"
+            maxlength="2000"
+          ></textarea>
+          <button class="chat-send-btn" id="send-btn" disabled aria-label="Verstuur">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/base-path.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/route-guard.js"></script>
+  <script src="js/medewerker.js"></script>
+</body>
+</html>

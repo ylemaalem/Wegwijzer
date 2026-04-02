@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E8720C">
+  <meta name="description" content="Wegwijzer — Jouw inwerkcoach">
+  <title>Wegwijzer — Inloggen</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page-container">
+
+    <!-- Header -->
+    <header class="app-header">
+      <span class="logo-emoji" aria-hidden="true">🗺️</span>
+      <h1>Wegwijzer</h1>
+    </header>
+
+    <!-- Content -->
+    <main class="page-content">
+
+      <div id="alert" class="alert" role="alert" style="max-width:420px;width:100%">
+        <span id="alert-message"></span>
+      </div>
+
+      <!-- Login formulier -->
+      <div id="login-view" class="card">
+        <h2 class="card-title">Welkom terug</h2>
+        <p class="card-subtitle">Log in met je werkmail</p>
+
+        <form id="login-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="email">E-mailadres</label>
+            <input
+              class="form-input"
+              type="email"
+              id="email"
+              name="email"
+              placeholder="naam@werkmail.nl"
+              autocomplete="email"
+              required
+            >
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">Wachtwoord</label>
+            <input
+              class="form-input"
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Je wachtwoord"
+              autocomplete="current-password"
+              required
+            >
+          </div>
+
+          <button type="submit" class="btn btn-primary" id="login-btn">
+            Inloggen
+          </button>
+        </form>
+
+        <div class="text-center mt-16">
+          <button class="btn-text" id="show-reset">Wachtwoord vergeten?</button>
+        </div>
+      </div>
+
+      <!-- Wachtwoord vergeten formulier -->
+      <div id="reset-view" class="card hidden">
+        <h2 class="card-title">Wachtwoord vergeten</h2>
+        <p class="card-subtitle">Vul je werkmail in om een herstel-link te ontvangen</p>
+
+        <form id="reset-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="reset-email">E-mailadres</label>
+            <input
+              class="form-input"
+              type="email"
+              id="reset-email"
+              name="email"
+              placeholder="naam@werkmail.nl"
+              autocomplete="email"
+              required
+            >
+          </div>
+
+          <button type="submit" class="btn btn-primary" id="reset-btn">
+            Verstuur herstel-link
+          </button>
+        </form>
+
+        <div class="text-center mt-16">
+          <button class="btn-text" id="show-login">Terug naar inloggen</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/base-path.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register(BASE_PATH + 'sw.js');
+    }
+  </script>
+</body>
+</html>

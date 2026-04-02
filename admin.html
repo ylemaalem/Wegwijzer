@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="nl" data-required-role="admin">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E8720C">
+  <title>Wegwijzer — Beheer</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="admin-page">
+  <div class="page-container">
+
+    <!-- Header -->
+    <header class="app-header">
+      <span class="logo-emoji" aria-hidden="true">🗺️</span>
+      <h1>Wegwijzer</h1>
+      <div class="header-spacer"></div>
+      <button class="header-btn" id="logout-btn">Uitloggen</button>
+    </header>
+
+    <!-- Tab navigatie -->
+    <nav class="tab-nav" id="tab-nav">
+      <button class="tab-btn active" data-tab="documenten">Documenten</button>
+      <button class="tab-btn" data-tab="medewerkers">Medewerkers</button>
+      <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
+      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
+      <button class="tab-btn" data-tab="instellingen">Instellingen</button>
+    </nav>
+
+    <!-- Content -->
+    <main class="page-content">
+
+      <!-- ========== TAB: DOCUMENTEN ========== -->
+      <section class="tab-content active" id="tab-documenten">
+        <h2 class="section-title">Documenten beheren</h2>
+        <p class="section-subtitle">Upload PDF of Word bestanden voor de inwerkcoach.</p>
+
+        <!-- Upload zone -->
+        <div class="upload-zone" id="upload-zone">
+          <div class="upload-zone-icon">📄</div>
+          <div class="upload-zone-text">
+            <strong>Klik hier</strong> of sleep een bestand hierheen<br>
+            PDF of Word (.pdf, .doc, .docx)
+          </div>
+          <input type="file" id="file-input" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
+          <div class="upload-progress" id="upload-progress">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Documenten tabel -->
+        <div class="data-table-wrap">
+          <table class="data-table" id="documents-table">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>Datum</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody id="documents-body">
+              <tr><td colspan="3" class="no-data">Documenten laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: MEDEWERKERS ========== -->
+      <section class="tab-content" id="tab-medewerkers">
+        <h2 class="section-title">Medewerkers beheren</h2>
+        <p class="section-subtitle">Nodig medewerkers uit en stel hun functiegroep in.</p>
+
+        <button class="btn btn-primary" id="add-medewerker-btn" style="max-width:280px;margin-bottom:20px">
+          + Medewerker uitnodigen
+        </button>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="medewerkers-table">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Functiegroep</th>
+                <th>Startdatum</th>
+                <th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="medewerkers-body">
+              <tr><td colspan="5" class="no-data">Medewerkers laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: GESPREKKEN ========== -->
+      <section class="tab-content" id="tab-gesprekken">
+        <h2 class="section-title">Gesprekken</h2>
+
+        <!-- Filters -->
+        <div class="filter-bar">
+          <select class="form-input" id="filter-medewerker">
+            <option value="">Alle medewerkers</option>
+          </select>
+          <select class="form-input" id="filter-feedback">
+            <option value="">Alle feedback</option>
+            <option value="goed">Nuttig</option>
+            <option value="niet_goed">Niet handig</option>
+            <option value="geen">Geen feedback</option>
+          </select>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="gesprekken-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Medewerker</th>
+                <th>Vraag</th>
+                <th>Antwoord</th>
+                <th>Feedback</th>
+              </tr>
+            </thead>
+            <tbody id="gesprekken-body">
+              <tr><td colspan="5" class="no-data">Gesprekken laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: STATISTIEKEN ========== -->
+      <section class="tab-content" id="tab-statistieken">
+        <h2 class="section-title">Statistieken</h2>
+
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-totaal">0</div>
+            <div class="stat-label">Totaal vragen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-vandaag">0</div>
+            <div class="stat-label">Vandaag</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-week">0</div>
+            <div class="stat-label">Deze week</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-positief">0%</div>
+            <div class="stat-label">Positief</div>
+          </div>
+        </div>
+
+        <h3 class="section-title" style="font-size:1rem">Vragen per dag (laatste 14 dagen)</h3>
+        <div class="data-table-wrap">
+          <table class="data-table" id="stats-per-dag-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Aantal vragen</th>
+              </tr>
+            </thead>
+            <tbody id="stats-per-dag-body">
+              <tr><td colspan="2" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: INSTELLINGEN ========== -->
+      <section class="tab-content" id="tab-instellingen">
+        <h2 class="section-title">Instellingen</h2>
+
+        <div style="max-width:600px">
+
+          <!-- Organisatie -->
+          <h3 style="font-size:1rem;font-weight:600;margin-bottom:12px;color:var(--text)">Organisatie</h3>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-organisatienaam">Organisatienaam</label>
+            <p class="section-subtitle" style="margin-bottom:6px">
+              Wordt getoond in de header van de medewerkerspagina.
+            </p>
+            <input class="form-input" type="text" id="setting-organisatienaam" placeholder="Naam van je organisatie">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-kleur">Primaire kleur</label>
+            <p class="section-subtitle" style="margin-bottom:6px">
+              Hex kleurcode voor de huisstijl. Vervangt het standaard oranje.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="form-input" type="text" id="setting-kleur" placeholder="#E8720C" style="flex:1" maxlength="7">
+              <input type="color" id="setting-kleur-picker" value="#E8720C" style="width:44px;height:40px;border:none;border-radius:var(--radius-sm);cursor:pointer;padding:0">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-website">Website URL (kennisbank)</label>
+            <p class="section-subtitle" style="margin-bottom:6px">
+              Optioneel. Deze URL wordt als extra kennisbron meegestuurd naar de AI, naast de geüploade documenten.
+            </p>
+            <input class="form-input" type="url" id="setting-website" placeholder="https://www.voorbeeld.nl/kennisbank">
+          </div>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+
+          <!-- Disclaimer -->
+          <h3 style="font-size:1rem;font-weight:600;margin-bottom:12px;color:var(--text)">AVG Disclaimer</h3>
+
+          <div class="form-group">
+            <p class="section-subtitle" style="margin-bottom:6px">
+              Deze tekst wordt getoond aan medewerkers bovenaan het chatscherm.
+            </p>
+            <textarea class="form-textarea" id="disclaimer-text" rows="4" placeholder="Disclaimer tekst..."></textarea>
+          </div>
+
+          <button class="btn btn-primary" id="save-settings-btn" style="max-width:200px">
+            Alles opslaan
+          </button>
+          <div id="settings-alert" class="alert mt-8" role="alert">
+            <span id="settings-alert-message"></span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ========== MODAL: MEDEWERKER UITNODIGEN ========== -->
+    <div class="modal-overlay" id="modal-medewerker">
+      <div class="modal">
+        <h3 class="modal-title">Medewerker uitnodigen</h3>
+
+        <div id="modal-alert" class="alert" role="alert">
+          <span id="modal-alert-message"></span>
+        </div>
+
+        <form id="invite-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="invite-naam">Naam</label>
+            <input class="form-input" type="text" id="invite-naam" placeholder="Volledige naam" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-email">Werkmail</label>
+            <input class="form-input" type="email" id="invite-email" placeholder="naam@werkmail.nl" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-functiegroep">Functiegroep</label>
+            <select class="form-input" id="invite-functiegroep" required>
+              <option value="">Kies een functiegroep</option>
+              <option value="ambulant_begeleider">Ambulant Begeleider</option>
+              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
+              <option value="woonbegeleider">Woonbegeleider</option>
+              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-startdatum">Startdatum inwerktraject</label>
+            <input class="form-input" type="date" id="invite-startdatum" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-inwerktraject-url">Persoonlijk inwerktraject URL</label>
+            <p class="section-subtitle" style="margin-bottom:4px;font-size:0.78rem">
+              Optioneel. Google Docs export URL specifiek voor deze medewerker.
+            </p>
+            <input class="form-input" type="url" id="invite-inwerktraject-url" placeholder="https://docs.google.com/...">
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="modal-cancel-btn">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="modal-submit-btn">Uitnodigen</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: GESPREK DETAIL ========== -->
+    <div class="modal-overlay" id="modal-gesprek">
+      <div class="modal">
+        <h3 class="modal-title">Gesprek detail</h3>
+        <div class="form-group">
+          <label class="form-label">Vraag</label>
+          <p id="detail-vraag" style="font-size:0.9rem;color:var(--text)"></p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Antwoord</label>
+          <p id="detail-antwoord" style="font-size:0.9rem;color:var(--text);white-space:pre-wrap"></p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Feedback</label>
+          <p id="detail-feedback"></p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="detail-close-btn">Sluiten</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: MEDEWERKER BEWERKEN ========== -->
+    <div class="modal-overlay" id="modal-edit-medewerker">
+      <div class="modal">
+        <h3 class="modal-title">Medewerker bewerken</h3>
+
+        <div id="edit-alert" class="alert" role="alert">
+          <span id="edit-alert-message"></span>
+        </div>
+
+        <form id="edit-form" novalidate>
+          <input type="hidden" id="edit-profile-id">
+
+          <div class="form-group">
+            <label class="form-label" for="edit-naam">Naam</label>
+            <input class="form-input" type="text" id="edit-naam">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-functiegroep">Functiegroep</label>
+            <select class="form-input" id="edit-functiegroep">
+              <option value="ambulant_begeleider">Ambulant Begeleider</option>
+              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
+              <option value="woonbegeleider">Woonbegeleider</option>
+              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-startdatum">Startdatum</label>
+            <input class="form-input" type="date" id="edit-startdatum">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-inwerktraject-url">Persoonlijk inwerktraject URL</label>
+            <p class="section-subtitle" style="margin-bottom:4px;font-size:0.78rem">
+              Optioneel. Google Docs export URL specifiek voor deze medewerker.
+            </p>
+            <input class="form-input" type="url" id="edit-inwerktraject-url" placeholder="https://docs.google.com/...">
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="edit-cancel-btn">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="edit-submit-btn">Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/base-path.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/route-guard.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
