@@ -30,7 +30,7 @@
   document.addEventListener('wegwijzer-auth-ready', function (e) {
     profile = e.detail.profile;
     user = e.detail.user;
-    weekNummer = profile.inwerken_afgerond ? 99 : berekenWeekNummer(profile.startdatum);
+    weekNummer = (profile.inwerken_afgerond || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
     initWelkom();
     initChatInput();
     initChips();
@@ -650,7 +650,10 @@
       'ambulant_persoonlijk_begeleider': 'Ambulant Persoonlijk Begeleider',
       'woonbegeleider': 'Woonbegeleider',
       'persoonlijk_woonbegeleider': 'Persoonlijk Woonbegeleider',
-      'medewerker_avond_nachtdienst': 'Medewerker Avond-/Nachtdienst'
+      'medewerker_avond_nachtdienst': 'Medewerker Avond-/Nachtdienst',
+      'kantoorpersoneel': 'Kantoorpersoneel',
+      'stagiaire': 'Stagiaire',
+      'zzp_uitzendkracht': 'ZZP / Uitzendkracht'
     };
     return map[fg] || '';
   }
