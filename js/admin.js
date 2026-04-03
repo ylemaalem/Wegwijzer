@@ -1850,6 +1850,7 @@
     { sleutel: 'organisatienaam', elementId: 'setting-organisatienaam', fallback: '' },
     { sleutel: 'primaire_kleur', elementId: 'setting-kleur', fallback: '#E8720C' },
     { sleutel: 'website_url', elementId: 'setting-website', fallback: '' },
+    { sleutel: 'logo_url', elementId: 'setting-logo-url', fallback: '' },
     { sleutel: 'disclaimer', elementId: 'disclaimer-text', fallback: 'Deel geen persoonsgegevens of cliëntinformatie in deze chat.' }
   ];
 

@@ -522,6 +522,15 @@
       }
     }
 
+    // Organisatielogo in header (vervangt standaard Wegwijzer logo)
+    if (instellingen.logo_url) {
+      var headerLogo = document.querySelector('.header-logo');
+      if (headerLogo) {
+        headerLogo.src = instellingen.logo_url;
+        headerLogo.alt = instellingen.organisatienaam || 'Logo';
+      }
+    }
+
     // Primaire kleur
     if (instellingen.primaire_kleur && /^#[0-9A-Fa-f]{6}$/.test(instellingen.primaire_kleur)) {
       var kleur = instellingen.primaire_kleur;
