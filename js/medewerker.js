@@ -30,7 +30,7 @@
   document.addEventListener('wegwijzer-auth-ready', function (e) {
     profile = e.detail.profile;
     user = e.detail.user;
-    weekNummer = berekenWeekNummer(profile.startdatum);
+    weekNummer = profile.inwerken_afgerond ? 99 : berekenWeekNummer(profile.startdatum);
     initWelkom();
     initChatInput();
     initChips();
@@ -87,11 +87,11 @@
     var subtitle = document.getElementById('welcome-subtitle');
 
     if (weekNummer > 6) {
-      // Na inwerkperiode: verberg voortgang, toon kennisassistent modus
+      // Na inwerkperiode: kennisassistent modus
       if (meter) meter.style.display = 'none';
       if (labels) labels.style.display = 'none';
       if (weekBadge) weekBadge.style.display = 'none';
-      if (subtitle) subtitle.textContent = 'Ik ben jouw kennisassistent. Stel me vragen over protocollen, werkwijze en procedures.';
+      if (subtitle) subtitle.textContent = 'Welkom terug. Wat kan ik voor je opzoeken?';
     } else {
       // Tijdens inwerkperiode: toon voortgang
       if (weekBadge) weekBadge.textContent = 'Week ' + weekNummer + ' van 6';
@@ -218,11 +218,10 @@
     if (weekNummer > 6) {
       chipsBar.innerHTML = '';
       var kennisChips = [
-        { emoji: '\uD83D\uDCCB', text: 'Protocollen opzoeken', vraag: 'Welke protocollen zijn er?' },
-        { emoji: '\uD83D\uDCBC', text: 'Declaraties', vraag: 'Hoe werken declaraties?' },
-        { emoji: '\uD83D\uDCDD', text: 'Rapportage schrijven', vraag: 'Hoe schrijf ik een rapportage?' },
-        { emoji: '\u2753', text: 'Veelgestelde vragen', vraag: 'Wat zijn veelgestelde vragen?' },
-        { emoji: '\uD83D\uDD17', text: 'Documenten en links', vraag: 'Welke documenten en links zijn beschikbaar?' }
+        { emoji: '📋', text: 'Protocollen opzoeken', vraag: 'Welke protocollen zijn er?' },
+        { emoji: '💼', text: 'Declaraties', vraag: 'Hoe werken declaraties?' },
+        { emoji: '📝', text: 'Rapportage schrijven', vraag: 'Hoe schrijf ik een rapportage?' },
+        { emoji: '❓', text: 'Veelgestelde vragen', vraag: 'Wat zijn veelgestelde vragen?' }
       ];
       kennisChips.forEach(function(c) {
         var btn = document.createElement('button');
@@ -650,7 +649,8 @@
       'ambulant_begeleider': 'Ambulant Begeleider',
       'ambulant_persoonlijk_begeleider': 'Ambulant Persoonlijk Begeleider',
       'woonbegeleider': 'Woonbegeleider',
-      'persoonlijk_woonbegeleider': 'Persoonlijk Woonbegeleider'
+      'persoonlijk_woonbegeleider': 'Persoonlijk Woonbegeleider',
+      'avond_nacht_begeleider': 'Avond-/Nachtbegeleider'
     };
     return map[fg] || '';
   }

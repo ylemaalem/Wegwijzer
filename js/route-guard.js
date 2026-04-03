@@ -23,7 +23,7 @@
       // Haal profiel op
       var profileResult = await supabaseClient
         .from('profiles')
-        .select('role, naam, functiegroep, startdatum, tenant_id, teams, teamleider_naam, werkuren, regio, account_type, einddatum, inwerktraject_url')
+        .select('role, naam, functiegroep, startdatum, tenant_id, teams, teamleider_naam, werkuren, regio, account_type, einddatum, inwerktraject_url, inwerken_afgerond')
         .eq('user_id', session.user.id)
         .single();
 

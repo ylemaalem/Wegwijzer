@@ -189,7 +189,8 @@
       'ambulant_begeleider': 'Ambulant Begeleider',
       'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
       'woonbegeleider': 'Woonbegeleider',
-      'persoonlijk_woonbegeleider': 'Pers. Woonbegeleider'
+      'persoonlijk_woonbegeleider': 'Pers. Woonbegeleider',
+      'avond_nacht_begeleider': 'Avond-/Nachtbegeleider'
     };
     return map[fg] || fg || '-';
   }
@@ -719,7 +720,7 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio, account_type, einddatum, teams, teamleider_naam')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -778,6 +779,9 @@
       var docsBtn = p.role !== 'admin'
         ? '<button class="btn-icon" onclick="window.showPersoonlijkeDocs(\'' + p.id + '\', \'' + escapeHtml(p.naam || p.email) + '\')" title="Persoonlijke documenten">📄</button>'
         : '';
+      var inwerkBtn = (p.role === 'medewerker' && !p.inwerken_afgerond)
+        ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
+        : '';
 
       return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
@@ -787,7 +791,7 @@
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
         '<td>' + escapeHtml(p.regio || '-') + '</td>' +
         '<td>' + sd + '</td>' +
-        '<td>' + editBtn + docsBtn + deleteBtn + '</td>' +
+        '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
   }
@@ -806,6 +810,17 @@
       });
     select.value = current;
   }
+
+  window.sluitInwerktrajectAf = async function (profileId, naam) {
+    if (!confirm('Wil je het inwerktraject van ' + naam + ' afsluiten? De medewerker wordt direct in kennisassistent modus gezet.')) return;
+
+    await supabaseClient
+      .from('profiles')
+      .update({ inwerken_afgerond: true })
+      .eq('id', profileId);
+
+    loadMedewerkers();
+  };
 
   window.deleteMedewerker = async function (profileId, userId) {
     if (!confirm('Weet je zeker dat je deze medewerker wilt verwijderen? Dit verwijdert ook alle gesprekken.')) return;
