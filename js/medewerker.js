@@ -650,7 +650,7 @@
       'ambulant_persoonlijk_begeleider': 'Ambulant Persoonlijk Begeleider',
       'woonbegeleider': 'Woonbegeleider',
       'persoonlijk_woonbegeleider': 'Persoonlijk Woonbegeleider',
-      'avond_nacht_begeleider': 'Avond-/Nachtbegeleider'
+      'medewerker_avond_nachtdienst': 'Medewerker Avond-/Nachtdienst'
     };
     return map[fg] || '';
   }

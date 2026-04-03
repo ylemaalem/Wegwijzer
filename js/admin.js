@@ -190,7 +190,7 @@
       'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
       'woonbegeleider': 'Woonbegeleider',
       'persoonlijk_woonbegeleider': 'Pers. Woonbegeleider',
-      'avond_nacht_begeleider': 'Avond-/Nachtbegeleider'
+      'medewerker_avond_nachtdienst': 'Avond-/Nachtdienst'
     };
     return map[fg] || fg || '-';
   }
