@@ -31,6 +31,7 @@
       <button class="tab-btn" data-tab="medewerkers">Medewerkers</button>
       <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
       <button class="tab-btn" data-tab="statistieken">Statistieken</button>
+      <button class="tab-btn" data-tab="aanvragen">Aanvragen <span id="aanvragen-badge" class="melding-badge" style="display:none">0</span></button>
       <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
       <button class="tab-btn" data-tab="teamleiders">Teamleiders</button>
       <button class="tab-btn" data-tab="instellingen">Instellingen</button>
@@ -56,10 +57,6 @@
               <option value="organisatie-info">Organisatie-info</option>
               <option value="overig">Overig</option>
             </select>
-          </div>
-          <div class="form-group" style="flex:0 0 100px">
-            <label class="form-label" for="doc-versie">Versie</label>
-            <input class="form-input" type="text" id="doc-versie" value="1.0" placeholder="1.0">
           </div>
           <div class="form-group" style="flex:1;min-width:160px">
             <label class="form-label" for="doc-revisiedatum">Revisiedatum</label>
@@ -95,14 +92,13 @@
               <tr>
                 <th>Naam</th>
                 <th>Type</th>
-                <th>Versie</th>
                 <th>Revisie</th>
                 <th>Datum</th>
-                <th style="width:80px"></th>
+                <th style="width:100px"></th>
               </tr>
             </thead>
             <tbody id="documents-body">
-              <tr><td colspan="6" class="no-data">Documenten laden...</td></tr>
+              <tr><td colspan="5" class="no-data">Documenten laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -221,6 +217,32 @@
             </thead>
             <tbody id="stats-per-dag-body">
               <tr><td colspan="2" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: AANVRAGEN ========== -->
+      <section class="tab-content" id="tab-aanvragen">
+        <h2 class="section-title">Aanvragen</h2>
+        <p class="section-subtitle">Openstaande aanvragen van teamleiders voor nieuwe medewerkers of verwijderingen.</p>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="aanvragen-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Type</th>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Team</th>
+                <th>Aangevraagd door</th>
+                <th>Status</th>
+                <th style="width:120px">Actie</th>
+              </tr>
+            </thead>
+            <tbody id="aanvragen-body">
+              <tr><td colspan="8" class="no-data">Aanvragen laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -602,11 +624,6 @@
               <option value="organisatie-info">Organisatie-info</option>
               <option value="overig">Overig</option>
             </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="edit-doc-versie">Versienummer</label>
-            <input class="form-input" type="text" id="edit-doc-versie" placeholder="1.0">
           </div>
 
           <div class="form-group">

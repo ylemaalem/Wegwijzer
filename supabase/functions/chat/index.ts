@@ -384,12 +384,20 @@ Deno.serve(async (req: Request) => {
       persoonlijk_woonbegeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als persoonlijk woonbegeleider bij ${org}. Dit is de regierol binnen de woonlocatie. Je bent regiehouder net als de ambulant PB maar dan vanuit de woonlocatie, schrijft en verlengt zorgplannen en indicaties, werkt samen met een vast team, hebt overzicht over jouw cliënten én afstemming met het team en de intensiteit van cliëntcontact verschilt per situatie. Geef antwoorden die de regierol combineren met de teamcontext, helpen bij plannen en indicaties, rekening houden met de woonlocatie structuur en professioneel maar persoonlijk zijn.`,
     };
 
-    const basisPrompt = functiePrompts[profile.functiegroep || ""] ||
-      `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam} bij ${org}.`;
+    // Teamleider krijgt eigen prompt
+    let basisPrompt = "";
+    if (profile.role === "teamleider") {
+      basisPrompt = `Je bent Wegwijzer — de kennisassistent van ${naam}, teamleider bij ${org}. Stel me vragen over protocollen, werkwijze, procedures of andere zaken binnen de organisatie.`;
+    } else {
+      basisPrompt = functiePrompts[profile.functiegroep || ""] ||
+        `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam} bij ${org}.`;
+    }
 
-    // Weekfase context
+    // Weekfase context (niet voor teamleiders)
     let weekContext = "";
-    if (wk <= 2) {
+    if (profile.role === "teamleider") {
+      weekContext = `\n\n${naam} is teamleider. Antwoord direct en professioneel als kennisassistent.`;
+    } else if (wk <= 2) {
       weekContext = `\n\nWEEK ${wk} VAN HET INWERKTRAJECT:\n${naam} zit in de eerste weken. Wees extra geduldig en uitleggerig. Begin met een warme opening. Leg alles stap voor stap uit. Verwacht niet dat de medewerker alles al weet.`;
     } else if (wk <= 4) {
       weekContext = `\n\nWEEK ${wk} VAN HET INWERKTRAJECT:\n${naam} is halverwege het inwerktraject. Bouw meer zelfvertrouwen op. Geef meer verdieping. Verwijs naar eerdere kennis waar mogelijk.`;

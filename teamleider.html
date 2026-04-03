@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="nl" data-required-role="teamleider">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E8720C">
+  <title>Wegwijzer — Teamleider</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3">
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="admin-page">
+  <div class="page-container">
+
+    <!-- Header -->
+    <header class="app-header">
+      <span class="logo-emoji" aria-hidden="true">🗺️</span>
+      <h1>Wegwijzer — Teamleider</h1>
+      <div class="header-spacer"></div>
+      <a href="medewerker.html" class="header-btn" id="chat-link-btn">Kennisassistent</a>
+      <button class="header-btn" id="logout-btn">Uitloggen</button>
+    </header>
+
+    <!-- Tab navigatie -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="medewerkers">Mijn team</button>
+      <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
+      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
+      <button class="tab-btn" data-tab="aanvragen">Aanvragen</button>
+      <button class="tab-btn" data-tab="meldingen">Meldingen</button>
+    </nav>
+
+    <main class="page-content">
+
+      <!-- TAB: MIJN TEAM -->
+      <section class="tab-content active" id="tab-medewerkers">
+        <h2 class="section-title">Mijn team</h2>
+        <p class="section-subtitle">Medewerkers in jouw teams.</p>
+
+        <button class="btn btn-primary" id="tl-aanvraag-btn" style="max-width:300px;margin-bottom:20px">
+          + Medewerker aanvragen
+        </button>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Functiegroep</th>
+                <th>Startdatum</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody id="tl-medewerkers-body">
+              <tr><td colspan="5" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: GESPREKKEN -->
+      <section class="tab-content" id="tab-gesprekken">
+        <h2 class="section-title">Gesprekken</h2>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Medewerker</th>
+                <th>Vraag</th>
+                <th>Feedback</th>
+              </tr>
+            </thead>
+            <tbody id="tl-gesprekken-body">
+              <tr><td colspan="4" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: STATISTIEKEN -->
+      <section class="tab-content" id="tab-statistieken">
+        <h2 class="section-title">Team statistieken</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="tl-stat-totaal">0</div>
+            <div class="stat-label">Totaal vragen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="tl-stat-week">0</div>
+            <div class="stat-label">Deze week</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="tl-stat-positief">0%</div>
+            <div class="stat-label">Positief</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: AANVRAGEN -->
+      <section class="tab-content" id="tab-aanvragen">
+        <h2 class="section-title">Mijn aanvragen</h2>
+        <p class="section-subtitle">Status van jouw ingediende aanvragen.</p>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Type</th>
+                <th>Naam</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="tl-aanvragen-body">
+              <tr><td colspan="4" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: MELDINGEN -->
+      <section class="tab-content" id="tab-meldingen">
+        <h2 class="section-title">Meldingen</h2>
+        <div id="tl-meldingen-list">
+          <p class="no-data">Geen meldingen.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- MODAL: MEDEWERKER AANVRAGEN -->
+    <div class="modal-overlay" id="modal-tl-aanvraag">
+      <div class="modal">
+        <h3 class="modal-title">Medewerker aanvragen</h3>
+
+        <div id="tl-aanvraag-alert" class="alert" role="alert">
+          <span id="tl-aanvraag-alert-message"></span>
+        </div>
+
+        <form id="tl-aanvraag-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-naam">Naam</label>
+            <input class="form-input" type="text" id="tl-aanvraag-naam" placeholder="Volledige naam" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-email">Werkmail</label>
+            <input class="form-input" type="email" id="tl-aanvraag-email" placeholder="naam@werkmail.nl" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-functiegroep">Functiegroep</label>
+            <select class="form-input" id="tl-aanvraag-functiegroep" required>
+              <option value="">Kies een functiegroep</option>
+              <option value="ambulant_begeleider">Ambulant Begeleider</option>
+              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
+              <option value="woonbegeleider">Woonbegeleider</option>
+              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-team">Team</label>
+            <input class="form-input" type="text" id="tl-aanvraag-team" placeholder="Team naam">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-startdatum">Startdatum</label>
+            <input class="form-input" type="date" id="tl-aanvraag-startdatum" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-werkuren">Werkuren per week</label>
+            <input class="form-input" type="text" id="tl-aanvraag-werkuren" placeholder="bijv. 32 uur">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tl-aanvraag-regio">Regio</label>
+            <input class="form-input" type="text" id="tl-aanvraag-regio" placeholder="bijv. Utrecht">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="tl-aanvraag-cancel">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="tl-aanvraag-submit">Aanvraag indienen</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <footer class="powered-by">Mogelijk gemaakt door Wegwijzer</footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/base-path.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/route-guard.js"></script>
+  <script src="js/teamleider.js"></script>
+</body>
+</html>

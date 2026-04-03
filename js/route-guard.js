@@ -23,7 +23,7 @@
       // Haal profiel op
       var profileResult = await supabaseClient
         .from('profiles')
-        .select('role, naam, functiegroep, startdatum, tenant_id')
+        .select('role, naam, functiegroep, startdatum, tenant_id, teams, teamleider_naam, werkuren, regio, account_type, einddatum, inwerktraject_url')
         .eq('user_id', session.user.id)
         .single();
 
@@ -36,14 +36,22 @@
       var profile = profileResult.data;
 
       // Check rol als die vereist is
-      if (requiredRole && profile.role !== requiredRole) {
-        // Verkeerde rol, stuur door naar juiste pagina
-        if (profile.role === 'admin') {
-          window.location.href = appUrl('admin.html');
-        } else {
-          window.location.href = appUrl('medewerker.html');
+      if (requiredRole) {
+        var allowed = false;
+        if (requiredRole === 'admin' && profile.role === 'admin') allowed = true;
+        if (requiredRole === 'medewerker' && (profile.role === 'medewerker' || profile.role === 'teamleider')) allowed = true;
+        if (requiredRole === 'teamleider' && profile.role === 'teamleider') allowed = true;
+
+        if (!allowed) {
+          if (profile.role === 'admin') {
+            window.location.href = appUrl('admin.html');
+          } else if (profile.role === 'teamleider') {
+            window.location.href = appUrl('teamleider.html');
+          } else {
+            window.location.href = appUrl('medewerker.html');
+          }
+          return;
         }
-        return;
       }
 
       // Sla profiel op voor gebruik door andere scripts

@@ -106,6 +106,8 @@
         // Doorsturen op basis van rol
         if (profile.role === 'admin') {
           window.location.href = appUrl('admin.html');
+        } else if (profile.role === 'teamleider') {
+          window.location.href = appUrl('teamleider.html');
         } else {
           window.location.href = appUrl('medewerker.html');
         }
@@ -166,6 +168,8 @@
         if (profile) {
           if (profile.role === 'admin') {
             window.location.href = appUrl('admin.html');
+          } else if (profile.role === 'teamleider') {
+            window.location.href = appUrl('teamleider.html');
           } else {
             window.location.href = appUrl('medewerker.html');
           }

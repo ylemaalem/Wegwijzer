@@ -37,6 +37,7 @@
     loadTeamleiders();
     loadVerbeterpunten();
     loadMeldingen();
+    loadAanvragen();
     initUpload();
     initInviteModal();
     initGesprekDetail();
@@ -323,10 +324,8 @@
 
     // Lees extra metadata velden
     var docTypeEl = document.getElementById('doc-type');
-    var docVersieEl = document.getElementById('doc-versie');
     var docRevisieEl = document.getElementById('doc-revisiedatum');
     var documenttype = docTypeEl ? docTypeEl.value : null;
-    var versienummer = docVersieEl ? docVersieEl.value.trim() : null;
     var revisiedatum = docRevisieEl ? docRevisieEl.value : null;
 
     // Maak per-bestand voortgangsitems
@@ -421,7 +420,7 @@
           user_id: null
         };
         if (documenttype) insertData.documenttype = documenttype;
-        if (versienummer) insertData.versienummer = versienummer;
+
         if (revisiedatum) insertData.revisiedatum = revisiedatum;
 
         var insertResult = await supabaseClient
@@ -464,7 +463,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, versienummer, revisiedatum')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -540,7 +539,7 @@
         : '<span style="color:var(--error);font-size:0.75rem" title="Geen tekst">✗</span>';
 
       var typeLabel = formatDocumentType(doc.documenttype);
-      var versieLabel = doc.versienummer ? escapeHtml(doc.versienummer) : '-';
+      // versienummer verwijderd
 
       // Revisie kolom met kleurcodering
       var revisieLabel = '-';
@@ -555,10 +554,10 @@
       return '<tr>' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
         '<td>' + typeLabel + '</td>' +
-        '<td>' + versieLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
         '<td>' +
+          '<button class="btn-icon" onclick="window.previewDocument(\'' + escapeHtml(doc.bestandspad) + '\')" title="Bekijken">👁️</button>' +
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
@@ -612,6 +611,19 @@
     }, 2000);
   }
 
+  window.previewDocument = async function (bestandspad) {
+    var result = await supabaseClient.storage
+      .from('documents')
+      .createSignedUrl(bestandspad, 3600);
+
+    if (result.error || !result.data) {
+      alert('Kon document niet openen.');
+      return;
+    }
+
+    window.open(result.data.signedUrl, '_blank');
+  };
+
   window.deleteDocument = async function (id, bestandspad) {
     if (!confirm('Weet je zeker dat je dit document wilt verwijderen?')) return;
 
@@ -629,7 +641,6 @@
     document.getElementById('edit-doc-id').value = doc.id;
     document.getElementById('edit-doc-naam').value = doc.naam || '';
     document.getElementById('edit-doc-type').value = doc.documenttype || 'overig';
-    document.getElementById('edit-doc-versie').value = doc.versienummer || '1.0';
     document.getElementById('edit-doc-revisie').value = doc.revisiedatum || '';
 
     var alertBox = document.getElementById('edit-doc-alert');
@@ -662,7 +673,7 @@
       var docId = document.getElementById('edit-doc-id').value;
       var naam = document.getElementById('edit-doc-naam').value.trim();
       var documenttype = document.getElementById('edit-doc-type').value;
-      var versienummer = document.getElementById('edit-doc-versie').value.trim();
+      // versienummer verwijderd
       var revisiedatum = document.getElementById('edit-doc-revisie').value || null;
 
       if (!naam) {
@@ -679,7 +690,6 @@
         .update({
           naam: naam,
           documenttype: documenttype,
-          versienummer: versienummer || '1.0',
           revisiedatum: revisiedatum
         })
         .eq('id', docId);
@@ -1841,6 +1851,155 @@
       .eq('id', id);
 
     loadMeldingen();
+  };
+
+  // =============================================
+  // AANVRAGEN
+  // =============================================
+  async function loadAanvragen() {
+    var tbody = document.getElementById('aanvragen-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('aanvragen')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (result.error || !result.data) {
+      tbody.innerHTML = '<tr><td colspan="8" class="no-data">Kon aanvragen niet laden.</td></tr>';
+      return;
+    }
+
+    // Badge updaten
+    var openstaand = result.data.filter(function (a) { return a.status === 'in_afwachting'; });
+    var badge = document.getElementById('aanvragen-badge');
+    if (badge) {
+      if (openstaand.length > 0) {
+        badge.style.display = 'inline-block';
+        badge.textContent = openstaand.length;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    if (result.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="no-data">Geen aanvragen.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = result.data.map(function (a) {
+      var datum = new Date(a.created_at).toLocaleDateString('nl-NL', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+      });
+      var typeBadge = a.type === 'nieuw'
+        ? '<span class="badge badge-medewerker">Nieuw</span>'
+        : '<span class="badge badge-niet-goed">Verwijder</span>';
+      var statusBadge = '';
+      if (a.status === 'in_afwachting') statusBadge = '<span class="badge badge-open">In afwachting ⏳</span>';
+      else if (a.status === 'goedgekeurd') statusBadge = '<span class="badge badge-goed">Goedgekeurd ✅</span>';
+      else if (a.status === 'afgekeurd') statusBadge = '<span class="badge badge-niet-goed">Afgekeurd ❌</span>';
+
+      var acties = '';
+      if (a.status === 'in_afwachting') {
+        acties = '<button class="btn-icon" onclick="window.keurAanvraagGoed(\'' + a.id + '\')" title="Goedkeuren" style="color:var(--success)">✅</button>' +
+          '<button class="btn-icon" onclick="window.keurAanvraagAf(\'' + a.id + '\')" title="Afkeuren" style="color:var(--error)">❌</button>';
+      } else if (a.status === 'afgekeurd' && a.afkeurreden) {
+        acties = '<span style="font-size:0.75rem;color:var(--text-muted)">' + escapeHtml(a.afkeurreden) + '</span>';
+      }
+
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + datum + '</td>' +
+        '<td>' + typeBadge + '</td>' +
+        '<td>' + escapeHtml(a.medewerker_naam || '-') + '</td>' +
+        '<td>' + escapeHtml(a.medewerker_email || '-') + '</td>' +
+        '<td>' + escapeHtml(a.medewerker_team || '-') + '</td>' +
+        '<td>' + escapeHtml(a.aanvrager_naam || '-') + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + acties + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  window.keurAanvraagGoed = async function (id) {
+    if (!confirm('Weet je zeker dat je deze aanvraag wilt goedkeuren? Er wordt automatisch een uitnodigingsmail verstuurd.')) return;
+
+    // Haal aanvraag op
+    var result = await supabaseClient
+      .from('aanvragen')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (result.error || !result.data) {
+      alert('Aanvraag niet gevonden.');
+      return;
+    }
+
+    var a = result.data;
+
+    if (a.type === 'nieuw') {
+      // Maak medewerker aan via signUp
+      var signUpResult = await supabaseClient.auth.signUp({
+        email: a.medewerker_email,
+        password: generateTempPassword(),
+        options: {
+          data: {
+            role: 'medewerker',
+            naam: a.medewerker_naam,
+            functiegroep: a.medewerker_functiegroep,
+            tenant_id: tenantId
+          },
+          emailRedirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
+        }
+      });
+
+      if (signUpResult.error) {
+        alert('Aanmaken mislukt: ' + signUpResult.error.message);
+        return;
+      }
+
+      // Wacht op trigger
+      await new Promise(function (r) { setTimeout(r, 1500); });
+
+      if (signUpResult.data && signUpResult.data.user) {
+        var updateData = {};
+        if (a.medewerker_startdatum) updateData.startdatum = a.medewerker_startdatum;
+        if (a.medewerker_werkuren) updateData.werkuren = a.medewerker_werkuren;
+        if (a.medewerker_regio) updateData.regio = a.medewerker_regio;
+        if (a.medewerker_team) updateData.teams = [a.medewerker_team];
+        await supabaseClient
+          .from('profiles')
+          .update(updateData)
+          .eq('user_id', signUpResult.data.user.id);
+      }
+    } else if (a.type === 'verwijder' && a.medewerker_profile_id) {
+      await supabaseClient.from('profiles').delete().eq('id', a.medewerker_profile_id);
+    }
+
+    // Update status
+    await supabaseClient
+      .from('aanvragen')
+      .update({ status: 'goedgekeurd', behandeld_op: new Date().toISOString() })
+      .eq('id', id);
+
+    loadAanvragen();
+    loadMedewerkers();
+  };
+
+  window.keurAanvraagAf = async function (id) {
+    var reden = prompt('Reden voor afkeuring (optioneel):');
+
+    await supabaseClient
+      .from('aanvragen')
+      .update({
+        status: 'afgekeurd',
+        afkeurreden: reden || null,
+        behandeld_op: new Date().toISOString()
+      })
+      .eq('id', id);
+
+    loadAanvragen();
   };
 
   // =============================================
