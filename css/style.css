@@ -42,6 +42,25 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* Scrollbalk altijd rechts aan browserrand */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* ---- Layout ---- */
