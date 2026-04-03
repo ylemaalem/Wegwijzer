@@ -98,7 +98,7 @@
                 <th>Versie</th>
                 <th>Revisie</th>
                 <th>Datum</th>
-                <th style="width:60px"></th>
+                <th style="width:80px"></th>
               </tr>
             </thead>
             <tbody id="documents-body">
@@ -562,6 +562,53 @@
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="edit-cancel-btn">Annuleren</button>
             <button type="submit" class="btn btn-primary" id="edit-submit-btn">Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: DOCUMENT BEWERKEN ========== -->
+    <div class="modal-overlay" id="modal-edit-document">
+      <div class="modal">
+        <h3 class="modal-title">Document bewerken</h3>
+
+        <div id="edit-doc-alert" class="alert" role="alert">
+          <span id="edit-doc-alert-message"></span>
+        </div>
+
+        <form id="edit-doc-form" novalidate>
+          <input type="hidden" id="edit-doc-id">
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-naam">Documentnaam</label>
+            <input class="form-input" type="text" id="edit-doc-naam" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-type">Documenttype</label>
+            <select class="form-input" id="edit-doc-type">
+              <option value="protocol">Protocol</option>
+              <option value="werkwijze">Werkwijze</option>
+              <option value="arbeidsvoorwaarden">Arbeidsvoorwaarden</option>
+              <option value="formulier">Formulier</option>
+              <option value="organisatie-info">Organisatie-info</option>
+              <option value="overig">Overig</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-versie">Versienummer</label>
+            <input class="form-input" type="text" id="edit-doc-versie" placeholder="1.0">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-revisie">Revisiedatum</label>
+            <input class="form-input" type="date" id="edit-doc-revisie">
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="edit-doc-cancel-btn">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="edit-doc-submit-btn">Opslaan</button>
           </div>
         </form>
       </div>

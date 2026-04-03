@@ -10,6 +10,7 @@
   var allConversations = [];
   var allProfiles = [];
   var allTeamleiders = [];
+  var allDocuments = [];
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
@@ -39,6 +40,7 @@
     initUpload();
     initInviteModal();
     initGesprekDetail();
+    initEditDocModal();
     initTeamleiderModal();
     initVerbeterModal();
   });
@@ -481,6 +483,8 @@
       return;
     }
 
+    allDocuments = result.data;
+
     // Revisie herinneringen
     var herinneringenContainer = document.getElementById('revisie-herinneringen');
     if (herinneringenContainer) {
@@ -554,7 +558,10 @@
         '<td>' + versieLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
-        '<td><button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button></td>' +
+        '<td>' +
+          '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
+          '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
+        '</td>' +
         '</tr>';
     }).join('');
   }
@@ -613,6 +620,86 @@
 
     loadDocuments();
   };
+
+  // ---- Document bewerken ----
+  window.editDocument = function (docId) {
+    var doc = allDocuments.find(function (d) { return d.id === docId; });
+    if (!doc) return;
+
+    document.getElementById('edit-doc-id').value = doc.id;
+    document.getElementById('edit-doc-naam').value = doc.naam || '';
+    document.getElementById('edit-doc-type').value = doc.documenttype || 'overig';
+    document.getElementById('edit-doc-versie').value = doc.versienummer || '1.0';
+    document.getElementById('edit-doc-revisie').value = doc.revisiedatum || '';
+
+    var alertBox = document.getElementById('edit-doc-alert');
+    if (alertBox) alertBox.className = 'alert';
+
+    document.getElementById('modal-edit-document').classList.add('show');
+  };
+
+  function initEditDocModal() {
+    var modal = document.getElementById('modal-edit-document');
+    if (!modal) return;
+    var form = document.getElementById('edit-doc-form');
+    var cancelBtn = document.getElementById('edit-doc-cancel-btn');
+    var submitBtn = document.getElementById('edit-doc-submit-btn');
+    var alertBox = document.getElementById('edit-doc-alert');
+    var alertMsg = document.getElementById('edit-doc-alert-message');
+
+    cancelBtn.addEventListener('click', function () {
+      modal.classList.remove('show');
+    });
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      alertBox.className = 'alert';
+
+      var docId = document.getElementById('edit-doc-id').value;
+      var naam = document.getElementById('edit-doc-naam').value.trim();
+      var documenttype = document.getElementById('edit-doc-type').value;
+      var versienummer = document.getElementById('edit-doc-versie').value.trim();
+      var revisiedatum = document.getElementById('edit-doc-revisie').value || null;
+
+      if (!naam) {
+        alertBox.className = 'alert alert-error show';
+        alertMsg.textContent = 'Documentnaam is verplicht.';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Opslaan...';
+
+      var result = await supabaseClient
+        .from('documents')
+        .update({
+          naam: naam,
+          documenttype: documenttype,
+          versienummer: versienummer || '1.0',
+          revisiedatum: revisiedatum
+        })
+        .eq('id', docId);
+
+      if (result.error) {
+        alertBox.className = 'alert alert-error show';
+        alertMsg.textContent = 'Opslaan mislukt: ' + result.error.message;
+      } else {
+        alertBox.className = 'alert alert-success show';
+        alertMsg.textContent = 'Document bijgewerkt.';
+        loadDocuments();
+        setTimeout(function () {
+          modal.classList.remove('show');
+        }, 1000);
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Opslaan';
+    });
+  }
 
   // =============================================
   // MEDEWERKERS
