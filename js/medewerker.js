@@ -45,11 +45,32 @@
     if (!startdatum) return 1;
     var start = new Date(startdatum);
     var nu = new Date();
-    var verschilMs = nu.getTime() - start.getTime();
-    var verschilDagen = Math.floor(verschilMs / (1000 * 60 * 60 * 24));
-    if (verschilDagen < 0) return 1;
-    var week = Math.floor(verschilDagen / 7) + 1;
-    return Math.min(week, 6);
+
+    // Nog niet gestart
+    if (nu < start) return 1;
+
+    // Vind de maandag van de startweek
+    // getDay(): 0=zo, 1=ma, ..., 6=za
+    var startDag = start.getDay();
+    // Verschuif naar maandag: zo(0)->-6, ma(1)->0, di(2)->-1, ..., za(6)->-5
+    var offsetNaarMaandag = startDag === 0 ? -6 : 1 - startDag;
+    var maandagWeek1 = new Date(start);
+    maandagWeek1.setDate(start.getDate() + offsetNaarMaandag);
+    maandagWeek1.setHours(0, 0, 0, 0);
+
+    // Vind de maandag van de huidige week
+    var nuDag = nu.getDay();
+    var offsetNu = nuDag === 0 ? -6 : 1 - nuDag;
+    var maandagNu = new Date(nu);
+    maandagNu.setDate(nu.getDate() + offsetNu);
+    maandagNu.setHours(0, 0, 0, 0);
+
+    // Weeknummer = verschil in weken tussen de twee maandagen + 1
+    var verschilMs = maandagNu.getTime() - maandagWeek1.getTime();
+    var verschilWeken = Math.round(verschilMs / (7 * 24 * 60 * 60 * 1000));
+    var week = verschilWeken + 1;
+
+    return Math.max(1, Math.min(week, 6));
   }
 
   // =============================================
