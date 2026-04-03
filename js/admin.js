@@ -10,6 +10,12 @@
   var allConversations = [];
   var allProfiles = [];
 
+  // PDF.js worker instellen
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', function (e) {
     tenantId = e.detail.profile.tenant_id;
@@ -33,10 +39,8 @@
     buttons.forEach(function (btn) {
       btn.addEventListener('click', function () {
         var tab = btn.dataset.tab;
-        // Update buttons
         buttons.forEach(function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
-        // Update content
         document.querySelectorAll('.tab-content').forEach(function (c) {
           c.classList.remove('active');
         });
@@ -53,6 +57,108 @@
       await supabaseClient.auth.signOut();
       window.location.href = appUrl('index.html');
     });
+  }
+
+  // =============================================
+  // TEKST EXTRACTIE UIT BESTANDEN
+  // =============================================
+  async function extractTextFromFile(file) {
+    var ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'txt') {
+      return await file.text();
+    }
+
+    if (ext === 'pdf') {
+      return await extractPdfText(file);
+    }
+
+    if (ext === 'docx') {
+      return await extractDocxText(file);
+    }
+
+    if (ext === 'doc') {
+      // DOC is binair — probeer als tekst te lezen (beperkte ondersteuning)
+      var text = await file.text();
+      // Filter binaire rommel, houd leesbare tekst over
+      return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ').replace(/\s{3,}/g, ' ').trim();
+    }
+
+    return '';
+  }
+
+  async function extractPdfText(file) {
+    try {
+      var arrayBuffer = await file.arrayBuffer();
+      var pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      var texts = [];
+      for (var i = 1; i <= pdf.numPages; i++) {
+        var page = await pdf.getPage(i);
+        var content = await page.getTextContent();
+        var pageText = content.items.map(function (item) { return item.str; }).join(' ');
+        texts.push(pageText);
+      }
+      return texts.join('\n\n');
+    } catch (err) {
+      console.error('PDF extractie mislukt:', err);
+      return '';
+    }
+  }
+
+  async function extractDocxText(file) {
+    try {
+      var arrayBuffer = await file.arrayBuffer();
+      var result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+      return result.value || '';
+    } catch (err) {
+      console.error('DOCX extractie mislukt:', err);
+      return '';
+    }
+  }
+
+  // Tekst extractie van een Blob (voor backfill bestaande docs)
+  async function extractTextFromBlob(blob, filename) {
+    var ext = filename.split('.').pop().toLowerCase();
+
+    if (ext === 'txt') {
+      return await blob.text();
+    }
+
+    if (ext === 'pdf') {
+      try {
+        var arrayBuffer = await blob.arrayBuffer();
+        var pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        var texts = [];
+        for (var i = 1; i <= pdf.numPages; i++) {
+          var page = await pdf.getPage(i);
+          var content = await page.getTextContent();
+          var pageText = content.items.map(function (item) { return item.str; }).join(' ');
+          texts.push(pageText);
+        }
+        return texts.join('\n\n');
+      } catch (err) {
+        console.error('PDF extractie mislukt voor', filename, err);
+        return '';
+      }
+    }
+
+    if (ext === 'docx') {
+      try {
+        var arrayBuffer2 = await blob.arrayBuffer();
+        var result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer2 });
+        return result.value || '';
+      } catch (err) {
+        console.error('DOCX extractie mislukt voor', filename, err);
+        return '';
+      }
+    }
+
+    if (ext === 'doc') {
+      var text = await blob.text();
+      return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ').replace(/\s{3,}/g, ' ').trim();
+    }
+
+    return '';
   }
 
   // =============================================
@@ -91,34 +197,74 @@
 
   async function handleFiles(files) {
     var progress = document.getElementById('upload-progress');
-    var fill = document.getElementById('progress-fill');
+    var itemsContainer = document.getElementById('upload-items');
     progress.classList.add('show');
+    itemsContainer.innerHTML = '';
 
-    var total = files.length;
-    var done = 0;
+    // Maak per-bestand voortgangsitems
+    var fileItems = [];
+    for (var i = 0; i < files.length; i++) {
+      var item = document.createElement('div');
+      item.className = 'upload-item';
+      item.innerHTML =
+        '<div class="upload-item-header">' +
+          '<span class="upload-item-name">' + escapeHtml(files[i].name) + '</span>' +
+          '<span class="upload-item-status" id="upload-status-' + i + '">Wachten...</span>' +
+        '</div>' +
+        '<div class="progress-bar"><div class="progress-fill" id="upload-fill-' + i + '"></div></div>';
+      itemsContainer.appendChild(item);
+      fileItems.push(item);
+    }
+
+    // Haal profiel id op
+    var profileResult = await supabaseClient
+      .from('profiles')
+      .select('id')
+      .eq('user_id', window.wegwijzerUser.id)
+      .single();
+    var profileId = profileResult.data ? profileResult.data.id : null;
 
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       var ext = file.name.split('.').pop().toLowerCase();
+      var statusEl = document.getElementById('upload-status-' + i);
+      var fillEl = document.getElementById('upload-fill-' + i);
 
-      if (!['pdf', 'doc', 'docx'].includes(ext)) {
-        alert('Ongeldig bestandstype: ' + file.name + '\nAlleen PDF en Word bestanden zijn toegestaan.');
-        done++;
+      if (!['pdf', 'doc', 'docx', 'txt'].includes(ext)) {
+        statusEl.textContent = 'Ongeldig type';
+        statusEl.style.color = 'var(--error)';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--error)';
         continue;
       }
 
-      // Max 20MB
       if (file.size > 20 * 1024 * 1024) {
-        alert('Bestand te groot: ' + file.name + '\nMaximaal 20MB per bestand.');
-        done++;
+        statusEl.textContent = 'Te groot (max 20MB)';
+        statusEl.style.color = 'var(--error)';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--error)';
         continue;
       }
+
+      // Stap 1: Tekst extraheren
+      statusEl.textContent = 'Tekst extraheren...';
+      fillEl.style.width = '20%';
+
+      var extractedText = '';
+      try {
+        extractedText = await extractTextFromFile(file);
+      } catch (err) {
+        console.error('Extractie fout:', err);
+      }
+
+      // Stap 2: Uploaden naar storage
+      statusEl.textContent = 'Uploaden...';
+      fillEl.style.width = '50%';
 
       var fileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       var filePath = tenantId + '/' + fileName;
 
       try {
-        // Upload naar Supabase Storage
         var uploadResult = await supabaseClient.storage
           .from('documents')
           .upload(filePath, file, {
@@ -127,20 +273,16 @@
           });
 
         if (uploadResult.error) {
-          alert('Upload mislukt voor: ' + file.name + '\n' + uploadResult.error.message);
-          done++;
-          fill.style.width = Math.round((done / total) * 100) + '%';
+          statusEl.textContent = 'Upload mislukt';
+          statusEl.style.color = 'var(--error)';
+          fillEl.style.width = '100%';
+          fillEl.style.background = 'var(--error)';
           continue;
         }
 
-        // Sla metadata op in database
-        var profileId = window.wegwijzerProfile ? null : null;
-        // Haal eigen profile id op
-        var profileResult = await supabaseClient
-          .from('profiles')
-          .select('id')
-          .eq('user_id', window.wegwijzerUser.id)
-          .single();
+        // Stap 3: Metadata + content opslaan
+        statusEl.textContent = 'Opslaan...';
+        fillEl.style.width = '80%';
 
         var insertResult = await supabaseClient
           .from('documents')
@@ -148,25 +290,37 @@
             tenant_id: tenantId,
             naam: file.name,
             bestandspad: filePath,
-            geupload_door: profileResult.data ? profileResult.data.id : null
+            geupload_door: profileId,
+            content: extractedText || null
           });
 
         if (insertResult.error) {
-          alert('Kon metadata niet opslaan voor: ' + file.name);
+          statusEl.textContent = 'Metadata mislukt';
+          statusEl.style.color = 'var(--error)';
+          fillEl.style.width = '100%';
+          fillEl.style.background = 'var(--error)';
+          continue;
         }
-      } catch (err) {
-        alert('Fout bij uploaden van: ' + file.name);
-      }
 
-      done++;
-      fill.style.width = Math.round((done / total) * 100) + '%';
+        // Klaar
+        statusEl.textContent = 'Gereed ✓';
+        statusEl.style.color = 'var(--success)';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--success)';
+
+      } catch (err) {
+        statusEl.textContent = 'Fout';
+        statusEl.style.color = 'var(--error)';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--error)';
+      }
     }
 
-    // Reset na 1 seconde
+    // Reset na 3 seconden
     setTimeout(function () {
       progress.classList.remove('show');
-      fill.style.width = '0%';
-    }, 1000);
+      itemsContainer.innerHTML = '';
+    }, 3000);
 
     loadDocuments();
   }
@@ -176,7 +330,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad')
+      .select('id, naam, created_at, bestandspad, content')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -187,28 +341,90 @@
 
     if (result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" class="no-data">Nog geen documenten geüpload.</td></tr>';
+      document.getElementById('reprocess-banner').style.display = 'none';
       return;
+    }
+
+    // Check of er documenten zonder content zijn
+    var zonderContent = result.data.filter(function (doc) { return !doc.content; });
+    var banner = document.getElementById('reprocess-banner');
+    if (zonderContent.length > 0) {
+      banner.style.display = 'block';
+      document.getElementById('reprocess-message').textContent =
+        zonderContent.length + ' document(en) zonder geëxtraheerde tekst. Klik hier om ze te verwerken.';
+      banner.onclick = function () { reprocessDocuments(zonderContent); };
+    } else {
+      banner.style.display = 'none';
     }
 
     tbody.innerHTML = result.data.map(function (doc) {
       var datum = new Date(doc.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       });
+      var contentStatus = doc.content
+        ? '<span style="color:var(--success);font-size:0.75rem" title="Tekst geëxtraheerd">✓</span>'
+        : '<span style="color:var(--error);font-size:0.75rem" title="Geen tekst">✗</span>';
       return '<tr>' +
-        '<td>' + escapeHtml(doc.naam) + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
         '<td>' + datum + '</td>' +
         '<td><button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button></td>' +
         '</tr>';
     }).join('');
   }
 
+  // Verwerk bestaande documenten zonder content
+  async function reprocessDocuments(documents) {
+    var banner = document.getElementById('reprocess-banner');
+    var messageEl = document.getElementById('reprocess-message');
+    var total = documents.length;
+    var done = 0;
+
+    messageEl.textContent = 'Verwerken: 0/' + total + '...';
+    banner.onclick = null;
+
+    for (var i = 0; i < documents.length; i++) {
+      var doc = documents[i];
+      messageEl.textContent = 'Verwerken: ' + (done + 1) + '/' + total + ' — ' + doc.naam;
+
+      try {
+        // Download bestand uit storage
+        var downloadResult = await supabaseClient.storage
+          .from('documents')
+          .download(doc.bestandspad);
+
+        if (downloadResult.error || !downloadResult.data) {
+          done++;
+          continue;
+        }
+
+        // Extraheer tekst
+        var text = await extractTextFromBlob(downloadResult.data, doc.naam);
+
+        if (text && text.trim().length > 0) {
+          // Update content kolom
+          await supabaseClient
+            .from('documents')
+            .update({ content: text })
+            .eq('id', doc.id);
+        }
+      } catch (err) {
+        console.error('Verwerking mislukt voor:', doc.naam, err);
+      }
+
+      done++;
+    }
+
+    messageEl.textContent = 'Klaar! ' + done + ' document(en) verwerkt.';
+    setTimeout(function () {
+      banner.style.display = 'none';
+      loadDocuments();
+    }, 2000);
+  }
+
   window.deleteDocument = async function (id, bestandspad) {
     if (!confirm('Weet je zeker dat je dit document wilt verwijderen?')) return;
 
-    // Verwijder uit storage
     await supabaseClient.storage.from('documents').remove([bestandspad]);
-
-    // Verwijder uit database
     await supabaseClient.from('documents').delete().eq('id', id);
 
     loadDocuments();
@@ -222,12 +438,12 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
@@ -235,7 +451,7 @@
     updateMedewerkerFilter();
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Nog geen medewerkers.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nog geen medewerkers.</td></tr>';
       return;
     }
 
@@ -258,6 +474,8 @@
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
         '<td class="functiegroep-label">' + fg + '</td>' +
+        '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
+        '<td>' + escapeHtml(p.regio || '-') + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + editBtn + deleteBtn + '</td>' +
         '</tr>';
@@ -267,7 +485,6 @@
   function updateMedewerkerFilter() {
     var select = document.getElementById('filter-medewerker');
     var current = select.value;
-    // Bewaar eerste optie
     select.innerHTML = '<option value="">Alle medewerkers</option>';
     allProfiles
       .filter(function (p) { return p.role === 'medewerker'; })
@@ -283,11 +500,7 @@
   window.deleteMedewerker = async function (profileId, userId) {
     if (!confirm('Weet je zeker dat je deze medewerker wilt verwijderen? Dit verwijdert ook alle gesprekken.')) return;
 
-    // Verwijder profiel (cascade verwijdert conversations)
     await supabaseClient.from('profiles').delete().eq('id', profileId);
-
-    // Verwijder auth user via admin API is niet mogelijk vanuit frontend
-    // Profiel is weg, user kan niet meer inloggen (geen profiel = geen toegang)
 
     loadMedewerkers();
     loadGesprekken();
@@ -327,10 +540,12 @@
       var functiegroep = document.getElementById('invite-functiegroep').value;
       var startdatum = document.getElementById('invite-startdatum').value;
       var inwerktrajectUrl = document.getElementById('invite-inwerktraject-url').value.trim();
+      var werkuren = document.getElementById('invite-werkuren').value.trim();
+      var regio = document.getElementById('invite-regio').value.trim();
 
       if (!naam || !email || !functiegroep || !startdatum) {
         alertBox.className = 'alert alert-error show';
-        alertMsg.textContent = 'Vul alle velden in.';
+        alertMsg.textContent = 'Vul alle verplichte velden in.';
         return;
       }
 
@@ -338,7 +553,6 @@
       submitBtn.textContent = 'Even geduld...';
 
       try {
-        // Maak user aan via Supabase Auth invite
         var result = await supabaseClient.auth.admin.inviteUserByEmail(email, {
           data: {
             role: 'medewerker',
@@ -350,8 +564,6 @@
         });
 
         if (result.error) {
-          // Als admin.inviteUserByEmail niet werkt (anon key),
-          // probeer via signUp met auto-confirm uit
           var signUpResult = await supabaseClient.auth.signUp({
             email: email,
             password: generateTempPassword(),
@@ -374,25 +586,26 @@
             return;
           }
 
-          // Update startdatum in profiel (trigger maakt profiel aan)
-          // Wacht even zodat trigger klaar is
           await new Promise(function (r) { setTimeout(r, 1500); });
 
           if (signUpResult.data && signUpResult.data.user) {
             var updateData = { startdatum: startdatum };
             if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
+            if (werkuren) updateData.werkuren = werkuren;
+            if (regio) updateData.regio = regio;
             await supabaseClient
               .from('profiles')
               .update(updateData)
               .eq('user_id', signUpResult.data.user.id);
           }
         } else {
-          // Invite gelukt, update profiel
           await new Promise(function (r) { setTimeout(r, 1500); });
 
           if (result.data && result.data.user) {
             var updateData2 = { startdatum: startdatum };
             if (inwerktrajectUrl) updateData2.inwerktraject_url = inwerktrajectUrl;
+            if (werkuren) updateData2.werkuren = werkuren;
+            if (regio) updateData2.regio = regio;
             await supabaseClient
               .from('profiles')
               .update(updateData2)
@@ -430,6 +643,8 @@
     document.getElementById('edit-profile-id').value = p.id;
     document.getElementById('edit-naam').value = p.naam || '';
     document.getElementById('edit-functiegroep').value = p.functiegroep || '';
+    document.getElementById('edit-werkuren').value = p.werkuren || '';
+    document.getElementById('edit-regio').value = p.regio || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
     document.getElementById('edit-inwerktraject-url').value = p.inwerktraject_url || '';
 
@@ -464,6 +679,8 @@
       var functiegroep = document.getElementById('edit-functiegroep').value;
       var startdatum = document.getElementById('edit-startdatum').value;
       var inwerktrajectUrl = document.getElementById('edit-inwerktraject-url').value.trim();
+      var werkuren = document.getElementById('edit-werkuren').value.trim();
+      var regio = document.getElementById('edit-regio').value.trim();
 
       if (!naam || !functiegroep) {
         alertBox.className = 'alert alert-error show';
@@ -474,11 +691,26 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Opslaan...';
 
+      // Check of functiegroep is gewijzigd — log in functie_historie
+      var huidigProfiel = allProfiles.find(function (pr) { return pr.id === profileId; });
+      if (huidigProfiel && huidigProfiel.functiegroep && huidigProfiel.functiegroep !== functiegroep) {
+        await supabaseClient
+          .from('functie_historie')
+          .insert({
+            profile_id: profileId,
+            vorige_functie: huidigProfiel.functiegroep,
+            nieuwe_functie: functiegroep,
+            gewijzigd_op: new Date().toISOString()
+          });
+      }
+
       var updateData = {
         naam: naam,
         functiegroep: functiegroep,
         startdatum: startdatum || null,
-        inwerktraject_url: inwerktrajectUrl || null
+        inwerktraject_url: inwerktrajectUrl || null,
+        werkuren: werkuren || null,
+        regio: regio || null
       };
 
       var result = await supabaseClient
@@ -532,7 +764,6 @@
     allConversations = result.data;
     renderGesprekken();
 
-    // Filter listeners
     document.getElementById('filter-medewerker').addEventListener('change', renderGesprekken);
     document.getElementById('filter-feedback').addEventListener('change', renderGesprekken);
   }
@@ -560,7 +791,6 @@
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
 
-      // Zoek medewerker naam
       var profile = allProfiles.find(function (p) { return p.id === c.user_id; });
       var naam = profile ? (profile.naam || profile.email) : 'Onbekend';
 
@@ -633,7 +863,6 @@
     var now = new Date();
     var today = now.toISOString().split('T')[0];
 
-    // Start van deze week (maandag)
     var dayOfWeek = now.getDay();
     var mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     var weekStart = new Date(now);
@@ -659,7 +888,6 @@
     document.getElementById('stat-week').textContent = week;
     document.getElementById('stat-positief').textContent = positiefPct + '%';
 
-    // Vragen per dag (laatste 14 dagen)
     var perDag = {};
     for (var i = 13; i >= 0; i--) {
       var d = new Date(now);
@@ -718,7 +946,6 @@
       }
     });
 
-    // Sync kleurpicker met tekstveld
     var kleurInput = document.getElementById('setting-kleur');
     var kleurPicker = document.getElementById('setting-kleur-picker');
     kleurPicker.value = kleurInput.value || '#E8720C';
@@ -742,7 +969,6 @@
     var alertMsg = document.getElementById('settings-alert-message');
     alertBox.className = 'alert';
 
-    // Valideer kleur
     var kleurVal = document.getElementById('setting-kleur').value.trim();
     if (kleurVal && !/^#[0-9A-Fa-f]{6}$/.test(kleurVal)) {
       alertBox.className = 'alert alert-error show';
@@ -750,7 +976,6 @@
       return;
     }
 
-    // Valideer URL
     var urlVal = document.getElementById('setting-website').value.trim();
     if (urlVal && !urlVal.startsWith('https://') && !urlVal.startsWith('http://')) {
       alertBox.className = 'alert alert-error show';
@@ -758,7 +983,6 @@
       return;
     }
 
-    // Valideer disclaimer
     var disclaimerVal = document.getElementById('disclaimer-text').value.trim();
     if (!disclaimerVal) {
       alertBox.className = 'alert alert-error show';
@@ -766,7 +990,6 @@
       return;
     }
 
-    // Sla alle settings op via upsert
     var upserts = settingsFields.map(function (field) {
       var el = document.getElementById(field.elementId);
       return {

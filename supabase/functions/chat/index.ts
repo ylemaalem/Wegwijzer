@@ -11,6 +11,17 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Nederlandse stopwoorden voor keyword filtering
+const STOPWOORDEN = new Set([
+  "de", "het", "een", "van", "voor", "met", "die", "dat", "zijn", "was",
+  "niet", "ook", "maar", "dan", "hoe", "wat", "waar", "wie", "wel", "nog",
+  "als", "bij", "aan", "uit", "door", "naar", "over", "tot", "kan", "zou",
+  "mag", "wil", "moet", "mijn", "jouw", "hun", "dit", "deze", "wordt",
+  "werd", "hebben", "heeft", "worden", "meer", "alle", "ander", "andere",
+  "veel", "geen", "elk", "elke", "ons", "onze", "jullie", "hen", "hem",
+  "haar", "zij", "wij", "ik", "je", "jij", "hij", "het", "men", "er",
+]);
+
 Deno.serve(async (req: Request) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
@@ -71,7 +82,27 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- 4. Request body lezen ----
+    // ---- 4. Rate limiting: max 50 vragen per dag ----
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const { count: todayCount, error: countError } = await supabaseAdmin
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", profile.id)
+      .gte("created_at", todayStart.toISOString());
+
+    if (!countError && todayCount !== null && todayCount >= 50) {
+      return new Response(
+        JSON.stringify({
+          error: "Je hebt het dagelijkse maximum van 50 vragen bereikt. Morgen kun je weer vragen stellen.",
+          rate_limited: true,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ---- 5. Request body lezen ----
     const { vraag, functiegroep, weeknummer } = await req.json();
 
     if (!vraag || typeof vraag !== "string" || vraag.trim().length === 0) {
@@ -89,7 +120,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- 5a. Tenant instellingen ophalen (organisatienaam, website URL) ----
+    // ---- 6a. Tenant instellingen ophalen (organisatienaam, website URL) ----
     const { data: settingsData } = await supabaseAdmin
       .from("settings")
       .select("sleutel, waarde")
@@ -105,7 +136,7 @@ Deno.serve(async (req: Request) => {
     const organisatienaam = settings["organisatienaam"] || "";
     const websiteUrl = settings["website_url"] || "";
 
-    // ---- 5b. Website inhoud ophalen als kennisbron ----
+    // ---- 6b. Website inhoud ophalen als kennisbron ----
     let websiteContext = "";
     if (websiteUrl) {
       try {
@@ -132,7 +163,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 5c. Persoonlijk inwerktraject ophalen ----
+    // ---- 6c. Persoonlijk inwerktraject ophalen ----
     let persoonlijkContext = "";
     if (profile.inwerktraject_url) {
       try {
@@ -158,46 +189,62 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 5d. Documenten ophalen uit Storage ----
+    // ---- 6d. Documenten ophalen uit database (content kolom) ----
     const { data: documents } = await supabaseAdmin
       .from("documents")
-      .select("naam, bestandspad")
-      .eq("tenant_id", profile.tenant_id);
+      .select("naam, content")
+      .eq("tenant_id", profile.tenant_id)
+      .not("content", "is", null);
 
     let documentContext = "";
 
     if (documents && documents.length > 0) {
-      const docTexts: string[] = [];
+      // Extract keywords uit de vraag voor relevantie-scoring
+      const keywords = vraag
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w: string) => w.length > 2)
+        .filter((w: string) => !STOPWOORDEN.has(w));
 
-      for (const doc of documents) {
-        try {
-          const { data: fileData, error: fileError } = await supabaseAdmin.storage
-            .from("documents")
-            .download(doc.bestandspad);
-
-          if (fileError || !fileData) continue;
-
-          // Lees als tekst (werkt voor PDF text-layer en plain text)
-          const text = await fileData.text();
-
-          // Filter lege of te korte bestanden
-          if (text && text.trim().length > 10) {
-            // Limiteer per document tot 8000 karakters
-            const trimmed = text.trim().substring(0, 8000);
-            docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}`);
+      // Score elk document op keyword-relevantie
+      const scored = documents
+        .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
+        .map((d: { naam: string; content: string }) => {
+          const lower = d.content.toLowerCase();
+          let score = 0;
+          for (const kw of keywords) {
+            let pos = 0;
+            while ((pos = lower.indexOf(kw, pos)) !== -1) {
+              score++;
+              pos += kw.length;
+            }
           }
-        } catch {
-          // Document kon niet gelezen worden, sla over
-          continue;
-        }
-      }
+          return { naam: d.naam, content: d.content, score };
+        })
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+        .slice(0, 5); // Top 5 meest relevante documenten
 
-      if (docTexts.length > 0) {
-        documentContext = docTexts.join("\n\n");
+      if (scored.length > 0) {
+        const docTexts: string[] = [];
+        let totaalLengte = 0;
+        const MAX_TOTAAL = 40000;
+
+        for (const doc of scored) {
+          const beschikbaar = MAX_TOTAAL - totaalLengte;
+          if (beschikbaar <= 0) break;
+          const trimmed = doc.content.trim().substring(0, Math.min(beschikbaar, 8000));
+          docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}`);
+          totaalLengte += trimmed.length;
+        }
+
+        if (docTexts.length > 0) {
+          documentContext = docTexts.join("\n\n");
+        }
       }
     }
 
-    // ---- 6. Functiegroep context opbouwen ----
+    // ---- 7. Functiegroep context opbouwen ----
     const functiegroepContext: Record<string, string> = {
       ambulant_begeleider:
         "De medewerker is Ambulant Begeleider. Dit is een ondersteunende rol. " +
@@ -219,7 +266,7 @@ Deno.serve(async (req: Request) => {
     const fgContext = functiegroepContext[profile.functiegroep || ""] || "";
     const wk = weeknummer || 1;
 
-    // ---- 7. System prompt bouwen ----
+    // ---- 8. System prompt bouwen ----
     const orgLabel = organisatienaam ? `voor nieuwe medewerkers van ${organisatienaam}` : "voor nieuwe medewerkers";
 
     // Combineer alle kennisbronnen
@@ -257,10 +304,11 @@ INSTRUCTIES:
 - Verwerk NOOIT persoonsgegevens van cliënten. Als de medewerker cliëntgegevens deelt, wijs hen erop dat dit niet is toegestaan.
 - Wees bemoedigend en ondersteunend — de medewerker is nieuw en leert nog.
 - Als er een PERSOONLIJK INWERKTRAJECT sectie in de kennisbronnen staat, gebruik die informatie als eerste bron bij vragen over het inwerktraject van deze specifieke medewerker. Dit document is op maat gemaakt voor hen.
+- BELANGRIJK: Als je in de kennisbronnen een URL of weblink vindt (beginnend met http:// of https://) die relevant is voor de vraag van de medewerker, plak die link dan DIRECT in je antwoord in dit formaat: 👉 [de volledige URL]. Geef daarna aanvullende informatie. Meerdere relevante links mogen. Verzin NOOIT zelf een URL.
 
 ${alleKennisbronnen}`;
 
-    // ---- 8. Claude Haiku aanroepen ----
+    // ---- 9. Claude Haiku aanroepen ----
     const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -293,7 +341,7 @@ ${alleKennisbronnen}`;
     const aiResult = await anthropicResponse.json();
     const antwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
 
-    // ---- 9. Gesprek opslaan in database ----
+    // ---- 10. Gesprek opslaan in database ----
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
       .insert({
@@ -309,7 +357,7 @@ ${alleKennisbronnen}`;
       console.error("Conversation opslaan mislukt:", convError);
     }
 
-    // ---- 10. Antwoord terugsturen ----
+    // ---- 11. Antwoord terugsturen ----
     return new Response(
       JSON.stringify({
         antwoord: antwoord,

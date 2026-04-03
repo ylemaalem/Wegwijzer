@@ -269,7 +269,12 @@
       var data = await response.json();
       typingIndicator.classList.add('hidden');
 
-      if (!response.ok || data.error) {
+      if (response.status === 429 || data.rate_limited) {
+        renderBotBericht(
+          data.error || 'Je hebt het dagelijkse maximum van 50 vragen bereikt. Morgen kun je weer vragen stellen.',
+          null, null, null
+        );
+      } else if (!response.ok || data.error) {
         renderBotBericht(
           'Sorry, er ging iets mis bij het verwerken van je vraag. Probeer het opnieuw of neem contact op met je teamleider.',
           null, null, null
@@ -435,6 +440,12 @@
     escaped = escaped.replace(/(<\/h3>)<\/p>/g, '$1');
     escaped = escaped.replace(/<p>(<ul>)/g, '$1');
     escaped = escaped.replace(/(<\/ul>)<\/p>/g, '$1');
+
+    // URLs klikbaar maken (http:// en https://)
+    escaped = escaped.replace(
+      /(https?:\/\/[^\s<>"')\]]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary);word-break:break-all">$1</a>'
+    );
 
     return escaped;
   }

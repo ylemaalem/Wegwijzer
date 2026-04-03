@@ -46,15 +46,18 @@
         <div class="upload-zone" id="upload-zone">
           <div class="upload-zone-icon">📄</div>
           <div class="upload-zone-text">
-            <strong>Klik hier</strong> of sleep een bestand hierheen<br>
-            PDF of Word (.pdf, .doc, .docx)
+            <strong>Klik hier</strong> of sleep bestanden hierheen<br>
+            PDF, Word of tekst (.pdf, .doc, .docx, .txt) — meerdere tegelijk mogelijk
           </div>
-          <input type="file" id="file-input" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
+          <input type="file" id="file-input" accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" multiple>
           <div class="upload-progress" id="upload-progress">
-            <div class="progress-bar">
-              <div class="progress-fill" id="progress-fill"></div>
-            </div>
+            <div id="upload-items"></div>
           </div>
+        </div>
+
+        <!-- Banner: bestaande documenten verwerken -->
+        <div class="alert alert-warning" id="reprocess-banner" style="display:none;margin-bottom:16px;cursor:pointer">
+          <span id="reprocess-message">Er zijn documenten zonder geëxtraheerde tekst. Klik hier om ze te verwerken.</span>
         </div>
 
         <!-- Documenten tabel -->
@@ -90,12 +93,14 @@
                 <th>Naam</th>
                 <th>E-mail</th>
                 <th>Functiegroep</th>
+                <th>Werkuren</th>
+                <th>Regio</th>
                 <th>Startdatum</th>
                 <th style="width:80px"></th>
               </tr>
             </thead>
             <tbody id="medewerkers-body">
-              <tr><td colspan="5" class="no-data">Medewerkers laden...</td></tr>
+              <tr><td colspan="7" class="no-data">Medewerkers laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -266,6 +271,16 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label" for="invite-werkuren">Werkuren per week</label>
+            <input class="form-input" type="text" id="invite-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-regio">Regio</label>
+            <input class="form-input" type="text" id="invite-regio" placeholder="bijv. Utrecht, Amersfoort">
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="invite-startdatum">Startdatum inwerktraject</label>
             <input class="form-input" type="date" id="invite-startdatum" required>
           </div>
@@ -336,6 +351,16 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label" for="edit-werkuren">Werkuren per week</label>
+            <input class="form-input" type="text" id="edit-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-regio">Regio</label>
+            <input class="form-input" type="text" id="edit-regio" placeholder="bijv. Utrecht, Amersfoort">
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="edit-startdatum">Startdatum</label>
             <input class="form-input" type="date" id="edit-startdatum">
           </div>
@@ -359,6 +384,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
