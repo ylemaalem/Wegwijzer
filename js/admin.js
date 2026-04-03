@@ -9,12 +9,19 @@
   var tenantId = null;
   var allConversations = [];
   var allProfiles = [];
+  var allTeamleiders = [];
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
+
+  // TEAMS lijst (vast)
+  var TEAMS_LIJST = [
+    'Team Almere', 'Team Veluwe 1', 'Team Veluwe 2', 'Team Middelste Wei',
+    'Team Molenweg', 'Team Gele Weiland', 'Team Manuscript', 'Team VAN', 'Team FAN', 'Team FANMN'
+  ];
 
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', function (e) {
@@ -26,9 +33,14 @@
     loadGesprekken();
     loadStatistieken();
     loadSettings();
+    loadTeamleiders();
+    loadVerbeterpunten();
+    loadMeldingen();
     initUpload();
     initInviteModal();
     initGesprekDetail();
+    initTeamleiderModal();
+    initVerbeterModal();
   });
 
   // =============================================
@@ -78,9 +90,7 @@
     }
 
     if (ext === 'doc') {
-      // DOC is binair — probeer als tekst te lezen (beperkte ondersteuning)
       var text = await file.text();
-      // Filter binaire rommel, houd leesbare tekst over
       return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ').replace(/\s{3,}/g, ' ').trim();
     }
 
@@ -162,6 +172,114 @@
   }
 
   // =============================================
+  // HULPFUNCTIES
+  // =============================================
+  function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function formatFunctiegroep(fg) {
+    var map = {
+      'ambulant_begeleider': 'Ambulant Begeleider',
+      'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
+      'woonbegeleider': 'Woonbegeleider',
+      'persoonlijk_woonbegeleider': 'Pers. Woonbegeleider'
+    };
+    return map[fg] || fg || '-';
+  }
+
+  function generateTempPassword() {
+    var chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+    var pw = '';
+    for (var i = 0; i < 24; i++) {
+      pw += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pw;
+  }
+
+  function formatDocumentType(type) {
+    var map = {
+      'beleid': 'Beleid',
+      'protocol': 'Protocol',
+      'werkinstructie': 'Werkinstructie',
+      'formulier': 'Formulier',
+      'handleiding': 'Handleiding',
+      'overig': 'Overig'
+    };
+    return map[type] || type || '-';
+  }
+
+  function getRevisieColor(revisiedatum) {
+    if (!revisiedatum) return null;
+    var now = new Date();
+    var revisie = new Date(revisiedatum);
+    var diffMs = revisie.getTime() - now.getTime();
+    var diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffDays < 0) {
+      return '#dc3545'; // red — past due
+    } else if (diffDays <= 60) {
+      return '#ff9800'; // orange — within 2 months
+    } else {
+      return '#28a745'; // green — more than 2 months away
+    }
+  }
+
+  function populateTeamCheckboxes(containerId, selectedTeams) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    var teams = selectedTeams || [];
+
+    TEAMS_LIJST.forEach(function (team) {
+      var label = document.createElement('label');
+      label.className = 'checkbox-label';
+      label.style.display = 'block';
+      label.style.marginBottom = '4px';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = team;
+      cb.name = containerId;
+      if (teams.indexOf(team) !== -1) {
+        cb.checked = true;
+      }
+
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + team));
+      container.appendChild(label);
+    });
+  }
+
+  function getCheckedTeams(containerId) {
+    var container = document.getElementById(containerId);
+    if (!container) return [];
+    var checked = [];
+    var boxes = container.querySelectorAll('input[type="checkbox"]:checked');
+    boxes.forEach(function (cb) {
+      checked.push(cb.value);
+    });
+    return checked;
+  }
+
+  function populateTeamleiderDropdown(selectId, selectedNaam) {
+    var select = document.getElementById(selectId);
+    if (!select) return;
+    var current = selectedNaam || select.value || '';
+    select.innerHTML = '<option value="">— Geen teamleider —</option>';
+    allTeamleiders.forEach(function (tl) {
+      var opt = document.createElement('option');
+      opt.value = tl.naam;
+      opt.textContent = tl.naam;
+      if (tl.naam === current) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+
+  // =============================================
   // DOCUMENTEN
   // =============================================
   function initUpload() {
@@ -200,6 +318,14 @@
     var itemsContainer = document.getElementById('upload-items');
     progress.classList.add('show');
     itemsContainer.innerHTML = '';
+
+    // Lees extra metadata velden
+    var docTypeEl = document.getElementById('doc-type');
+    var docVersieEl = document.getElementById('doc-versie');
+    var docRevisieEl = document.getElementById('doc-revisiedatum');
+    var documenttype = docTypeEl ? docTypeEl.value : null;
+    var versienummer = docVersieEl ? docVersieEl.value.trim() : null;
+    var revisiedatum = docRevisieEl ? docRevisieEl.value : null;
 
     // Maak per-bestand voortgangsitems
     var fileItems = [];
@@ -284,15 +410,21 @@
         statusEl.textContent = 'Opslaan...';
         fillEl.style.width = '80%';
 
+        var insertData = {
+          tenant_id: tenantId,
+          naam: file.name,
+          bestandspad: filePath,
+          geupload_door: profileId,
+          content: extractedText || null,
+          user_id: null
+        };
+        if (documenttype) insertData.documenttype = documenttype;
+        if (versienummer) insertData.versienummer = versienummer;
+        if (revisiedatum) insertData.revisiedatum = revisiedatum;
+
         var insertResult = await supabaseClient
           .from('documents')
-          .insert({
-            tenant_id: tenantId,
-            naam: file.name,
-            bestandspad: filePath,
-            geupload_door: profileId,
-            content: extractedText || null
-          });
+          .insert(insertData);
 
         if (insertResult.error) {
           statusEl.textContent = 'Metadata mislukt';
@@ -330,31 +462,69 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content')
+      .select('id, naam, created_at, bestandspad, content, documenttype, versienummer, revisiedatum')
       .eq('tenant_id', tenantId)
+      .is('user_id', null)
       .order('created_at', { ascending: false });
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="3" class="no-data">Kon documenten niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon documenten niet laden.</td></tr>';
       return;
     }
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="no-data">Nog geen documenten geüpload.</td></tr>';
-      document.getElementById('reprocess-banner').style.display = 'none';
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Nog geen documenten geüpload.</td></tr>';
+      var bannerEl = document.getElementById('reprocess-banner');
+      if (bannerEl) bannerEl.style.display = 'none';
+      var herinneringenEl = document.getElementById('revisie-herinneringen');
+      if (herinneringenEl) herinneringenEl.innerHTML = '';
       return;
+    }
+
+    // Revisie herinneringen
+    var herinneringenContainer = document.getElementById('revisie-herinneringen');
+    if (herinneringenContainer) {
+      var now = new Date();
+      var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      var prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      var prevMonth = prevMonthDate.getFullYear() + '-' + String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+
+      var herinneringen = result.data.filter(function (doc) {
+        if (!doc.revisiedatum) return false;
+        var docMonth = doc.revisiedatum.substring(0, 7);
+        return docMonth === currentMonth || docMonth === prevMonth;
+      });
+
+      if (herinneringen.length > 0) {
+        var html = '<div class="alert alert-warning show" style="margin-bottom:16px">' +
+          '<strong>Revisie herinneringen:</strong><ul style="margin:8px 0 0 16px;padding:0">';
+        herinneringen.forEach(function (doc) {
+          var revisieDate = new Date(doc.revisiedatum).toLocaleDateString('nl-NL', {
+            day: 'numeric', month: 'short', year: 'numeric'
+          });
+          var isPast = new Date(doc.revisiedatum) < now;
+          var label = isPast ? ' (verlopen!)' : ' (binnenkort)';
+          html += '<li>' + escapeHtml(doc.naam) + ' — revisiedatum: ' + revisieDate + label + '</li>';
+        });
+        html += '</ul></div>';
+        herinneringenContainer.innerHTML = html;
+      } else {
+        herinneringenContainer.innerHTML = '';
+      }
     }
 
     // Check of er documenten zonder content zijn
     var zonderContent = result.data.filter(function (doc) { return !doc.content; });
     var banner = document.getElementById('reprocess-banner');
-    if (zonderContent.length > 0) {
-      banner.style.display = 'block';
-      document.getElementById('reprocess-message').textContent =
-        zonderContent.length + ' document(en) zonder geëxtraheerde tekst. Klik hier om ze te verwerken.';
-      banner.onclick = function () { reprocessDocuments(zonderContent); };
-    } else {
-      banner.style.display = 'none';
+    if (banner) {
+      if (zonderContent.length > 0) {
+        banner.style.display = 'block';
+        document.getElementById('reprocess-message').textContent =
+          zonderContent.length + ' document(en) zonder geëxtraheerde tekst. Klik hier om ze te verwerken.';
+        banner.onclick = function () { reprocessDocuments(zonderContent); };
+      } else {
+        banner.style.display = 'none';
+      }
     }
 
     tbody.innerHTML = result.data.map(function (doc) {
@@ -364,8 +534,25 @@
       var contentStatus = doc.content
         ? '<span style="color:var(--success);font-size:0.75rem" title="Tekst geëxtraheerd">✓</span>'
         : '<span style="color:var(--error);font-size:0.75rem" title="Geen tekst">✗</span>';
+
+      var typeLabel = formatDocumentType(doc.documenttype);
+      var versieLabel = doc.versienummer ? escapeHtml(doc.versienummer) : '-';
+
+      // Revisie kolom met kleurcodering
+      var revisieLabel = '-';
+      if (doc.revisiedatum) {
+        var color = getRevisieColor(doc.revisiedatum);
+        var revisieFormatted = new Date(doc.revisiedatum).toLocaleDateString('nl-NL', {
+          day: 'numeric', month: 'short', year: 'numeric'
+        });
+        revisieLabel = '<span style="color:' + color + ';font-weight:600">' + revisieFormatted + '</span>';
+      }
+
       return '<tr>' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
+        '<td>' + typeLabel + '</td>' +
+        '<td>' + versieLabel + '</td>' +
+        '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
         '<td><button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button></td>' +
         '</tr>';
@@ -387,7 +574,6 @@
       messageEl.textContent = 'Verwerken: ' + (done + 1) + '/' + total + ' — ' + doc.naam;
 
       try {
-        // Download bestand uit storage
         var downloadResult = await supabaseClient.storage
           .from('documents')
           .download(doc.bestandspad);
@@ -397,11 +583,9 @@
           continue;
         }
 
-        // Extraheer tekst
         var text = await extractTextFromBlob(downloadResult.data, doc.naam);
 
         if (text && text.trim().length > 0) {
-          // Update content kolom
           await supabaseClient
             .from('documents')
             .update({ content: text })
@@ -438,12 +622,12 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio, account_type, einddatum, teams, teamleider_naam')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Kon medewerkers niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
@@ -451,33 +635,62 @@
     updateMedewerkerFilter();
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nog geen medewerkers.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Nog geen medewerkers.</td></tr>';
       return;
     }
 
-    tbody.innerHTML = result.data.map(function (p) {
+    // Sorteer: actieve accounts eerst, verlopen tijdelijke accounts onderaan
+    var now = new Date();
+    var sorted = result.data.slice().sort(function (a, b) {
+      var aExpired = a.einddatum && new Date(a.einddatum) < now;
+      var bExpired = b.einddatum && new Date(b.einddatum) < now;
+      if (aExpired && !bExpired) return 1;
+      if (!aExpired && bExpired) return -1;
+      return 0;
+    });
+
+    tbody.innerHTML = sorted.map(function (p) {
       var fg = formatFunctiegroep(p.functiegroep);
       var sd = p.startdatum ? new Date(p.startdatum).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       }) : '-';
-      var badge = p.role === 'admin'
-        ? '<span class="badge badge-admin">Admin</span>'
-        : '<span class="badge badge-medewerker">Medewerker</span>';
+
+      var isExpired = p.einddatum && new Date(p.einddatum) < now;
+      var rowStyle = isExpired ? ' style="opacity:0.5"' : '';
+
+      var badge = '';
+      if (p.role === 'admin') {
+        badge = '<span class="badge badge-admin">Admin</span>';
+      } else if (p.account_type === 'tijdelijk') {
+        badge = '<span class="badge badge-medewerker" style="background:#ff9800;color:#fff">Tijdelijk</span>';
+      } else {
+        badge = '<span class="badge badge-medewerker">Medewerker</span>';
+      }
+
+      var teamsStr = '-';
+      if (p.teams && Array.isArray(p.teams) && p.teams.length > 0) {
+        teamsStr = p.teams.join(', ');
+      }
+
       var editBtn = p.role !== 'admin'
         ? '<button class="btn-icon" onclick="window.editMedewerker(\'' + p.id + '\')" title="Bewerken">✏️</button>'
         : '';
       var deleteBtn = p.role !== 'admin'
         ? '<button class="btn-icon btn-icon-danger" onclick="window.deleteMedewerker(\'' + p.id + '\', \'' + p.user_id + '\')" title="Verwijderen">🗑️</button>'
         : '';
+      var docsBtn = p.role !== 'admin'
+        ? '<button class="btn-icon" onclick="window.showPersoonlijkeDocs(\'' + p.id + '\', \'' + escapeHtml(p.naam || p.email) + '\')" title="Persoonlijke documenten">📄</button>'
+        : '';
 
-      return '<tr>' +
+      return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
         '<td class="functiegroep-label">' + fg + '</td>' +
+        '<td>' + escapeHtml(teamsStr) + '</td>' +
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
         '<td>' + escapeHtml(p.regio || '-') + '</td>' +
         '<td>' + sd + '</td>' +
-        '<td>' + editBtn + deleteBtn + '</td>' +
+        '<td>' + editBtn + docsBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
   }
@@ -507,7 +720,147 @@
     loadStatistieken();
   };
 
-  // ---- Invite Modal ----
+  // =============================================
+  // PERSOONLIJKE DOCUMENTEN
+  // =============================================
+  window.showPersoonlijkeDocs = function (profileId, naam) {
+    var section = document.getElementById('persoonlijke-docs-section');
+    if (section) {
+      section.style.display = 'block';
+      var titleEl = document.getElementById('pers-docs-title');
+      if (titleEl) titleEl.textContent = 'Persoonlijke documenten — ' + naam;
+      section.dataset.profileId = profileId;
+      loadPersoonlijkeDocs(profileId);
+      initPersoonlijkeDocsUpload(profileId);
+    }
+  };
+
+  async function loadPersoonlijkeDocs(profileId) {
+    var listEl = document.getElementById('pers-docs-list');
+    if (!listEl) return;
+
+    var result = await supabaseClient
+      .from('documents')
+      .select('id, naam, created_at, bestandspad')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', profileId)
+      .order('created_at', { ascending: false });
+
+    if (result.error || !result.data || result.data.length === 0) {
+      listEl.innerHTML = '<p class="no-data">Geen persoonlijke documenten.</p>';
+      return;
+    }
+
+    listEl.innerHTML = result.data.map(function (doc) {
+      var datum = new Date(doc.created_at).toLocaleDateString('nl-NL', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+      return '<div class="pers-doc-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<span>' + escapeHtml(doc.naam) + ' <small style="color:var(--text-muted)">' + datum + '</small></span>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deletePersoonlijkDoc(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\', \'' + profileId + '\')" title="Verwijderen">🗑️</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  function initPersoonlijkeDocsUpload(profileId) {
+    var zone = document.getElementById('pers-docs-upload');
+    var input = document.getElementById('pers-docs-input');
+    if (!zone || !input) return;
+
+    // Clone to remove old listeners
+    var newZone = zone.cloneNode(true);
+    zone.parentNode.replaceChild(newZone, zone);
+    var newInput = newZone.querySelector('#pers-docs-input') || document.getElementById('pers-docs-input');
+
+    newZone.addEventListener('click', function () { newInput.click(); });
+
+    newZone.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      newZone.classList.add('drag-over');
+    });
+
+    newZone.addEventListener('dragleave', function () {
+      newZone.classList.remove('drag-over');
+    });
+
+    newZone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      newZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        handlePersoonlijkeUpload(e.dataTransfer.files, profileId);
+      }
+    });
+
+    newInput.addEventListener('change', function () {
+      if (newInput.files.length > 0) {
+        handlePersoonlijkeUpload(newInput.files, profileId);
+        newInput.value = '';
+      }
+    });
+  }
+
+  async function handlePersoonlijkeUpload(files, profileId) {
+    var uploaderProfileResult = await supabaseClient
+      .from('profiles')
+      .select('id')
+      .eq('user_id', window.wegwijzerUser.id)
+      .single();
+    var uploaderProfileId = uploaderProfileResult.data ? uploaderProfileResult.data.id : null;
+
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      var ext = file.name.split('.').pop().toLowerCase();
+
+      if (!['pdf', 'doc', 'docx', 'txt'].includes(ext)) continue;
+      if (file.size > 20 * 1024 * 1024) continue;
+
+      var extractedText = '';
+      try {
+        extractedText = await extractTextFromFile(file);
+      } catch (err) {
+        console.error('Extractie fout:', err);
+      }
+
+      var fileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      var filePath = tenantId + '/persoonlijk/' + profileId + '/' + fileName;
+
+      try {
+        var uploadResult = await supabaseClient.storage
+          .from('documents')
+          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+        if (uploadResult.error) continue;
+
+        await supabaseClient
+          .from('documents')
+          .insert({
+            tenant_id: tenantId,
+            naam: file.name,
+            bestandspad: filePath,
+            geupload_door: uploaderProfileId,
+            content: extractedText || null,
+            user_id: profileId
+          });
+      } catch (err) {
+        console.error('Persoonlijke upload fout:', err);
+      }
+    }
+
+    loadPersoonlijkeDocs(profileId);
+  }
+
+  window.deletePersoonlijkDoc = async function (id, bestandspad, profileId) {
+    if (!confirm('Weet je zeker dat je dit document wilt verwijderen?')) return;
+
+    await supabaseClient.storage.from('documents').remove([bestandspad]);
+    await supabaseClient.from('documents').delete().eq('id', id);
+
+    loadPersoonlijkeDocs(profileId);
+  };
+
+  // =============================================
+  // INVITE MODAL
+  // =============================================
   function initInviteModal() {
     var modal = document.getElementById('modal-medewerker');
     var form = document.getElementById('invite-form');
@@ -517,9 +870,30 @@
     var alertBox = document.getElementById('modal-alert');
     var alertMsg = document.getElementById('modal-alert-message');
 
+    // Populate team checkboxes en teamleider dropdown
+    populateTeamCheckboxes('invite-teams', []);
+    populateTeamleiderDropdown('invite-teamleider');
+
+    // Account type radio toggle einddatum
+    var accountRadios = document.querySelectorAll('input[name="invite-account-type"]');
+    var einddatumEl = document.getElementById('invite-einddatum');
+    var einddatumGroup = einddatumEl ? einddatumEl.closest('.form-group') : null;
+    if (einddatumGroup) {
+      einddatumGroup.style.display = 'none';
+    }
+    accountRadios.forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        if (einddatumGroup) {
+          einddatumGroup.style.display = radio.value === 'tijdelijk' ? 'block' : 'none';
+        }
+      });
+    });
+
     addBtn.addEventListener('click', function () {
       form.reset();
       alertBox.className = 'alert';
+      populateTeamCheckboxes('invite-teams', []);
+      if (einddatumGroup) einddatumGroup.style.display = 'none';
       modal.classList.add('show');
     });
 
@@ -542,6 +916,13 @@
       var inwerktrajectUrl = document.getElementById('invite-inwerktraject-url').value.trim();
       var werkuren = document.getElementById('invite-werkuren').value.trim();
       var regio = document.getElementById('invite-regio').value.trim();
+
+      // Nieuwe velden
+      var accountTypeEl = document.querySelector('input[name="invite-account-type"]:checked');
+      var accountType = accountTypeEl ? accountTypeEl.value : 'vast';
+      var einddatum = document.getElementById('invite-einddatum').value || null;
+      var teams = getCheckedTeams('invite-teams');
+      var teamleiderNaam = document.getElementById('invite-teamleider').value || null;
 
       if (!naam || !email || !functiegroep || !startdatum) {
         alertBox.className = 'alert alert-error show';
@@ -589,10 +970,14 @@
           await new Promise(function (r) { setTimeout(r, 1500); });
 
           if (signUpResult.data && signUpResult.data.user) {
-            var updateData = { startdatum: startdatum };
+            var updateData = { startdatum: startdatum, account_type: accountType };
             if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
             if (werkuren) updateData.werkuren = werkuren;
             if (regio) updateData.regio = regio;
+            if (einddatum) updateData.einddatum = einddatum;
+            if (teams.length > 0) updateData.teams = teams;
+            if (teamleiderNaam) updateData.teamleider_naam = teamleiderNaam;
+
             await supabaseClient
               .from('profiles')
               .update(updateData)
@@ -602,10 +987,14 @@
           await new Promise(function (r) { setTimeout(r, 1500); });
 
           if (result.data && result.data.user) {
-            var updateData2 = { startdatum: startdatum };
+            var updateData2 = { startdatum: startdatum, account_type: accountType };
             if (inwerktrajectUrl) updateData2.inwerktraject_url = inwerktrajectUrl;
             if (werkuren) updateData2.werkuren = werkuren;
             if (regio) updateData2.regio = regio;
+            if (einddatum) updateData2.einddatum = einddatum;
+            if (teams.length > 0) updateData2.teams = teams;
+            if (teamleiderNaam) updateData2.teamleider_naam = teamleiderNaam;
+
             await supabaseClient
               .from('profiles')
               .update(updateData2)
@@ -635,7 +1024,9 @@
     });
   }
 
-  // ---- Edit Modal ----
+  // =============================================
+  // EDIT MODAL
+  // =============================================
   window.editMedewerker = function (profileId) {
     var p = allProfiles.find(function (pr) { return pr.id === profileId; });
     if (!p) return;
@@ -647,6 +1038,29 @@
     document.getElementById('edit-regio').value = p.regio || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
     document.getElementById('edit-inwerktraject-url').value = p.inwerktraject_url || '';
+
+    // Account type
+    var accountType = p.account_type || 'vast';
+    var editAccountRadios = document.querySelectorAll('input[name="edit-account-type"]');
+    editAccountRadios.forEach(function (radio) {
+      radio.checked = (radio.value === accountType);
+    });
+
+    // Einddatum
+    var editEinddatumEl = document.getElementById('edit-einddatum');
+    if (editEinddatumEl) {
+      editEinddatumEl.value = p.einddatum || '';
+      var einddatumGroup = editEinddatumEl.closest('.form-group');
+      if (einddatumGroup) {
+        einddatumGroup.style.display = accountType === 'tijdelijk' ? 'block' : 'none';
+      }
+    }
+
+    // Teams checkboxes
+    populateTeamCheckboxes('edit-teams', p.teams || []);
+
+    // Teamleider dropdown
+    populateTeamleiderDropdown('edit-teamleider', p.teamleider_naam);
 
     var editAlert = document.getElementById('edit-alert');
     editAlert.className = 'alert';
@@ -661,6 +1075,20 @@
     var submitBtn = document.getElementById('edit-submit-btn');
     var alertBox = document.getElementById('edit-alert');
     var alertMsg = document.getElementById('edit-alert-message');
+
+    // Account type radio toggle einddatum
+    var editAccountRadios = document.querySelectorAll('input[name="edit-account-type"]');
+    editAccountRadios.forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        var editEinddatumEl = document.getElementById('edit-einddatum');
+        if (editEinddatumEl) {
+          var group = editEinddatumEl.closest('.form-group');
+          if (group) {
+            group.style.display = radio.value === 'tijdelijk' ? 'block' : 'none';
+          }
+        }
+      });
+    });
 
     cancelBtn.addEventListener('click', function () {
       modal.classList.remove('show');
@@ -681,6 +1109,13 @@
       var inwerktrajectUrl = document.getElementById('edit-inwerktraject-url').value.trim();
       var werkuren = document.getElementById('edit-werkuren').value.trim();
       var regio = document.getElementById('edit-regio').value.trim();
+
+      // Nieuwe velden
+      var accountTypeEl = document.querySelector('input[name="edit-account-type"]:checked');
+      var accountType = accountTypeEl ? accountTypeEl.value : 'vast';
+      var einddatum = document.getElementById('edit-einddatum').value || null;
+      var teams = getCheckedTeams('edit-teams');
+      var teamleiderNaam = document.getElementById('edit-teamleider').value || null;
 
       if (!naam || !functiegroep) {
         alertBox.className = 'alert alert-error show';
@@ -710,7 +1145,11 @@
         startdatum: startdatum || null,
         inwerktraject_url: inwerktrajectUrl || null,
         werkuren: werkuren || null,
-        regio: regio || null
+        regio: regio || null,
+        account_type: accountType,
+        einddatum: einddatum,
+        teams: teams.length > 0 ? teams : null,
+        teamleider_naam: teamleiderNaam
       };
 
       var result = await supabaseClient
@@ -734,15 +1173,6 @@
       submitBtn.textContent = 'Opslaan';
     });
   })();
-
-  function generateTempPassword() {
-    var chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-    var pw = '';
-    for (var i = 0; i < 24; i++) {
-      pw += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return pw;
-  }
 
   // =============================================
   // GESPREKKEN
@@ -919,6 +1349,414 @@
   }
 
   // =============================================
+  // VERBETERPUNTEN
+  // =============================================
+  async function loadVerbeterpunten() {
+    var tbody = document.getElementById('verbeter-body');
+    if (!tbody) return;
+
+    // Haal alle gesprekken op met feedback niet_goed
+    var nietGoedResult = await supabaseClient
+      .from('conversations')
+      .select('id, vraag, feedback')
+      .eq('tenant_id', tenantId)
+      .eq('feedback', 'niet_goed');
+
+    // Haal alle gesprekken op (voor totaal aantal per vraag)
+    var alleResult = await supabaseClient
+      .from('conversations')
+      .select('id, vraag')
+      .eq('tenant_id', tenantId);
+
+    // Haal kennisbank items op
+    var kbResult = await supabaseClient
+      .from('kennisbank_items')
+      .select('id, vraag, antwoord, created_at')
+      .eq('tenant_id', tenantId);
+
+    var kennisbankItems = (kbResult.data || []);
+    var kbVragen = kennisbankItems.map(function (kb) { return kb.vraag; });
+
+    if (nietGoedResult.error || !nietGoedResult.data || nietGoedResult.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen verbeterpunten gevonden.</td></tr>';
+      loadKennisbankItems(kennisbankItems);
+      return;
+    }
+
+    // Groepeer thumbs down per vraag
+    var vraagMap = {};
+    nietGoedResult.data.forEach(function (c) {
+      var v = c.vraag.trim().toLowerCase();
+      if (!vraagMap[v]) {
+        vraagMap[v] = { vraag: c.vraag, count: 0 };
+      }
+      vraagMap[v].count++;
+    });
+
+    // Tel totaal aantal keer gesteld per vraag
+    var alleVraagMap = {};
+    (alleResult.data || []).forEach(function (c) {
+      var v = c.vraag.trim().toLowerCase();
+      if (!alleVraagMap[v]) {
+        alleVraagMap[v] = 0;
+      }
+      alleVraagMap[v]++;
+    });
+
+    // Sorteer op aantal thumbs down (desc)
+    var sorted = Object.keys(vraagMap).map(function (key) {
+      return {
+        vraag: vraagMap[key].vraag,
+        thumbsDown: vraagMap[key].count,
+        totaal: alleVraagMap[key] || vraagMap[key].count
+      };
+    }).sort(function (a, b) { return b.thumbsDown - a.thumbsDown; });
+
+    // Check notificaties
+    var alertHtml = '';
+    var highThumbsDown = sorted.filter(function (s) { return s.thumbsDown >= 3; });
+    var highAsked = sorted.filter(function (s) { return s.totaal >= 5; });
+
+    if (highThumbsDown.length > 0) {
+      alertHtml += '<div class="alert alert-error show" style="margin-bottom:12px">' +
+        '<strong>Let op:</strong> ' + highThumbsDown.length + ' vraag/vragen met 3+ negatieve feedback.' +
+        '</div>';
+    }
+    if (highAsked.length > 0) {
+      alertHtml += '<div class="alert alert-warning show" style="margin-bottom:12px">' +
+        '<strong>Suggestie:</strong> ' + highAsked.length + ' vraag/vragen worden vaak gesteld (5+). Overweeg een nieuwe chip.' +
+        '</div>';
+    }
+
+    var alertContainer = tbody.closest('.card') || tbody.parentElement;
+    var existingAlerts = alertContainer.querySelectorAll('.verbeter-alert');
+    existingAlerts.forEach(function (el) { el.remove(); });
+    if (alertHtml) {
+      var alertDiv = document.createElement('div');
+      alertDiv.className = 'verbeter-alert';
+      alertDiv.innerHTML = alertHtml;
+      tbody.closest('table').parentElement.insertBefore(alertDiv, tbody.closest('table'));
+    }
+
+    tbody.innerHTML = sorted.map(function (item) {
+      var truncated = item.vraag.length > 80 ? item.vraag.substring(0, 80) + '...' : item.vraag;
+      var isBeantwoord = kbVragen.indexOf(item.vraag) !== -1;
+      var statusBadge = isBeantwoord
+        ? '<span class="badge badge-goed">Beantwoord</span>'
+        : '<span class="badge badge-niet-goed">Open</span>';
+      var actieBtn = !isBeantwoord
+        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">Beantwoord</button>'
+        : '';
+
+      return '<tr>' +
+        '<td title="' + escapeHtml(item.vraag) + '">' + escapeHtml(truncated) + '</td>' +
+        '<td style="text-align:center">' + item.thumbsDown + '</td>' +
+        '<td style="text-align:center">' + item.totaal + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + actieBtn + '</td>' +
+        '</tr>';
+    }).join('');
+
+    loadKennisbankItems(kennisbankItems);
+  }
+
+  function loadKennisbankItems(items) {
+    var container = document.getElementById('kennisbank-lijst');
+    if (!container) return;
+
+    if (!items || items.length === 0) {
+      container.innerHTML = '<p class="no-data">Nog geen kennisbank items.</p>';
+      return;
+    }
+
+    container.innerHTML = items.map(function (kb) {
+      var datum = new Date(kb.created_at).toLocaleDateString('nl-NL', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+      return '<div class="kb-item" style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">' +
+        '<div style="font-weight:600;margin-bottom:4px">' + escapeHtml(kb.vraag) + '</div>' +
+        '<div style="color:var(--text-muted);font-size:0.9rem">' + escapeHtml(kb.antwoord) + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">' + datum + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function initVerbeterModal() {
+    var modal = document.getElementById('modal-verbeter');
+    if (!modal) return;
+
+    var form = document.getElementById('verbeter-form');
+    var cancelBtn = document.getElementById('verbeter-cancel-btn');
+    var submitBtn = document.getElementById('verbeter-submit-btn');
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        modal.classList.remove('show');
+      });
+    }
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+
+    if (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        var vraag = document.getElementById('verbeter-vraag').value;
+        var antwoord = document.getElementById('verbeter-antwoord').value.trim();
+
+        if (!antwoord) return;
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Opslaan...';
+        }
+
+        var result = await supabaseClient
+          .from('kennisbank_items')
+          .insert({
+            tenant_id: tenantId,
+            vraag: vraag,
+            antwoord: antwoord
+          });
+
+        if (result.error) {
+          alert('Opslaan mislukt: ' + result.error.message);
+        } else {
+          modal.classList.remove('show');
+          loadVerbeterpunten();
+        }
+
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Opslaan';
+        }
+      });
+    }
+  }
+
+  window.openVerbeterModal = function (vraag) {
+    var modal = document.getElementById('modal-verbeter');
+    if (!modal) return;
+
+    var vraagEl = document.getElementById('verbeter-vraag');
+    var vraagDisplayEl = document.getElementById('verbeter-vraag-display');
+    var antwoordEl = document.getElementById('verbeter-antwoord');
+
+    if (vraagEl) vraagEl.value = vraag;
+    if (vraagDisplayEl) vraagDisplayEl.textContent = vraag;
+    if (antwoordEl) antwoordEl.value = '';
+
+    modal.classList.add('show');
+  };
+
+  // =============================================
+  // TEAMLEIDERS
+  // =============================================
+  async function loadTeamleiders() {
+    var tbody = document.getElementById('teamleiders-body');
+
+    var result = await supabaseClient
+      .from('teamleiders')
+      .select('id, naam, email, telefoon, teams')
+      .eq('tenant_id', tenantId)
+      .order('naam', { ascending: true });
+
+    if (result.error || !result.data) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon teamleiders niet laden.</td></tr>';
+      return;
+    }
+
+    allTeamleiders = result.data;
+
+    // Update teamleider dropdowns in invite en edit modals
+    populateTeamleiderDropdown('invite-teamleider');
+    populateTeamleiderDropdown('edit-teamleider');
+
+    if (!tbody) return;
+
+    if (result.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Nog geen teamleiders.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = result.data.map(function (tl) {
+      var teamsStr = '-';
+      if (tl.teams && Array.isArray(tl.teams) && tl.teams.length > 0) {
+        teamsStr = tl.teams.join(', ');
+      }
+
+      return '<tr>' +
+        '<td>' + escapeHtml(tl.naam) + '</td>' +
+        '<td>' + escapeHtml(tl.email || '-') + '</td>' +
+        '<td>' + escapeHtml(tl.telefoon || '-') + '</td>' +
+        '<td>' + escapeHtml(teamsStr) + '</td>' +
+        '<td>' +
+          '<button class="btn-icon" onclick="window.editTeamleider(\'' + tl.id + '\')" title="Bewerken">✏️</button>' +
+          '<button class="btn-icon btn-icon-danger" onclick="window.deleteTeamleider(\'' + tl.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function initTeamleiderModal() {
+    var modal = document.getElementById('modal-teamleider');
+    if (!modal) return;
+
+    var form = document.getElementById('teamleider-form');
+    var cancelBtn = document.getElementById('tl-cancel-btn');
+    var submitBtn = document.getElementById('tl-submit-btn');
+    var addBtn = document.getElementById('add-teamleider-btn');
+
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        if (form) form.reset();
+        document.getElementById('tl-id').value = '';
+        populateTeamCheckboxes('tl-teams', []);
+        modal.classList.add('show');
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        modal.classList.remove('show');
+      });
+    }
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+
+    if (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        var tlId = document.getElementById('tl-id').value;
+        var naam = document.getElementById('tl-naam').value.trim();
+        var email = document.getElementById('tl-email').value.trim();
+        var telefoon = document.getElementById('tl-telefoon').value.trim();
+        var teams = getCheckedTeams('tl-teams');
+
+        if (!naam) return;
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Opslaan...';
+        }
+
+        var data = {
+          tenant_id: tenantId,
+          naam: naam,
+          email: email || null,
+          telefoon: telefoon || null,
+          teams: teams.length > 0 ? teams : null
+        };
+
+        var result;
+        if (tlId) {
+          // Update
+          result = await supabaseClient
+            .from('teamleiders')
+            .update(data)
+            .eq('id', tlId);
+        } else {
+          // Insert
+          result = await supabaseClient
+            .from('teamleiders')
+            .insert(data);
+        }
+
+        if (result.error) {
+          alert('Opslaan mislukt: ' + result.error.message);
+        } else {
+          modal.classList.remove('show');
+          loadTeamleiders();
+        }
+
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Opslaan';
+        }
+      });
+    }
+  }
+
+  window.editTeamleider = function (id) {
+    var tl = allTeamleiders.find(function (t) { return t.id === id; });
+    if (!tl) return;
+
+    var modal = document.getElementById('modal-teamleider');
+    if (!modal) return;
+
+    document.getElementById('tl-id').value = tl.id;
+    document.getElementById('tl-naam').value = tl.naam || '';
+    document.getElementById('tl-email').value = tl.email || '';
+    document.getElementById('tl-telefoon').value = tl.telefoon || '';
+    populateTeamCheckboxes('tl-teams', tl.teams || []);
+
+    modal.classList.add('show');
+  };
+
+  window.deleteTeamleider = async function (id) {
+    if (!confirm('Weet je zeker dat je deze teamleider wilt verwijderen?')) return;
+
+    await supabaseClient
+      .from('teamleiders')
+      .delete()
+      .eq('id', id);
+
+    loadTeamleiders();
+  };
+
+  // =============================================
+  // MELDINGEN (patroon detectie)
+  // =============================================
+  async function loadMeldingen() {
+    var result = await supabaseClient
+      .from('meldingen')
+      .select('id, type, bericht, created_at, gelezen')
+      .eq('tenant_id', tenantId)
+      .eq('gelezen', false)
+      .order('created_at', { ascending: false });
+
+    if (result.error || !result.data || result.data.length === 0) return;
+
+    var meldingen = result.data;
+
+    // Toon notificatie badge of alert
+    var meldingenContainer = document.getElementById('meldingen-lijst');
+    if (meldingenContainer) {
+      meldingenContainer.innerHTML = meldingen.map(function (m) {
+        var datum = new Date(m.created_at).toLocaleDateString('nl-NL', {
+          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+        });
+        return '<div class="alert alert-warning show" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">' +
+          '<div><strong>' + escapeHtml(m.type || 'Melding') + '</strong> — ' + escapeHtml(m.bericht) +
+          '<br><small style="color:var(--text-muted)">' + datum + '</small></div>' +
+          '<button class="btn-icon" onclick="window.markeerGelezen(\'' + m.id + '\')" title="Markeer als gelezen">✓</button>' +
+          '</div>';
+      }).join('');
+    }
+
+    // Badge op relevante tabs
+    var meldingenBadge = document.getElementById('meldingen-badge');
+    if (meldingenBadge) {
+      meldingenBadge.textContent = meldingen.length;
+      meldingenBadge.style.display = 'inline-block';
+    }
+  }
+
+  window.markeerGelezen = async function (id) {
+    await supabaseClient
+      .from('meldingen')
+      .update({ gelezen: true })
+      .eq('id', id);
+
+    loadMeldingen();
+  };
+
+  // =============================================
   // INSTELLINGEN
   // =============================================
   var settingsFields = [
@@ -1016,23 +1854,4 @@
     }
   }
 
-  // =============================================
-  // HULPFUNCTIES
-  // =============================================
-  function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function formatFunctiegroep(fg) {
-    var map = {
-      'ambulant_begeleider': 'Ambulant Begeleider',
-      'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
-      'woonbegeleider': 'Woonbegeleider',
-      'persoonlijk_woonbegeleider': 'Pers. Woonbegeleider'
-    };
-    return map[fg] || fg || '-';
-  }
 })();

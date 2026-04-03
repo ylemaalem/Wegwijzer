@@ -70,7 +70,7 @@
     var verschilWeken = Math.round(verschilMs / (7 * 24 * 60 * 60 * 1000));
     var week = verschilWeken + 1;
 
-    return Math.max(1, Math.min(week, 6));
+    return Math.max(1, week);
   }
 
   // =============================================
@@ -81,27 +81,43 @@
     document.getElementById('welcome-title').textContent =
       naam ? 'Welkom, ' + naam + '!' : 'Welkom!';
 
-    document.getElementById('welcome-week').textContent =
-      'Week ' + weekNummer + ' van 6';
-
-    // Voortgangsmeter
     var meter = document.getElementById('progress-meter');
     var labels = document.getElementById('progress-labels');
-    meter.innerHTML = '';
-    labels.innerHTML = '';
+    var weekBadge = document.getElementById('welcome-week');
+    var subtitle = document.getElementById('welcome-subtitle');
 
-    for (var i = 1; i <= 6; i++) {
-      var step = document.createElement('div');
-      step.className = 'progress-step';
-      if (i < weekNummer) step.className += ' done';
-      if (i === weekNummer) step.className += ' current';
-      meter.appendChild(step);
+    if (weekNummer > 6) {
+      // Na inwerkperiode: verberg voortgang, toon kennisassistent modus
+      if (meter) meter.style.display = 'none';
+      if (labels) labels.style.display = 'none';
+      if (weekBadge) weekBadge.style.display = 'none';
+      if (subtitle) subtitle.textContent = 'Ik ben jouw kennisassistent. Stel me vragen over protocollen, werkwijze en procedures.';
+    } else {
+      // Tijdens inwerkperiode: toon voortgang
+      if (weekBadge) weekBadge.textContent = 'Week ' + weekNummer + ' van 6';
 
-      var label = document.createElement('span');
-      label.className = 'progress-label';
-      if (i === weekNummer) label.className += ' active';
-      label.textContent = i;
-      labels.appendChild(label);
+      meter.innerHTML = '';
+      labels.innerHTML = '';
+
+      for (var i = 1; i <= 6; i++) {
+        var step = document.createElement('div');
+        step.className = 'progress-step';
+        if (i < weekNummer) step.className += ' done';
+        if (i === weekNummer) step.className += ' current';
+        meter.appendChild(step);
+
+        var label = document.createElement('span');
+        label.className = 'progress-label';
+        if (i === weekNummer) label.className += ' active';
+        label.textContent = i;
+        labels.appendChild(label);
+      }
+    }
+
+    // Privacy notice: altijd zichtbaar op welkomscherm
+    var privacyNotice = document.getElementById('privacy-notice');
+    if (privacyNotice) {
+      privacyNotice.style.display = '';
     }
 
     // Start knop
@@ -178,12 +194,20 @@
   }
 
   function toonWelkomstBericht() {
-    var fg = formatFunctiegroep(profile.functiegroep);
     var naam = profile.naam ? profile.naam.split(' ')[0] : '';
-    var tekst = 'Hallo' + (naam ? ' ' + naam : '') + '! ' +
-      'Ik ben je inwerkcoach. Je bent nu in week ' + weekNummer + ' van je inwerktraject' +
-      (fg ? ' als ' + fg : '') + '. ' +
-      'Stel me gerust een vraag over werkwijze, protocollen of je inwerktraject.';
+    var tekst;
+
+    if (weekNummer > 6) {
+      tekst = 'Hallo' + (naam ? ' ' + naam : '') + '! ' +
+        'Ik ben jouw kennisassistent. Stel me vragen over protocollen, werkwijze en procedures.';
+    } else {
+      var fg = formatFunctiegroep(profile.functiegroep);
+      tekst = 'Hallo' + (naam ? ' ' + naam : '') + '! ' +
+        'Ik ben je kennisassistent. Je bent nu in week ' + weekNummer + ' van je inwerktraject' +
+        (fg ? ' als ' + fg : '') + '. ' +
+        'Stel me gerust een vraag over werkwijze, protocollen of je inwerktraject.';
+    }
+
     renderBotBericht(tekst, null, null, null);
   }
 
@@ -191,6 +215,25 @@
   // SUGGESTIE CHIPS
   // =============================================
   function initChips() {
+    if (weekNummer > 6) {
+      chipsBar.innerHTML = '';
+      var kennisChips = [
+        { emoji: '\uD83D\uDCCB', text: 'Protocollen opzoeken', vraag: 'Welke protocollen zijn er?' },
+        { emoji: '\uD83D\uDCBC', text: 'Declaraties', vraag: 'Hoe werken declaraties?' },
+        { emoji: '\uD83D\uDCDD', text: 'Rapportage schrijven', vraag: 'Hoe schrijf ik een rapportage?' },
+        { emoji: '\u2753', text: 'Veelgestelde vragen', vraag: 'Wat zijn veelgestelde vragen?' },
+        { emoji: '\uD83D\uDD17', text: 'Documenten en links', vraag: 'Welke documenten en links zijn beschikbaar?' }
+      ];
+      kennisChips.forEach(function(c) {
+        var btn = document.createElement('button');
+        btn.className = 'chip';
+        btn.dataset.vraag = c.vraag;
+        btn.textContent = c.emoji + ' ' + c.text;
+        chipsBar.appendChild(btn);
+      });
+    }
+
+    // Attach click handlers to ALL chips (existing or new)
     var chips = chipsBar.querySelectorAll('.chip');
     chips.forEach(function (chip) {
       chip.addEventListener('click', function () {

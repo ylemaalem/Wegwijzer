@@ -31,6 +31,8 @@
       <button class="tab-btn" data-tab="medewerkers">Medewerkers</button>
       <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
       <button class="tab-btn" data-tab="statistieken">Statistieken</button>
+      <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
+      <button class="tab-btn" data-tab="teamleiders">Teamleiders</button>
       <button class="tab-btn" data-tab="instellingen">Instellingen</button>
     </nav>
 
@@ -41,6 +43,29 @@
       <section class="tab-content active" id="tab-documenten">
         <h2 class="section-title">Documenten beheren</h2>
         <p class="section-subtitle">Upload PDF of Word bestanden voor de inwerkcoach.</p>
+
+        <!-- Document metadata -->
+        <div class="form-row" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <div class="form-group" style="flex:1;min-width:160px">
+            <label class="form-label" for="doc-type">Documenttype</label>
+            <select class="form-input" id="doc-type">
+              <option value="protocol">Protocol</option>
+              <option value="werkwijze">Werkwijze</option>
+              <option value="arbeidsvoorwaarden">Arbeidsvoorwaarden</option>
+              <option value="formulier">Formulier</option>
+              <option value="organisatie-info">Organisatie-info</option>
+              <option value="overig">Overig</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:0 0 100px">
+            <label class="form-label" for="doc-versie">Versie</label>
+            <input class="form-input" type="text" id="doc-versie" value="1.0" placeholder="1.0">
+          </div>
+          <div class="form-group" style="flex:1;min-width:160px">
+            <label class="form-label" for="doc-revisiedatum">Revisiedatum</label>
+            <input class="form-input" type="date" id="doc-revisiedatum">
+          </div>
+        </div>
 
         <!-- Upload zone -->
         <div class="upload-zone" id="upload-zone">
@@ -60,18 +85,24 @@
           <span id="reprocess-message">Er zijn documenten zonder geëxtraheerde tekst. Klik hier om ze te verwerken.</span>
         </div>
 
+        <!-- Revisie herinneringen -->
+        <div id="revisie-herinneringen" style="margin-bottom:16px"></div>
+
         <!-- Documenten tabel -->
         <div class="data-table-wrap">
           <table class="data-table" id="documents-table">
             <thead>
               <tr>
                 <th>Naam</th>
+                <th>Type</th>
+                <th>Versie</th>
+                <th>Revisie</th>
                 <th>Datum</th>
                 <th style="width:60px"></th>
               </tr>
             </thead>
             <tbody id="documents-body">
-              <tr><td colspan="3" class="no-data">Documenten laden...</td></tr>
+              <tr><td colspan="6" class="no-data">Documenten laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -93,6 +124,7 @@
                 <th>Naam</th>
                 <th>E-mail</th>
                 <th>Functiegroep</th>
+                <th>Teams</th>
                 <th>Werkuren</th>
                 <th>Regio</th>
                 <th>Startdatum</th>
@@ -100,9 +132,23 @@
               </tr>
             </thead>
             <tbody id="medewerkers-body">
-              <tr><td colspan="7" class="no-data">Medewerkers laden...</td></tr>
+              <tr><td colspan="8" class="no-data">Medewerkers laden...</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Persoonlijke documenten sectie -->
+        <div id="persoonlijke-docs-section" style="display:none;margin-top:24px">
+          <h3 class="section-title" style="font-size:1rem">Persoonlijke documenten</h3>
+          <div class="upload-zone" id="persoonlijke-upload-zone">
+            <div class="upload-zone-icon">📎</div>
+            <div class="upload-zone-text">
+              <strong>Klik hier</strong> of sleep bestanden hierheen<br>
+              Persoonlijke documenten voor deze medewerker
+            </div>
+            <input type="file" id="persoonlijke-file-input" accept=".pdf,.doc,.docx,.txt" multiple>
+          </div>
+          <div id="persoonlijke-docs-list" style="margin-top:12px"></div>
         </div>
       </section>
 
@@ -175,6 +221,66 @@
             </thead>
             <tbody id="stats-per-dag-body">
               <tr><td colspan="2" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: VERBETERPUNTEN ========== -->
+      <section class="tab-content" id="tab-verbeterpunten">
+        <h2 class="section-title">Verbeterpunten</h2>
+        <p class="section-subtitle">Veelgestelde vragen met negatieve feedback</p>
+
+        <div id="verbeter-alert" class="alert" role="alert" style="display:none">
+          <span id="verbeter-alert-message"></span>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="verbeterpunten-table">
+            <thead>
+              <tr>
+                <th>Vraag</th>
+                <th>Aantal 👎</th>
+                <th>Aantal gesteld</th>
+                <th>Status</th>
+                <th>Actie</th>
+              </tr>
+            </thead>
+            <tbody id="verbeterpunten-body">
+              <tr><td colspan="5" class="no-data">Verbeterpunten laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Kennisbank items -->
+        <div style="margin-top:24px">
+          <h3 class="section-title" style="font-size:1rem">Kennisbank items</h3>
+          <p class="section-subtitle">Handmatig toegevoegde antwoorden en correcties</p>
+          <div id="kennisbank-items-list"></div>
+        </div>
+      </section>
+
+      <!-- ========== TAB: TEAMLEIDERS ========== -->
+      <section class="tab-content" id="tab-teamleiders">
+        <h2 class="section-title">Teamleiders beheren</h2>
+
+        <button class="btn btn-primary" id="add-teamleider-btn" style="max-width:280px;margin-bottom:20px">
+          + Teamleider toevoegen
+        </button>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="teamleiders-table">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Telefoon</th>
+                <th>Teams</th>
+                <th>Acties</th>
+              </tr>
+            </thead>
+            <tbody id="teamleiders-body">
+              <tr><td colspan="5" class="no-data">Teamleiders laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -271,6 +377,46 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label">Account type</label>
+            <div id="invite-account-type" style="display:flex;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="invite-account-type" value="vast" checked> Vast
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="invite-account-type" value="tijdelijk"> Tijdelijk
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" id="invite-einddatum-group" style="display:none">
+            <label class="form-label" for="invite-einddatum">Einddatum contract</label>
+            <input class="form-input" type="date" id="invite-einddatum">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Teams</label>
+            <div id="invite-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Almere"> Team Almere</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Veluwe 1"> Team Veluwe 1</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Veluwe 2"> Team Veluwe 2</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Middelste Wei"> Team Middelste Wei</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Molenweg"> Team Molenweg</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Gele Weiland"> Team Gele Weiland</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Manuscript"> Team Manuscript</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team VAN"> Team VAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team FAN"> Team FAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team FANMN"> Team FANMN</label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="invite-teamleider">Teamleider</label>
+            <select class="form-input" id="invite-teamleider">
+              <option value="">Selecteer teamleider</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="invite-werkuren">Werkuren per week</label>
             <input class="form-input" type="text" id="invite-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
           </div>
@@ -351,6 +497,46 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label">Account type</label>
+            <div id="edit-account-type" style="display:flex;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="edit-account-type" value="vast" checked> Vast
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="edit-account-type" value="tijdelijk"> Tijdelijk
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" id="edit-einddatum-group" style="display:none">
+            <label class="form-label" for="edit-einddatum">Einddatum contract</label>
+            <input class="form-input" type="date" id="edit-einddatum">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Teams</label>
+            <div id="edit-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Almere"> Team Almere</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Veluwe 1"> Team Veluwe 1</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Veluwe 2"> Team Veluwe 2</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Middelste Wei"> Team Middelste Wei</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Molenweg"> Team Molenweg</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Gele Weiland"> Team Gele Weiland</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Manuscript"> Team Manuscript</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team VAN"> Team VAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team FAN"> Team FAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team FANMN"> Team FANMN</label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-teamleider">Teamleider</label>
+            <select class="form-input" id="edit-teamleider">
+              <option value="">Selecteer teamleider</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="edit-werkuren">Werkuren per week</label>
             <input class="form-input" type="text" id="edit-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
           </div>
@@ -376,6 +562,87 @@
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="edit-cancel-btn">Annuleren</button>
             <button type="submit" class="btn btn-primary" id="edit-submit-btn">Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: VERBETERPUNT ANTWOORD ========== -->
+    <div class="modal-overlay" id="modal-verbeter-antwoord">
+      <div class="modal">
+        <h3 class="modal-title">Antwoord toevoegen</h3>
+
+        <div id="verbeter-modal-alert" class="alert" role="alert" style="display:none">
+          <span id="verbeter-modal-alert-message"></span>
+        </div>
+
+        <form id="verbeter-antwoord-form" novalidate>
+          <input type="hidden" id="verbeter-vraag-id">
+
+          <div class="form-group">
+            <label class="form-label">Vraag</label>
+            <p id="verbeter-vraag-tekst" style="font-size:0.9rem;color:var(--text)"></p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="verbeter-antwoord-tekst">Correct antwoord</label>
+            <textarea class="form-textarea" id="verbeter-antwoord-tekst" rows="6" placeholder="Typ hier het correcte antwoord..." required></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="verbeter-cancel-btn">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="verbeter-submit-btn">Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: TEAMLEIDER TOEVOEGEN/BEWERKEN ========== -->
+    <div class="modal-overlay" id="modal-teamleider">
+      <div class="modal">
+        <h3 class="modal-title" id="teamleider-modal-title">Teamleider toevoegen</h3>
+
+        <div id="teamleider-alert" class="alert" role="alert" style="display:none">
+          <span id="teamleider-alert-message"></span>
+        </div>
+
+        <form id="teamleider-form" novalidate>
+          <input type="hidden" id="tl-id">
+
+          <div class="form-group">
+            <label class="form-label" for="tl-naam">Naam</label>
+            <input class="form-input" type="text" id="tl-naam" placeholder="Volledige naam" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="tl-email">E-mail</label>
+            <input class="form-input" type="email" id="tl-email" placeholder="naam@werkmail.nl" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="tl-telefoon">Telefoon</label>
+            <input class="form-input" type="tel" id="tl-telefoon" placeholder="06-12345678">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Teams</label>
+            <div id="tl-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Almere"> Team Almere</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Veluwe 1"> Team Veluwe 1</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Veluwe 2"> Team Veluwe 2</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Middelste Wei"> Team Middelste Wei</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Molenweg"> Team Molenweg</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Gele Weiland"> Team Gele Weiland</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Manuscript"> Team Manuscript</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team VAN"> Team VAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team FAN"> Team FAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team FANMN"> Team FANMN</label>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="tl-cancel-btn">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="tl-submit-btn">Opslaan</button>
           </div>
         </form>
       </div>

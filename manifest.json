@@ -1,7 +1,7 @@
 {
-  "name": "Wegwijzer — Jouw inwerkcoach",
+  "name": "Wegwijzer — Jouw kennisassistent",
   "short_name": "Wegwijzer",
-  "description": "AI-gestuurde inwerkcoach voor nieuwe medewerkers",
+  "description": "AI-gestuurde kennisassistent voor medewerkers",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0D5C6B",

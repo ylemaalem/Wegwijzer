@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#E8720C">
-  <title>Wegwijzer — Mijn inwerkcoach</title>
+  <title>Wegwijzer — Mijn kennisassistent</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3">
   <link rel="apple-touch-icon" href="icons/icon-192.png?v=3">
@@ -46,6 +46,11 @@
         <!-- Voortgangsmeter -->
         <div class="progress-labels" id="progress-labels"></div>
         <div class="progress-meter" id="progress-meter"></div>
+
+        <!-- Privacy melding -->
+        <div class="privacy-notice" id="privacy-notice">
+          <p>Wegwijzer is jouw persoonlijke kennisassistent. Jouw vragen zijn privé. Alleen bij een patroon van zorgwekkende vragen ontvangt jouw teamleider een anonieme melding zonder jouw naam of exacte vraag.</p>
+        </div>
 
         <button class="btn btn-primary welcome-start-btn" id="start-chat-btn">
           Start gesprek →
@@ -100,6 +105,10 @@
       </div>
 
     </main>
+
+    <footer class="powered-by">
+      Mogelijk gemaakt door Wegwijzer
+    </footer>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

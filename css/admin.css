@@ -31,14 +31,8 @@
   transition: color 0.2s, border-color 0.2s;
 }
 
-.tab-btn:hover {
-  color: var(--text);
-}
-
-.tab-btn.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
 /* ---- Tab content ---- */
 .tab-content {
@@ -49,23 +43,11 @@
   width: 100%;
 }
 
-.tab-content.active {
-  display: block;
-}
+.tab-content.active { display: block; }
 
 /* ---- Sectie titels ---- */
-.section-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin-bottom: 16px;
-  color: var(--text);
-}
-
-.section-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-light);
-  margin-bottom: 16px;
-}
+.section-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+.section-subtitle { font-size: 0.875rem; color: var(--text-light); margin-bottom: 16px; }
 
 /* ---- Upload zone ---- */
 .upload-zone {
@@ -79,349 +61,293 @@
   margin-bottom: 20px;
 }
 
-.upload-zone:hover,
-.upload-zone.drag-over {
+.upload-zone:hover, .upload-zone.drag-over {
   border-color: var(--primary);
   background: rgba(232, 114, 12, 0.03);
 }
 
-.upload-zone-icon {
-  font-size: 2rem;
-  margin-bottom: 8px;
-}
+.upload-zone-icon { font-size: 2rem; margin-bottom: 8px; }
+.upload-zone-text { color: var(--text-light); font-size: 0.9rem; }
+.upload-zone-text strong { color: var(--primary); }
+.upload-zone input[type="file"] { display: none; }
 
-.upload-zone-text {
-  color: var(--text-light);
-  font-size: 0.9rem;
-}
-
-.upload-zone-text strong {
-  color: var(--primary);
-}
-
-.upload-zone input[type="file"] {
-  display: none;
-}
-
-.upload-progress {
-  margin-top: 12px;
-  display: none;
-}
-
-.upload-progress.show {
-  display: block;
-}
+.upload-progress { margin-top: 12px; display: none; }
+.upload-progress.show { display: block; }
 
 .progress-bar {
-  width: 100%;
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
+  width: 100%; height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden;
 }
 
 .progress-fill {
-  height: 100%;
-  background: var(--primary);
-  border-radius: 3px;
-  transition: width 0.3s;
-  width: 0%;
+  height: 100%; background: var(--primary);
+  border-radius: 3px; transition: width 0.3s; width: 0%;
 }
 
-/* ---- Upload items (per-bestand voortgang) ---- */
-.upload-item {
-  margin-bottom: 8px;
-}
+/* Upload items per bestand */
+.upload-item { margin-bottom: 8px; }
+.upload-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.upload-item-name { font-size: 0.8rem; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+.upload-item-status { font-size: 0.75rem; color: var(--text-light); font-weight: 600; }
+.upload-item .progress-bar { height: 4px; }
 
-.upload-item-header {
+/* ---- Document metadata formulier ---- */
+.doc-meta-fields {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.upload-item-name {
-  font-size: 0.8rem;
-  color: var(--text);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 70%;
-}
-
-.upload-item-status {
-  font-size: 0.75rem;
-  color: var(--text-light);
-  font-weight: 600;
-}
-
-.upload-item .progress-bar {
-  height: 4px;
-}
-
-/* ---- Alert warning ---- */
-.alert-warning {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
-  border-radius: var(--radius-sm);
-  padding: 12px 16px;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-/* ---- Data tabel ---- */
-.data-table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  margin-bottom: 20px;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-  min-width: 500px;
-}
-
-.data-table th {
-  text-align: left;
-  padding: 10px 12px;
-  background: var(--bg);
-  color: var(--text-light);
-  font-weight: 600;
-  border-bottom: 2px solid var(--border);
-  white-space: nowrap;
-}
-
-.data-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-}
-
-.data-table tr:hover td {
-  background: rgba(232, 114, 12, 0.02);
-}
-
-.data-table .no-data {
-  text-align: center;
-  color: var(--text-muted);
-  padding: 24px 12px;
-}
-
-/* ---- Badges ---- */
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.badge-admin {
-  background: rgba(232, 114, 12, 0.1);
-  color: var(--primary);
-}
-
-.badge-medewerker {
-  background: rgba(40, 167, 69, 0.1);
-  color: var(--success);
-}
-
-.badge-goed {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.badge-niet-goed {
-  background: var(--error-bg);
-  color: var(--error);
-}
-
-.badge-geen {
-  background: var(--bg);
-  color: var(--text-muted);
-}
-
-/* ---- Actie knoppen in tabel ---- */
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: background 0.2s;
-  color: var(--text-light);
-}
-
-.btn-icon:hover {
-  background: var(--bg);
-}
-
-.btn-icon-danger {
-  color: var(--error);
-}
-
-.btn-icon-danger:hover {
-  background: var(--error-bg);
-}
-
-/* ---- Modal ---- */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  padding: 16px;
-}
-
-.modal-overlay.show {
-  display: flex;
-}
-
-.modal {
-  background: var(--bg-white);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  width: 100%;
-  max-width: 480px;
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
-}
-
-.modal-title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  margin-bottom: 16px;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 20px;
-}
-
-.modal-actions .btn {
-  flex: 1;
-}
-
-/* ---- Statistiek kaarten ---- */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
-  background: var(--bg-white);
-  border-radius: var(--radius-sm);
-  padding: 16px;
-  box-shadow: var(--shadow);
-  text-align: center;
-}
-
-.stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.stat-label {
-  font-size: 0.8rem;
-  color: var(--text-light);
-  margin-top: 4px;
-}
-
-/* ---- Filter bar ---- */
-.filter-bar {
-  display: flex;
-  gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
-.filter-bar .form-input {
+.doc-meta-fields .form-group {
   flex: 1;
-  min-width: 180px;
-  padding: 8px 12px;
-  font-size: 0.875rem;
+  min-width: 150px;
+  margin-bottom: 0;
 }
 
-.filter-bar select.form-input {
-  flex: 0 0 auto;
-  min-width: 160px;
+.doc-meta-fields .form-input {
+  padding: 8px 10px;
+  font-size: 0.85rem;
 }
 
-/* ---- Antwoord preview ---- */
-.answer-preview {
-  max-width: 300px;
-  max-height: 60px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  font-size: 0.8rem;
-  color: var(--text-light);
+.doc-meta-fields .form-label {
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+/* ---- Revisie herinneringen ---- */
+.revisie-herinneringen {
+  background: #FFF3CD;
+  border: 1px solid #FFE082;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+
+.revisie-herinneringen h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #856404;
+}
+
+.revisie-herinneringen ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.revisie-herinneringen li {
+  margin-bottom: 4px;
+  color: #856404;
+}
+
+/* ---- Revisie kleurcodes ---- */
+.revisie-groen { color: #28a745; font-weight: 600; }
+.revisie-oranje { color: #ff9800; font-weight: 600; }
+.revisie-rood { color: #dc3545; font-weight: 600; }
+
+/* ---- Alert warning ---- */
+.alert-warning {
+  background: #fff3cd; color: #856404; border: 1px solid #ffc107;
+  border-radius: var(--radius-sm); padding: 12px 16px; font-size: 0.85rem; font-weight: 500;
+}
+
+.alert-info {
+  background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb;
+  border-radius: var(--radius-sm); padding: 12px 16px; font-size: 0.85rem; font-weight: 500;
+}
+
+/* ---- Data tabel ---- */
+.data-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 20px; }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; min-width: 500px; }
+
+.data-table th {
+  text-align: left; padding: 10px 12px; background: var(--bg);
+  color: var(--text-light); font-weight: 600; border-bottom: 2px solid var(--border); white-space: nowrap;
+}
+
+.data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.data-table tr:hover td { background: rgba(232, 114, 12, 0.02); }
+.data-table .no-data { text-align: center; color: var(--text-muted); padding: 24px 12px; }
+
+/* ---- Badges ---- */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+.badge-admin { background: rgba(232, 114, 12, 0.1); color: var(--primary); }
+.badge-medewerker { background: rgba(40, 167, 69, 0.1); color: var(--success); }
+.badge-tijdelijk { background: rgba(108, 117, 125, 0.1); color: #6c757d; }
+.badge-verlopen { background: rgba(220, 53, 69, 0.1); color: var(--error); }
+.badge-goed { background: var(--success-bg); color: var(--success); }
+.badge-niet-goed { background: var(--error-bg); color: var(--error); }
+.badge-geen { background: var(--bg); color: var(--text-muted); }
+.badge-open { background: #FFF3CD; color: #856404; }
+.badge-beantwoord { background: var(--success-bg); color: var(--success); }
+
+/* ---- Actie knoppen ---- */
+.btn-icon { background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 1rem; transition: background 0.2s; color: var(--text-light); }
+.btn-icon:hover { background: var(--bg); }
+.btn-icon-danger { color: var(--error); }
+.btn-icon-danger:hover { background: var(--error-bg); }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5); display: none; align-items: center;
+  justify-content: center; z-index: 200; padding: 16px;
+}
+.modal-overlay.show { display: flex; }
+
+.modal {
+  background: var(--bg-white); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 24px;
+}
+
+.modal-title { font-size: 1.125rem; font-weight: 700; margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+.modal-actions .btn { flex: 1; }
+
+/* ---- Teams checkboxes ---- */
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.teams-grid label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text);
   cursor: pointer;
 }
 
-.answer-preview:hover {
-  color: var(--text);
+.teams-grid input[type="checkbox"] {
+  accent-color: var(--primary);
 }
+
+/* ---- Account type radio ---- */
+.account-type-group {
+  display: flex;
+  gap: 16px;
+}
+
+.account-type-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.account-type-group input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+/* ---- Statistiek kaarten ---- */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--bg-white); border-radius: var(--radius-sm); padding: 16px; box-shadow: var(--shadow); text-align: center; }
+.stat-value { font-size: 1.75rem; font-weight: 700; color: var(--primary); }
+.stat-label { font-size: 0.8rem; color: var(--text-light); margin-top: 4px; }
+
+/* ---- Filter bar ---- */
+.filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-bar .form-input { flex: 1; min-width: 180px; padding: 8px 12px; font-size: 0.875rem; }
+.filter-bar select.form-input { flex: 0 0 auto; min-width: 160px; }
+
+/* ---- Antwoord preview ---- */
+.answer-preview {
+  max-width: 300px; max-height: 60px; overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  font-size: 0.8rem; color: var(--text-light); cursor: pointer;
+}
+.answer-preview:hover { color: var(--text); }
 
 /* ---- Textarea ---- */
 .form-textarea {
-  width: 100%;
-  padding: 12px 14px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-family: var(--font);
-  resize: vertical;
-  min-height: 100px;
-  transition: border-color 0.2s;
-  background: var(--bg-white);
-  color: var(--text);
-  line-height: 1.5;
+  width: 100%; padding: 12px 14px; border: 2px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 0.9rem; font-family: var(--font);
+  resize: vertical; min-height: 100px; transition: border-color 0.2s;
+  background: var(--bg-white); color: var(--text); line-height: 1.5;
 }
-
-.form-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-}
+.form-textarea:focus { outline: none; border-color: var(--primary); }
 
 /* ---- Functiegroep labels ---- */
-.functiegroep-label {
-  font-size: 0.8rem;
-  white-space: nowrap;
+.functiegroep-label { font-size: 0.8rem; white-space: nowrap; }
+
+/* ---- Persoonlijke docs sectie ---- */
+.pers-docs-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 2px solid var(--border);
 }
 
-/* ---- Lege staat ---- */
-.empty-state {
-  text-align: center;
-  padding: 40px 16px;
-  color: var(--text-muted);
-}
-
-.empty-state-icon {
-  font-size: 2.5rem;
+.pers-docs-section .upload-zone {
+  padding: 20px 16px;
   margin-bottom: 12px;
 }
 
-.empty-state-text {
-  font-size: 0.9rem;
+.pers-docs-list {
+  font-size: 0.85rem;
+}
+
+.pers-docs-list .pers-doc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---- Verbeterpunten ---- */
+.verbeter-vraag {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kennisbank-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 2px solid var(--border);
+}
+
+.kennisbank-item {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.kennisbank-item-vraag {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.kennisbank-item-antwoord {
+  font-size: 0.82rem;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+/* ---- Melding badge ---- */
+.melding-badge {
+  display: inline-block;
+  background: var(--error);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: top;
 }
 
 /* ---- Admin page overrides ---- */
@@ -431,26 +357,32 @@
   padding: 0;
 }
 
-/* ---- Responsive ---- */
+/* =============================================
+   RESPONSIVE
+   ============================================= */
+
+@media (max-width: 768px) {
+  .tab-btn { padding: 10px 12px; font-size: 0.8rem; }
+  .doc-meta-fields { flex-direction: column; gap: 8px; }
+  .doc-meta-fields .form-group { min-width: 100%; }
+  .teams-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 600px) {
-  .tab-btn {
-    padding: 10px 12px;
-    font-size: 0.8rem;
-  }
+  .tab-btn { padding: 8px 10px; font-size: 0.75rem; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .modal { padding: 16px; max-width: 100%; }
+  .filter-bar { flex-direction: column; }
+  .filter-bar .form-input { min-width: 100%; }
+  .data-table { min-width: 600px; }
+  .tab-content { padding: 12px; }
+  .section-title { font-size: 1.1rem; }
+}
 
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .modal {
-    padding: 16px;
-  }
-
-  .filter-bar {
-    flex-direction: column;
-  }
-
-  .filter-bar .form-input {
-    min-width: 100%;
-  }
+@media (max-width: 480px) {
+  .app-header { padding: 12px; gap: 8px; }
+  .app-header h1 { font-size: 1rem; }
+  .modal { padding: 14px; }
+  .data-table { font-size: 0.8rem; }
+  .data-table th, .data-table td { padding: 8px 8px; }
 }

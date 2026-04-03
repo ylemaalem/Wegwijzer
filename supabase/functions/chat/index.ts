@@ -11,7 +11,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Nederlandse stopwoorden voor keyword filtering
 const STOPWOORDEN = new Set([
   "de", "het", "een", "van", "voor", "met", "die", "dat", "zijn", "was",
   "niet", "ook", "maar", "dan", "hoe", "wat", "waar", "wie", "wel", "nog",
@@ -22,14 +21,20 @@ const STOPWOORDEN = new Set([
   "haar", "zij", "wij", "ik", "je", "jij", "hij", "het", "men", "er",
 ]);
 
+// Zorgwekkende onderwerpen voor patroonherkenning
+const ZORGWEKKENDE_TERMEN = [
+  "agressie", "agressief", "geweld", "slaan", "dreigen", "dreiging",
+  "crisis", "crisisplan", "noodsituatie", "nood",
+  "suicid", "suïcid", "zelfdoding", "zelfmoord", "levenseinde",
+];
+
 Deno.serve(async (req: Request) => {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // ---- 1. Authenticatie controleren ----
+    // ---- 1. Authenticatie ----
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -38,7 +43,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Supabase client met user token
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -51,12 +55,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Client met user's JWT (voor RLS)
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-
-    // Service client (bypass RLS, voor documenten ophalen)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // ---- 2. Gebruiker verifiëren ----
@@ -71,7 +72,7 @@ Deno.serve(async (req: Request) => {
     // ---- 3. Profiel ophalen ----
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id, naam, role, functiegroep, startdatum, tenant_id, inwerktraject_url")
+      .select("id, naam, role, functiegroep, startdatum, tenant_id, inwerktraject_url, werkuren, regio, teams, teamleider_naam, account_type, einddatum")
       .eq("user_id", user.id)
       .single();
 
@@ -82,17 +83,28 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Check tijdelijk account verlopen
+    if (profile.account_type === "tijdelijk" && profile.einddatum) {
+      const eind = new Date(profile.einddatum);
+      if (new Date() > eind) {
+        return new Response(
+          JSON.stringify({ error: "Je account is verlopen. Neem contact op met je teamleider." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- 4. Rate limiting: max 50 vragen per dag ----
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const { count: todayCount, error: countError } = await supabaseAdmin
+    const { count: todayCount } = await supabaseAdmin
       .from("conversations")
       .select("id", { count: "exact", head: true })
       .eq("user_id", profile.id)
       .gte("created_at", todayStart.toISOString());
 
-    if (!countError && todayCount !== null && todayCount >= 50) {
+    if (todayCount !== null && todayCount >= 50) {
       return new Response(
         JSON.stringify({
           error: "Je hebt het dagelijkse maximum van 50 vragen bereikt. Morgen kun je weer vragen stellen.",
@@ -102,7 +114,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- 5. Request body lezen ----
+    // ---- 5. Request body ----
     const { vraag, functiegroep, weeknummer } = await req.json();
 
     if (!vraag || typeof vraag !== "string" || vraag.trim().length === 0) {
@@ -112,7 +124,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Max lengte check
     if (vraag.length > 2000) {
       return new Response(
         JSON.stringify({ error: "Vraag is te lang (max 2000 tekens)" }),
@@ -120,7 +131,84 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- 6a. Tenant instellingen ophalen (organisatienaam, website URL) ----
+    // ---- 5b. Patroonherkenning zorgwekkende onderwerpen ----
+    const vraagLower = vraag.toLowerCase();
+    const gevondenTermen = ZORGWEKKENDE_TERMEN.filter(t => vraagLower.includes(t));
+
+    if (gevondenTermen.length > 0) {
+      // Tel hoeveel zorgwekkende vragen er deze week zijn binnen hetzelfde team
+      const weekStart = new Date();
+      const dag = weekStart.getDay();
+      const offset = dag === 0 ? 6 : dag - 1;
+      weekStart.setDate(weekStart.getDate() - offset);
+      weekStart.setHours(0, 0, 0, 0);
+
+      // Haal alle profielen op met dezelfde teams
+      const userTeams: string[] = profile.teams || [];
+      if (userTeams.length > 0) {
+        const { data: teamProfiles } = await supabaseAdmin
+          .from("profiles")
+          .select("id")
+          .eq("tenant_id", profile.tenant_id)
+          .overlaps("teams", userTeams);
+
+        if (teamProfiles && teamProfiles.length > 0) {
+          const teamProfileIds = teamProfiles.map((p: { id: string }) => p.id);
+
+          const { data: weekConvs } = await supabaseAdmin
+            .from("conversations")
+            .select("vraag")
+            .in("user_id", teamProfileIds)
+            .gte("created_at", weekStart.toISOString());
+
+          if (weekConvs) {
+            let zorgCount = 0;
+            for (const conv of weekConvs) {
+              const cl = (conv.vraag || "").toLowerCase();
+              if (ZORGWEKKENDE_TERMEN.some(t => cl.includes(t))) {
+                zorgCount++;
+              }
+            }
+
+            // Huidige vraag meetellen
+            zorgCount++;
+
+            if (zorgCount >= 3) {
+              // Bepaal het onderwerp
+              let onderwerp = "een zorgwekkend onderwerp";
+              if (gevondenTermen.some(t => t.includes("agressie") || t.includes("geweld") || t.includes("slaan") || t.includes("dreig"))) {
+                onderwerp = "agressie";
+              } else if (gevondenTermen.some(t => t.includes("crisis") || t.includes("nood"))) {
+                onderwerp = "crisissituaties";
+              } else if (gevondenTermen.some(t => t.includes("suicid") || t.includes("suïcid") || t.includes("zelfdoding") || t.includes("zelfmoord"))) {
+                onderwerp = "suïcidaliteit";
+              }
+
+              // Check of er al een melding is deze week voor dit onderwerp
+              const { data: bestaandeMelding } = await supabaseAdmin
+                .from("meldingen")
+                .select("id")
+                .eq("tenant_id", profile.tenant_id)
+                .eq("type", "patroon_" + onderwerp)
+                .gte("created_at", weekStart.toISOString())
+                .limit(1);
+
+              if (!bestaandeMelding || bestaandeMelding.length === 0) {
+                await supabaseAdmin
+                  .from("meldingen")
+                  .insert({
+                    tenant_id: profile.tenant_id,
+                    type: "patroon_" + onderwerp,
+                    bericht: `Er zijn deze week meerdere vragen gesteld over ${onderwerp} in jouw team. Overweeg dit te bespreken in het teamoverleg.`,
+                  });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ---- 6a. Instellingen ophalen ----
     const { data: settingsData } = await supabaseAdmin
       .from("settings")
       .select("sleutel, waarde")
@@ -136,7 +224,7 @@ Deno.serve(async (req: Request) => {
     const organisatienaam = settings["organisatienaam"] || "";
     const websiteUrl = settings["website_url"] || "";
 
-    // ---- 6b. Website inhoud ophalen als kennisbron ----
+    // ---- 6b. Website inhoud ophalen ----
     let websiteContext = "";
     if (websiteUrl) {
       try {
@@ -146,7 +234,6 @@ Deno.serve(async (req: Request) => {
         });
         if (webResponse.ok) {
           const html = await webResponse.text();
-          // Strip HTML tags, houd tekst over
           const textContent = html
             .replace(/<script[\s\S]*?<\/script>/gi, "")
             .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -158,12 +245,10 @@ Deno.serve(async (req: Request) => {
             websiteContext = `--- Kennisbank website: ${websiteUrl} ---\n${textContent}`;
           }
         }
-      } catch {
-        // Website niet bereikbaar, ga door zonder
-      }
+      } catch { /* skip */ }
     }
 
-    // ---- 6c. Persoonlijk inwerktraject ophalen ----
+    // ---- 6c. Persoonlijk inwerktraject ----
     let persoonlijkContext = "";
     if (profile.inwerktraject_url) {
       try {
@@ -181,99 +266,152 @@ Deno.serve(async (req: Request) => {
             .trim()
             .substring(0, 8000);
           if (textContent.length > 50) {
-            persoonlijkContext = `--- PERSOONLIJK INWERKTRAJECT (specifiek voor deze medewerker: ${profile.naam || "onbekend"}) ---\n${textContent}`;
+            persoonlijkContext = `--- PERSOONLIJK INWERKTRAJECT (specifiek voor ${profile.naam || "onbekend"}) ---\n${textContent}`;
           }
         }
-      } catch {
-        // Persoonlijk inwerktraject niet bereikbaar, ga door zonder
-      }
+      } catch { /* skip */ }
     }
 
-    // ---- 6d. Documenten ophalen uit database (content kolom) ----
-    const { data: documents } = await supabaseAdmin
+    // ---- 6d. Organisatie documenten (content kolom) ----
+    const { data: orgDocs } = await supabaseAdmin
       .from("documents")
       .select("naam, content")
       .eq("tenant_id", profile.tenant_id)
+      .is("user_id", null)
       .not("content", "is", null);
 
-    let documentContext = "";
+    // ---- 6e. Persoonlijke documenten van deze medewerker ----
+    const { data: persDocs } = await supabaseAdmin
+      .from("documents")
+      .select("naam, content")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("user_id", profile.id)
+      .not("content", "is", null);
 
-    if (documents && documents.length > 0) {
-      // Extract keywords uit de vraag voor relevantie-scoring
-      const keywords = vraag
-        .trim()
-        .toLowerCase()
-        .split(/\s+/)
+    // Combineer alle documenten
+    const allDocs = [...(orgDocs || []), ...(persDocs || [])];
+
+    let documentContext = "";
+    if (allDocs.length > 0) {
+      const keywords = vraag.trim().toLowerCase().split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !STOPWOORDEN.has(w));
 
-      // Score elk document op keyword-relevantie
-      const scored = documents
+      const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
         .map((d: { naam: string; content: string }) => {
           const lower = d.content.toLowerCase();
           let score = 0;
           for (const kw of keywords) {
             let pos = 0;
-            while ((pos = lower.indexOf(kw, pos)) !== -1) {
-              score++;
-              pos += kw.length;
-            }
+            while ((pos = lower.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
           }
           return { naam: d.naam, content: d.content, score };
         })
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
-        .slice(0, 5); // Top 5 meest relevante documenten
+        .slice(0, 5);
 
       if (scored.length > 0) {
         const docTexts: string[] = [];
         let totaalLengte = 0;
-        const MAX_TOTAAL = 40000;
-
         for (const doc of scored) {
-          const beschikbaar = MAX_TOTAAL - totaalLengte;
+          const beschikbaar = 40000 - totaalLengte;
           if (beschikbaar <= 0) break;
           const trimmed = doc.content.trim().substring(0, Math.min(beschikbaar, 8000));
           docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}`);
           totaalLengte += trimmed.length;
         }
+        documentContext = docTexts.join("\n\n");
+      }
+    }
 
-        if (docTexts.length > 0) {
-          documentContext = docTexts.join("\n\n");
+    // ---- 6f. Kennisbank items (admin-antwoorden op veelgestelde vragen) ----
+    const { data: kennisItems } = await supabaseAdmin
+      .from("kennisbank_items")
+      .select("vraag, antwoord")
+      .eq("tenant_id", profile.tenant_id);
+
+    let kennisbankContext = "";
+    if (kennisItems && kennisItems.length > 0) {
+      kennisbankContext = "--- Veelgestelde vragen en antwoorden (door admin opgesteld) ---\n" +
+        kennisItems.map((k: { vraag: string; antwoord: string }) =>
+          `V: ${k.vraag}\nA: ${k.antwoord}`
+        ).join("\n\n");
+    }
+
+    // ---- 6g. Teamleider informatie ophalen ----
+    const { data: teamleiders } = await supabaseAdmin
+      .from("teamleiders")
+      .select("naam, email, telefoon, teams")
+      .eq("tenant_id", profile.tenant_id);
+
+    let teamleiderContext = "";
+    if (teamleiders && teamleiders.length > 0) {
+      const userTeams: string[] = profile.teams || [];
+      const relevanteTeamleiders = teamleiders.filter((tl: { teams: string[] | null }) => {
+        if (!tl.teams || !userTeams.length) return false;
+        return tl.teams.some((t: string) => userTeams.includes(t));
+      });
+
+      if (relevanteTeamleiders.length > 0) {
+        teamleiderContext = "--- Teamleiders contactinformatie ---\n" +
+          relevanteTeamleiders.map((tl: { naam: string; email: string; telefoon: string; teams: string[] }) =>
+            `Teamleider: ${tl.naam}${tl.telefoon ? `, telefoon: ${tl.telefoon}` : ""}${tl.email ? `, email: ${tl.email}` : ""}${tl.teams ? `, teams: ${tl.teams.join(", ")}` : ""}`
+          ).join("\n");
+      }
+
+      // Als de medewerker een directe teamleider heeft
+      if (profile.teamleider_naam) {
+        const directeTl = teamleiders.find((tl: { naam: string }) =>
+          tl.naam === profile.teamleider_naam
+        );
+        if (directeTl) {
+          teamleiderContext += `\n\nDe directe teamleider van ${profile.naam || "de medewerker"} is ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
         }
       }
     }
 
-    // ---- 7. Functiegroep context opbouwen ----
-    const functiegroepContext: Record<string, string> = {
-      ambulant_begeleider:
-        "De medewerker is Ambulant Begeleider. Dit is een ondersteunende rol. " +
-        "De medewerker bezoekt cliënten thuis en kan cliënten vaker zien. " +
-        "De focus ligt op thuisbezoeken, dagelijkse zorg en omgaan met situaties bij de cliënt thuis.",
-      ambulant_persoonlijk_begeleider:
-        "De medewerker is Ambulant Persoonlijk Begeleider. Dit is een regiehouder met helicopterview over de cliënt. " +
-        "Verantwoordelijk voor zorgplannen maken en verlengen, indicaties, contact met WMO consulent en zorgkantoor, " +
-        "en het bewaken van de ureninzet. Focus op plannen schrijven, indicaties aanvragen, WMO procedures, rapportage en regievoering.",
-      woonbegeleider:
-        "De medewerker is Woonbegeleider. Dit is een ondersteunende rol vanuit een woonlocatie. " +
-        "De medewerker werkt in teamverband. Focus op teamoverdracht, woonlocatie werkwijze en omgaan met cliënten in de woonvorm.",
-      persoonlijk_woonbegeleider:
-        "De medewerker is Persoonlijk Woonbegeleider. Dit is een regiehouder vanuit een woonlocatie. " +
-        "Verantwoordelijk voor zorgplannen, indicaties en regievoering op locatie. " +
-        "Zelfde verantwoordelijkheden als de ambulant PB maar dan in de context van een woonlocatie.",
-    };
-
-    const fgContext = functiegroepContext[profile.functiegroep || ""] || "";
+    // ---- 7. System prompt bouwen (per functiegroep) ----
+    const naam = profile.naam || "medewerker";
+    const org = organisatienaam || "de organisatie";
     const wk = weeknummer || 1;
 
-    // ---- 8. System prompt bouwen ----
-    const orgLabel = organisatienaam ? `voor nieuwe medewerkers van ${organisatienaam}` : "voor nieuwe medewerkers";
+    // Functiegroep-specifieke system prompts (Opdracht 2)
+    const functiePrompts: Record<string, string> = {
+      ambulant_begeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ambulant begeleider bij ${org}. Als ambulant begeleider ondersteun je cliënten bij hun hulpvragen in hun eigen thuissituatie. Elke cliënt heeft zijn of haar eigen uren — dat kan variëren van één uur per week tot meerdere uren. Je werkt zelfstandig bij cliënten thuis, ondersteunt bij praktische en dagelijkse hulpvragen, de contactfrequentie verschilt per cliënt afhankelijk van de toegekende uren, je werkt alleen zonder collega direct naast je en je reist tussen cliënten. Geef antwoorden die warm en begripvol zijn, rekening houden met het zelfstandig werken, praktisch en direct toepasbaar zijn en bij twijfel doorverwijzen naar de teamleider.`,
+      ambulant_persoonlijk_begeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ambulant persoonlijk begeleider bij ${org}. Als persoonlijk begeleider ben je regiehouder over je cliënten. Jij bewaakt het overzicht over de zorg, de planning en de doelen. Hoe intensief het cliëntcontact is verschilt per situatie en per cliënt — soms sta je meer op de achtergrond en ligt de focus op de organisatie van de zorg. Je bent regiehouder en bewaakt het overzicht, schrijft en verlengt zorgplannen en indicaties, onderhoudt contact met WMO consulenten en het zorgkantoor, bewaakt de ureninzet en de intensiteit van cliëntcontact verschilt per situatie. Geef antwoorden die de regierol centraal stellen, ingaan op plannen en indicaties en WMO procedures, helpen bij organiseren en overzicht houden, ruimte laten voor de nuance dat elke cliënt anders is en doorverwijzen naar de teamleider bij complexe beslissingen.`,
+      woonbegeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als woonbegeleider bij ${org}. Vanuit de woonlocatie ondersteun je cliënten bij hun dagelijkse leven. Er zijn altijd collega's aanwezig. Je werkt vanuit een vaste woonlocatie, er zijn altijd collega's om je heen, je werkt in een teamstructuur met vaste overdracht en teamcommunicatie is essentieel. Geef antwoorden die rekening houden met de teamdynamiek, ingaan op overdracht en samenwerking, praktisch zijn voor de woonlocatie context en warm en ondersteunend zijn.`,
+      persoonlijk_woonbegeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als persoonlijk woonbegeleider bij ${org}. Dit is de regierol binnen de woonlocatie. Je bent regiehouder net als de ambulant PB maar dan vanuit de woonlocatie, schrijft en verlengt zorgplannen en indicaties, werkt samen met een vast team, hebt overzicht over jouw cliënten én afstemming met het team en de intensiteit van cliëntcontact verschilt per situatie. Geef antwoorden die de regierol combineren met de teamcontext, helpen bij plannen en indicaties, rekening houden met de woonlocatie structuur en professioneel maar persoonlijk zijn.`,
+    };
 
-    // Combineer alle kennisbronnen
+    const basisPrompt = functiePrompts[profile.functiegroep || ""] ||
+      `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam} bij ${org}.`;
+
+    // Weekfase context
+    let weekContext = "";
+    if (wk <= 2) {
+      weekContext = `\n\nWEEK ${wk} VAN HET INWERKTRAJECT:\n${naam} zit in de eerste weken. Wees extra geduldig en uitleggerig. Begin met een warme opening. Leg alles stap voor stap uit. Verwacht niet dat de medewerker alles al weet.`;
+    } else if (wk <= 4) {
+      weekContext = `\n\nWEEK ${wk} VAN HET INWERKTRAJECT:\n${naam} is halverwege het inwerktraject. Bouw meer zelfvertrouwen op. Geef meer verdieping. Verwijs naar eerdere kennis waar mogelijk.`;
+    } else if (wk <= 6) {
+      weekContext = `\n\nWEEK ${wk} VAN HET INWERKTRAJECT:\n${naam} nadert het einde van het inwerktraject. Daag meer uit tot zelfstandig nadenken. Stel wedervragen. Moedig aan om eigen oplossingen te bedenken.`;
+    } else {
+      weekContext = `\n\n${naam} heeft het inwerktraject afgerond en werkt nu zelfstandig. Je bent een kennisassistent — antwoord direct en professioneel, zonder inwerkcontext. Geen extra bemoediging of inwerkverwijzingen nodig.`;
+    }
+
+    // Extra profielinfo
+    let profielInfo = "";
+    if (profile.werkuren) profielInfo += `\nWerkuren: ${profile.werkuren}`;
+    if (profile.regio) profielInfo += `\nRegio: ${profile.regio}`;
+    if (profile.teams && profile.teams.length > 0) profielInfo += `\nTeams: ${profile.teams.join(", ")}`;
+
+    // Bronnen combineren
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
+    if (kennisbankContext) bronnen.push(kennisbankContext);
     if (websiteContext) bronnen.push(websiteContext);
     if (persoonlijkContext) bronnen.push(persoonlijkContext);
+    if (teamleiderContext) bronnen.push(teamleiderContext);
 
     let alleKennisbronnen = "";
     if (bronnen.length > 0) {
@@ -282,33 +420,24 @@ Deno.serve(async (req: Request) => {
       alleKennisbronnen = "Er zijn nog geen documenten of kennisbronnen beschikbaar. Verwijs de medewerker naar de teamleider voor informatie.";
     }
 
-    const systemPrompt = `Je bent de Wegwijzer, een vriendelijke en behulpzame inwerkcoach ${orgLabel}.
-
-FUNCTIEGROEP VAN DE MEDEWERKER:
-${fgContext || "Functiegroep onbekend."}
-
-WEEKNUMMER INWERKTRAJECT:
-De medewerker zit in week ${wk} van het 6 weken durende inwerktraject.
-${wk <= 2 ? "Focus op basisinformatie, kennismaking met de organisatie en eerste stappen." : ""}
-${wk >= 3 && wk <= 4 ? "De medewerker is halverwege het inwerktraject. Focus op verdieping en zelfstandig werken." : ""}
-${wk >= 5 ? "De medewerker nadert het einde van het inwerktraject. Focus op zelfstandigheid en afronding." : ""}
+    const systemPrompt = `${basisPrompt}${profielInfo}${weekContext}
 
 INSTRUCTIES:
 - Antwoord ALTIJD in het Nederlands.
-- Begin elk antwoord met een korte, vriendelijke openingszin met een passende emoji. Voorbeelden: "Goeie vraag! 😊", "Dat leg ik je graag uit! 📋", "Goed dat je dit vraagt! 💡", "Daar help ik je mee! 🤝". Wissel af en herhaal niet steeds dezelfde opening.
-- Communiceer vriendelijk en warm. Gebruik ook in de rest van je antwoord af en toe een passende emoji (bijv. ✅, 📌, 🏠, ❤️) om het levendig en toegankelijk te maken. Overdrijf niet — twee tot drie emoji's per antwoord is genoeg.
+- Begin elk antwoord met een korte, vriendelijke openingszin met een passende emoji. Wissel af.
+- Gebruik in je antwoord af en toe een passende emoji (twee tot drie per antwoord is genoeg).
 - Baseer je antwoorden UITSLUITEND op de beschikbare kennisbronnen hieronder. Verzin geen informatie.
 - Als het antwoord niet in de kennisbronnen staat, zeg dan eerlijk: "Dit kan ik niet terugvinden in de beschikbare documenten. Neem contact op met je teamleider voor meer informatie."
-- Pas je antwoorden aan op de functiegroep van de medewerker. Geef informatie die relevant is voor hun specifieke rol.
-- Houd je antwoorden beknopt en praktisch. Gebruik opsommingstekens waar handig. Gebruik **vetgedrukte kopjes** om secties te scheiden.
-- Verwerk NOOIT persoonsgegevens van cliënten. Als de medewerker cliëntgegevens deelt, wijs hen erop dat dit niet is toegestaan.
-- Wees bemoedigend en ondersteunend — de medewerker is nieuw en leert nog.
-- Als er een PERSOONLIJK INWERKTRAJECT sectie in de kennisbronnen staat, gebruik die informatie als eerste bron bij vragen over het inwerktraject van deze specifieke medewerker. Dit document is op maat gemaakt voor hen.
-- BELANGRIJK: Als je in de kennisbronnen een URL of weblink vindt (beginnend met http:// of https://) die relevant is voor de vraag van de medewerker, plak die link dan DIRECT in je antwoord in dit formaat: 👉 [de volledige URL]. Geef daarna aanvullende informatie. Meerdere relevante links mogen. Verzin NOOIT zelf een URL.
+- Pas je antwoorden aan op de functiegroep van de medewerker.
+- Houd antwoorden beknopt en praktisch. Gebruik opsommingstekens waar handig. Gebruik **vetgedrukte kopjes**.
+- Verwerk NOOIT persoonsgegevens van cliënten.
+- Als er een PERSOONLIJK INWERKTRAJECT sectie staat, gebruik die als eerste bron.
+- BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
+- Als de medewerker vraagt naar zijn/haar teamleider, contactpersoon, of wie te bellen: gebruik de teamleider contactinformatie uit de kennisbronnen om direct de naam en het telefoonnummer te geven.
 
 ${alleKennisbronnen}`;
 
-    // ---- 9. Claude Haiku aanroepen ----
+    // ---- 8. Claude Haiku aanroepen ----
     const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -320,12 +449,7 @@ ${alleKennisbronnen}`;
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
         system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: vraag.trim(),
-          },
-        ],
+        messages: [{ role: "user", content: vraag.trim() }],
       }),
     });
 
@@ -341,7 +465,7 @@ ${alleKennisbronnen}`;
     const aiResult = await anthropicResponse.json();
     const antwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
 
-    // ---- 10. Gesprek opslaan in database ----
+    // ---- 9. Gesprek opslaan ----
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
       .insert({
@@ -357,16 +481,13 @@ ${alleKennisbronnen}`;
       console.error("Conversation opslaan mislukt:", convError);
     }
 
-    // ---- 11. Antwoord terugsturen ----
+    // ---- 10. Antwoord terugsturen ----
     return new Response(
       JSON.stringify({
         antwoord: antwoord,
         conversation_id: conversation?.id || null,
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     console.error("Edge function fout:", err);
