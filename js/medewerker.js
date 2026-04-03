@@ -312,9 +312,17 @@
       var data = await response.json();
       typingIndicator.classList.add('hidden');
 
-      if (response.status === 429 || data.rate_limited) {
+      if (data.soft_limit) {
+        // Zachte limiet: toon popup modal
+        toonRateLimitPopup(token);
+      } else if (data.hard_limit) {
         renderBotBericht(
-          data.error || 'Je hebt het dagelijkse maximum van 50 vragen bereikt. Morgen kun je weer vragen stellen.',
+          data.error || 'Je hebt het maximale aantal vragen voor vandaag bereikt. Morgen kun je weer vragen stellen.',
+          null, null, null
+        );
+      } else if (response.status === 429 || data.rate_limited) {
+        renderBotBericht(
+          data.error || 'Je hebt het dagelijkse maximum bereikt. Morgen kun je weer vragen stellen.',
           null, null, null
         );
       } else if (!response.ok || data.error) {
@@ -554,6 +562,51 @@
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute('content', kleur);
     }
+  }
+
+  // =============================================
+  // RATE LIMIT POPUP
+  // =============================================
+  function toonRateLimitPopup(token) {
+    // Verwijder bestaande popup als die er is
+    var bestaand = document.getElementById('rate-limit-modal');
+    if (bestaand) bestaand.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'rate-limit-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:white;border-radius:12px;padding:24px;max-width:360px;width:100%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.2)';
+    modal.innerHTML =
+      '<h3 style="font-size:1.1rem;font-weight:700;margin-bottom:12px;color:var(--text)">Dagelijkse limiet bereikt</h3>' +
+      '<p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;line-height:1.5">Je hebt je dagelijkse 30 vragen gebruikt. Wil je vandaag nog 20 extra vragen gebruiken?</p>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button id="rate-limit-nee" style="flex:1;padding:12px;border:2px solid var(--primary);background:white;color:var(--primary);border-radius:8px;font-weight:600;cursor:pointer;font-family:var(--font)">Nee, later</button>' +
+        '<button id="rate-limit-ja" style="flex:1;padding:12px;border:none;background:var(--primary);color:white;border-radius:8px;font-weight:600;cursor:pointer;font-family:var(--font)">Ja, uitbreiden</button>' +
+      '</div>';
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    document.getElementById('rate-limit-ja').addEventListener('click', async function () {
+      // Activeer uitbreiding via edge function
+      await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ extend_limit: true })
+      });
+      overlay.remove();
+      renderBotBericht('Je hebt 20 extra vragen geactiveerd voor vandaag. Stel gerust je volgende vraag!', null, null, null);
+    });
+
+    document.getElementById('rate-limit-nee').addEventListener('click', function () {
+      overlay.remove();
+      renderBotBericht('Geen probleem. Je kunt later alsnog uitbreiden als je meer vragen wilt stellen.', null, null, null);
+    });
   }
 
   // =============================================

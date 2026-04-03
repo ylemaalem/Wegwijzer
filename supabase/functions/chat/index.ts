@@ -94,28 +94,70 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 4. Rate limiting: max 50 vragen per dag ----
+    // ---- 4. Rate limiting per rol ----
+    // Admin: geen limiet. Teamleider: 100/dag. Medewerker: 30 + optioneel 20 = max 50.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const todayStr = todayStart.toISOString().split("T")[0];
 
-    const { count: todayCount } = await supabaseAdmin
-      .from("conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", profile.id)
-      .gte("created_at", todayStart.toISOString());
+    if (profile.role !== "admin") {
+      const { count: todayCount } = await supabaseAdmin
+        .from("conversations")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", profile.id)
+        .gte("created_at", todayStart.toISOString());
 
-    if (todayCount !== null && todayCount >= 50) {
-      return new Response(
-        JSON.stringify({
-          error: "Je hebt het dagelijkse maximum van 50 vragen bereikt. Morgen kun je weer vragen stellen.",
-          rate_limited: true,
-        }),
-        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const count = todayCount || 0;
+
+      if (profile.role === "teamleider") {
+        if (count >= 100) {
+          return new Response(
+            JSON.stringify({ error: "Je hebt het dagelijkse maximum van 100 vragen bereikt. Morgen kun je weer vragen stellen.", rate_limited: true, hard_limit: true }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        // Medewerker: check of uitbreiding actief is
+        const { data: extension } = await supabaseAdmin
+          .from("rate_extensions")
+          .select("id")
+          .eq("profile_id", profile.id)
+          .eq("datum", todayStr)
+          .limit(1);
+
+        const hasExtension = extension && extension.length > 0;
+        const maxVragen = hasExtension ? 50 : 30;
+
+        if (count >= 50) {
+          // Harde stop op 50
+          return new Response(
+            JSON.stringify({ error: "Je hebt het maximale aantal vragen voor vandaag bereikt. Morgen kun je weer vragen stellen.", rate_limited: true, hard_limit: true }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } else if (count >= 30 && !hasExtension) {
+          // Zachte limiet: popup tonen
+          return new Response(
+            JSON.stringify({ error: "Je hebt je dagelijkse 30 vragen gebruikt. Wil je vandaag nog 20 extra vragen gebruiken?", rate_limited: true, soft_limit: true }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
     }
 
     // ---- 5. Request body ----
-    const { vraag, functiegroep, weeknummer } = await req.json();
+    const body = await req.json();
+    const { vraag, functiegroep, weeknummer, extend_limit } = body;
+
+    // Als medewerker rate limit wil uitbreiden
+    if (extend_limit && profile.role === "medewerker") {
+      await supabaseAdmin
+        .from("rate_extensions")
+        .upsert({ profile_id: profile.id, datum: todayStr }, { onConflict: "profile_id,datum" });
+      return new Response(
+        JSON.stringify({ extended: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!vraag || typeof vraag !== "string" || vraag.trim().length === 0) {
       return new Response(
