@@ -399,11 +399,26 @@ Deno.serve(async (req: Request) => {
       weekContext = `\n\n${naam} heeft het inwerktraject afgerond en werkt nu zelfstandig. Je bent een kennisassistent — antwoord direct en professioneel, zonder inwerkcontext. Geen extra bemoediging of inwerkverwijzingen nodig.`;
     }
 
-    // Extra profielinfo
-    let profielInfo = "";
-    if (profile.werkuren) profielInfo += `\nWerkuren: ${profile.werkuren}`;
-    if (profile.regio) profielInfo += `\nRegio: ${profile.regio}`;
-    if (profile.teams && profile.teams.length > 0) profielInfo += `\nTeams: ${profile.teams.join(", ")}`;
+    // Volledig medewerkerprofiel opbouwen
+    let profielInfo = `\n\nPERSOONLIJKE GEGEVENS VAN ${naam.toUpperCase()}:`;
+    profielInfo += `\n- Naam: ${naam}`;
+    profielInfo += `\n- Functiegroep: ${profile.functiegroep ? profile.functiegroep.replace(/_/g, " ") : "onbekend"}`;
+    if (profile.werkuren) profielInfo += `\n- Werkuren per week: ${profile.werkuren}`;
+    if (profile.regio) profielInfo += `\n- Regio: ${profile.regio}`;
+    if (profile.teams && profile.teams.length > 0) profielInfo += `\n- Team(s): ${profile.teams.join(", ")}`;
+    if (profile.startdatum) profielInfo += `\n- Startdatum: ${profile.startdatum}`;
+    profielInfo += `\n- Weeknummer inwerktraject: ${wk}${wk > 6 ? " (inwerktraject afgerond)" : " van 6"}`;
+    if (profile.teamleider_naam) {
+      profielInfo += `\n- Teamleider: ${profile.teamleider_naam}`;
+      // Voeg contactgegevens toe als beschikbaar
+      if (teamleiders && teamleiders.length > 0) {
+        const directeTl = teamleiders.find((tl: { naam: string }) => tl.naam === profile.teamleider_naam);
+        if (directeTl) {
+          if (directeTl.telefoon) profielInfo += ` (telefoon: ${directeTl.telefoon})`;
+          if (directeTl.email) profielInfo += ` (email: ${directeTl.email})`;
+        }
+      }
+    }
 
     // Bronnen combineren
     const bronnen: string[] = [];
@@ -426,14 +441,15 @@ INSTRUCTIES:
 - Antwoord ALTIJD in het Nederlands.
 - Begin elk antwoord met een korte, vriendelijke openingszin met een passende emoji. Wissel af.
 - Gebruik in je antwoord af en toe een passende emoji (twee tot drie per antwoord is genoeg).
-- Baseer je antwoorden UITSLUITEND op de beschikbare kennisbronnen hieronder. Verzin geen informatie.
-- Als het antwoord niet in de kennisbronnen staat, zeg dan eerlijk: "Dit kan ik niet terugvinden in de beschikbare documenten. Neem contact op met je teamleider voor meer informatie."
+- Baseer je antwoorden op de PERSOONLIJKE GEGEVENS hierboven en de KENNISBRONNEN hieronder. Verzin geen informatie.
+- Bij vragen over het eigen profiel (werkuren, regio, team, teamleider, startdatum): gebruik de persoonlijke gegevens hierboven om DIRECT antwoord te geven. Verwijs NIET door naar HR of de teamleider voor deze informatie.
+- Als het antwoord niet in de persoonlijke gegevens of kennisbronnen staat, zeg dan eerlijk: "Dit kan ik niet terugvinden in de beschikbare documenten. Neem contact op met je teamleider voor meer informatie."
 - Pas je antwoorden aan op de functiegroep van de medewerker.
 - Houd antwoorden beknopt en praktisch. Gebruik opsommingstekens waar handig. Gebruik **vetgedrukte kopjes**.
 - Verwerk NOOIT persoonsgegevens van cliënten.
 - Als er een PERSOONLIJK INWERKTRAJECT sectie staat, gebruik die als eerste bron.
 - BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
-- Als de medewerker vraagt naar zijn/haar teamleider, contactpersoon, of wie te bellen: gebruik de teamleider contactinformatie uit de kennisbronnen om direct de naam en het telefoonnummer te geven.
+- Als de medewerker vraagt naar zijn/haar teamleider, contactpersoon, of wie te bellen: geef direct de naam en het telefoonnummer uit de persoonlijke gegevens of teamleider contactinformatie.
 
 ${alleKennisbronnen}`;
 
