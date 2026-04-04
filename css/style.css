@@ -33,6 +33,7 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -43,11 +44,12 @@ body {
   min-height: 100dvh;
   line-height: 1.5;
   overflow-x: hidden;
+  width: 100%;
 }
 
-/* Scrollbalk altijd rechts aan browserrand */
+/* Scrollbalk stijl — smal en subtiel */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -55,12 +57,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 /* ---- Layout ---- */
@@ -69,6 +71,8 @@ body {
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
 }
 
 .page-content {
@@ -78,23 +82,25 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* ---- Header ---- */
 .app-header {
-  background: var(--primary);
+  background-color: #E8720C;
+  background-image: none;
   color: white;
   padding: 16px 20px;
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   position: sticky;
   top: 0;
   z-index: 100;
-  overflow: hidden;
   width: 100%;
-  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .app-header h1 {
@@ -120,6 +126,8 @@ body {
   font-size: 0.875rem;
   font-family: var(--font);
   transition: background 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header-btn:hover {
@@ -173,6 +181,7 @@ body {
   transition: border-color 0.2s;
   background: var(--bg-white);
   color: var(--text);
+  max-width: 100%;
 }
 
 .form-input:focus {
@@ -201,24 +210,10 @@ body {
   transition: background 0.2s, transform 0.1s;
 }
 
-.btn:active {
-  transform: scale(0.98);
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-dark);
-}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
 
 .btn-secondary {
   background: transparent;
@@ -241,9 +236,7 @@ body {
   font-family: var(--font);
 }
 
-.btn-text:hover {
-  text-decoration: underline;
-}
+.btn-text:hover { text-decoration: underline; }
 
 /* ---- Meldingen ---- */
 .alert {
@@ -254,21 +247,9 @@ body {
   display: none;
 }
 
-.alert-error {
-  background: var(--error-bg);
-  color: var(--error);
-  border: 1px solid var(--error);
-}
-
-.alert-success {
-  background: var(--success-bg);
-  color: var(--success);
-  border: 1px solid var(--success);
-}
-
-.alert.show {
-  display: block;
-}
+.alert-error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+.alert-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+.alert.show { display: block; }
 
 /* ---- Loader ---- */
 .spinner {
@@ -281,27 +262,12 @@ body {
   animation: spin 0.6s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---- Link ---- */
-.text-center {
-  text-align: center;
-}
-
-.mt-16 {
-  margin-top: 16px;
-}
-
-.mt-8 {
-  margin-top: 8px;
-}
-
-/* ---- Verborgen ---- */
-.hidden {
-  display: none !important;
-}
+.text-center { text-align: center; }
+.mt-16 { margin-top: 16px; }
+.mt-8 { margin-top: 8px; }
+.hidden { display: none !important; }
 
 /* ---- Responsive ---- */
 @media (max-width: 480px) {
@@ -309,7 +275,6 @@ body {
     padding: 24px 16px;
     border-radius: var(--radius-sm);
   }
-
   .page-content {
     padding: 16px 12px;
   }

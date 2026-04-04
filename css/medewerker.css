@@ -283,30 +283,13 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 8px 16px 16px;
+  padding: 16px 0 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   -webkit-overflow-scrolling: touch;
   background: var(--bg);
-}
-
-/* Scrollbalk altijd helemaal rechts aan browserrand */
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  width: 100%;
 }
 
 /* ---- Bericht rij ---- */
@@ -316,6 +299,7 @@
   align-items: flex-end;
   max-width: 100%;
   min-width: 0;
+  padding-right: 12px;
 }
 
 .message-row-user {
@@ -689,7 +673,7 @@
   }
 
   .chat-messages {
-    padding: 10px 6px 10px 10px;
+    padding: 10px 0 10px 10px;
     gap: 10px;
   }
 
