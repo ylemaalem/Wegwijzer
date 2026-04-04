@@ -386,7 +386,7 @@
     // Avatar
     var avatar = document.createElement('div');
     avatar.className = 'avatar avatar-bot';
-    avatar.textContent = '🗺️';
+    avatar.textContent = '🧭';
 
     // Bubble wrap
     var wrap = document.createElement('div');

@@ -19,7 +19,6 @@
 
     <!-- Header -->
     <header class="app-header">
-      <span class="logo-emoji" aria-hidden="true">🗺️</span>
       <h1>Wegwijzer</h1>
       <div class="header-spacer"></div>
       <button class="header-btn" id="logout-btn">Uitloggen</button>
@@ -35,6 +34,7 @@
       <button class="tab-btn" data-tab="rapporten">Rapporten</button>
       <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
       <button class="tab-btn" data-tab="teamleiders">Teamleiders</button>
+      <button class="tab-btn" data-tab="privacy">Privacy verzoeken</button>
       <button class="tab-btn" data-tab="instellingen">Instellingen</button>
     </nav>
 
@@ -320,6 +320,30 @@
         </div>
       </section>
 
+      <!-- ========== TAB: PRIVACY VERZOEKEN ========== -->
+      <section class="tab-content" id="tab-privacy">
+        <h2 class="section-title">Privacy verzoeken</h2>
+        <p class="section-subtitle">AVG verzoeken van medewerkers — inzage, correctie of verwijdering.</p>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th style="width:140px">Actie</th>
+              </tr>
+            </thead>
+            <tbody id="privacy-body">
+              <tr><td colspan="6" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- ========== TAB: INSTELLINGEN ========== -->
       <section class="tab-content" id="tab-instellingen">
         <h2 class="section-title">Instellingen</h2>
@@ -354,6 +378,14 @@
               Optioneel. Deze URL wordt als extra kennisbron meegestuurd naar de AI, naast de geüploade documenten.
             </p>
             <input class="form-input" type="url" id="setting-website" placeholder="https://www.voorbeeld.nl/kennisbank">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-logo-url">Logo URL (header)</label>
+            <p class="section-subtitle" style="margin-bottom:6px">
+              URL naar het organisatielogo. Verschijnt links in de header op alle pagina's.
+            </p>
+            <input class="form-input" type="url" id="setting-logo-url" placeholder="https://www.voorbeeld.nl/logo.png">
           </div>
 
           <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">

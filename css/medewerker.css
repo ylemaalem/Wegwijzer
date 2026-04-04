@@ -7,12 +7,17 @@
 .medewerker-page .page-container {
   height: 100vh;
   height: 100dvh;
+  width: 100vw;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .medewerker-page .page-content {
   flex: 1;
   padding: 0;
   overflow: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* ---- Header uitbreiding ---- */
@@ -207,6 +212,7 @@
   display: none;
   flex-direction: column;
   height: 100%;
+  width: 100%;
 }
 
 .chat-screen.active {
@@ -382,6 +388,12 @@
 
 .chat-bubble-bot br + br {
   display: none;
+}
+
+.chat-bubble-bot br {
+  content: '';
+  display: block;
+  margin: 1px 0;
 }
 
 .chat-bubble-bot h3 {

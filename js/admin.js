@@ -48,6 +48,7 @@
     loadFunctiegroepen();
     loadRapporten();
     initRapportBtn();
+    loadPrivacyVerzoeken();
   });
 
   // =============================================
@@ -2221,18 +2222,20 @@
 
     if (!result.data) return;
 
-    // Populate dropdowns
+    // Populate dropdowns — filter kantoor-functies eruit
     var dropdowns = ['invite-functiegroep', 'edit-functiegroep'];
     dropdowns.forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.innerHTML = '<option value="">Kies een functiegroep</option>';
-      result.data.forEach(function (fg) {
-        var opt = document.createElement('option');
-        opt.value = fg.code;
-        opt.textContent = fg.naam;
-        el.appendChild(opt);
-      });
+      result.data
+        .filter(function (fg) { return !fg.is_kantoor; })
+        .forEach(function (fg) {
+          var opt = document.createElement('option');
+          opt.value = fg.code;
+          opt.textContent = fg.naam;
+          el.appendChild(opt);
+        });
     });
 
     // Render list in settings
@@ -2245,8 +2248,9 @@
     container.innerHTML = result.data.map(function (fg) {
       return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">' +
         '<strong style="font-size:0.85rem;min-width:100px">' + escapeHtml(fg.naam) + '</strong>' +
-        '<span style="font-size:0.78rem;color:var(--text-light);flex:1">' + escapeHtml(fg.beschrijving || '') + '</span>' +
+        '<span style="font-size:0.78rem;color:var(--text-light);flex:1;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(fg.beschrijving || '') + '</span>' +
         (fg.is_kantoor ? '<span class="badge badge-admin" style="font-size:0.65rem">Kantoor</span>' : '') +
+        '<button class="btn-icon" onclick="window.editFunctiegroep(\'' + fg.id + '\')" title="Bewerken">✏️</button>' +
         '<button class="btn-icon btn-icon-danger" onclick="window.deleteFunctiegroep(\'' + fg.id + '\')" title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
@@ -2255,6 +2259,27 @@
   window.deleteFunctiegroep = async function (id) {
     if (!confirm('Functiegroep verwijderen?')) return;
     await supabaseClient.from('functiegroepen').delete().eq('id', id);
+    loadFunctiegroepen();
+  };
+
+  window.editFunctiegroep = async function (id) {
+    var result = await supabaseClient.from('functiegroepen').select('*').eq('id', id).single();
+    if (!result.data) return;
+    var fg = result.data;
+
+    var naam = prompt('Naam:', fg.naam);
+    if (naam === null) return;
+    var beschrijving = prompt('Beschrijving (voor AI prompt):', fg.beschrijving || '');
+    if (beschrijving === null) return;
+    var code = prompt('Code:', fg.code);
+    if (code === null) return;
+
+    await supabaseClient.from('functiegroepen').update({
+      naam: naam.trim() || fg.naam,
+      beschrijving: beschrijving.trim(),
+      code: code.trim().toLowerCase().replace(/\s+/g, '_') || fg.code
+    }).eq('id', id);
+
     loadFunctiegroepen();
   };
 
@@ -2291,9 +2316,12 @@
       return;
     }
     container.innerHTML = result.data.map(function (r) {
-      return '<div class="kennisbank-item" style="cursor:pointer" onclick="window.showRapport(\'' + r.id + '\')">' +
-        '<div class="kennisbank-item-vraag">Rapport ' + escapeHtml(r.maand) + '</div>' +
-        '<div class="kennisbank-item-antwoord">' + new Date(r.created_at).toLocaleDateString('nl-NL') + '</div>' +
+      return '<div class="kennisbank-item" style="display:flex;align-items:center;gap:8px">' +
+        '<div style="flex:1;cursor:pointer" onclick="window.showRapport(\'' + r.id + '\')">' +
+          '<div class="kennisbank-item-vraag">Rapport ' + escapeHtml(r.maand) + '</div>' +
+          '<div class="kennisbank-item-antwoord">' + new Date(r.created_at).toLocaleDateString('nl-NL') + '</div>' +
+        '</div>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteRapport(\'' + r.id + '\')" title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
   }
@@ -2347,6 +2375,12 @@
     });
   }
 
+  window.deleteRapport = async function (id) {
+    if (!confirm('Weet je zeker dat je dit rapport wilt verwijderen? Dit kan niet ongedaan worden gemaakt.')) return;
+    await supabaseClient.from('rapporten').delete().eq('id', id);
+    loadRapporten();
+  };
+
   window.showRapport = function (id) {
     // Simple: find and display
     var container = document.getElementById('rapporten-list');
@@ -2371,6 +2405,121 @@
       html += '</div>';
       container.innerHTML += html;
     });
+  };
+
+  // =============================================
+  // PRIVACY VERZOEKEN
+  // =============================================
+  async function loadPrivacyVerzoeken() {
+    var tbody = document.getElementById('privacy-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('privacy_verzoeken')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Geen privacy verzoeken.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = result.data.map(function (pv) {
+      var datum = new Date(pv.created_at).toLocaleDateString('nl-NL', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+      var typeBadge = '';
+      if (pv.type === 'inzage') typeBadge = '<span class="badge badge-admin">Inzage</span>';
+      else if (pv.type === 'correctie') typeBadge = '<span class="badge badge-open">Correctie</span>';
+      else typeBadge = '<span class="badge badge-niet-goed">Verwijdering</span>';
+
+      var statusBadge = '';
+      if (pv.status === 'ontvangen') statusBadge = '<span class="badge badge-open">Nieuw</span>';
+      else if (pv.status === 'in_behandeling') statusBadge = '<span class="badge badge-admin">In behandeling</span>';
+      else statusBadge = '<span class="badge badge-goed">Afgehandeld</span>';
+
+      var acties = '';
+      if (pv.status !== 'afgehandeld') {
+        acties = '<button class="btn-icon" onclick="window.handlePrivacyInzage(\'' + escapeHtml(pv.email) + '\')" title="Inzage (export)">📋</button>' +
+          '<button class="btn-icon btn-icon-danger" onclick="window.handlePrivacyVerwijdering(\'' + pv.id + '\', \'' + escapeHtml(pv.email) + '\')" title="Verwijdering">🗑️</button>' +
+          '<button class="btn-icon" onclick="window.handlePrivacyCorrectie(\'' + escapeHtml(pv.email) + '\')" title="Correctie (profiel)">✏️</button>';
+      }
+
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + datum + '</td>' +
+        '<td>' + escapeHtml(pv.naam) + '</td>' +
+        '<td>' + escapeHtml(pv.email) + '</td>' +
+        '<td>' + typeBadge + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + acties + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  window.handlePrivacyInzage = async function (email) {
+    // Zoek profiel
+    var profResult = await supabaseClient.from('profiles').select('*').eq('email', email).single();
+    if (!profResult.data) { alert('Profiel niet gevonden.'); return; }
+
+    var profiel = profResult.data;
+    var convResult = await supabaseClient.from('conversations').select('vraag, antwoord, feedback, created_at').eq('user_id', profiel.id).order('created_at');
+
+    var exportData = {
+      profiel: {
+        naam: profiel.naam,
+        email: profiel.email,
+        functiegroep: profiel.functiegroep,
+        teams: profiel.teams,
+        werkuren: profiel.werkuren,
+        startdatum: profiel.startdatum,
+        afdeling: profiel.afdeling
+      },
+      gesprekken: (convResult.data || []).map(function (c) {
+        return { datum: c.created_at, vraag: c.vraag, antwoord: c.antwoord, feedback: c.feedback };
+      })
+    };
+
+    // Download als JSON
+    var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'privacy_export_' + email.replace(/@/g, '_') + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Update status
+    await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('tenant_id', tenantId).match({ email: email, type: 'inzage' });
+    loadPrivacyVerzoeken();
+  };
+
+  window.handlePrivacyVerwijdering = async function (id, email) {
+    if (!confirm('WAARSCHUWING: Alle data van ' + email + ' wordt permanent verwijderd. Dit kan niet ongedaan worden gemaakt. Doorgaan?')) return;
+
+    var profResult = await supabaseClient.from('profiles').select('id').eq('email', email).single();
+    if (profResult.data) {
+      // Verwijder gesprekken
+      await supabaseClient.from('conversations').delete().eq('user_id', profResult.data.id);
+      // Verwijder profiel
+      await supabaseClient.from('profiles').delete().eq('id', profResult.data.id);
+    }
+
+    // Update status
+    await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('id', id);
+    alert('Data van ' + email + ' is verwijderd.');
+    loadPrivacyVerzoeken();
+    loadMedewerkers();
+  };
+
+  window.handlePrivacyCorrectie = function (email) {
+    // Open medewerker profiel via zoeken
+    var profiel = allProfiles.find(function (p) { return p.email === email; });
+    if (profiel) {
+      window.editMedewerker(profiel.id);
+    } else {
+      alert('Profiel niet gevonden.');
+    }
   };
 
 })();
