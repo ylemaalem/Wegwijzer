@@ -664,7 +664,7 @@
   }
 
   .chat-messages {
-    padding: 10px;
+    padding: 10px 6px 10px 10px;
     gap: 10px;
   }
 
@@ -749,4 +749,54 @@
     width: 100px;
     height: 100px;
   }
+}
+
+/* ---- Zoekbalk ---- */
+.search-toggle {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.search-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.search-bar {
+  display: none;
+  padding: 8px 16px;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.search-bar.show {
+  display: block;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.search-highlight {
+  background: rgba(232, 114, 12, 0.2);
+  border-radius: 2px;
 }

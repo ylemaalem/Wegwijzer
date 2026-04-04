@@ -333,11 +333,13 @@ Deno.serve(async (req: Request) => {
     // Combineer alle documenten
     const allDocs = [...(orgDocs || []), ...(persDocs || [])];
 
+    // Keywords voor relevantie-scoring (gebruikt door documenten en websites)
+    const keywords = vraag.trim().toLowerCase().split(/\s+/)
+      .filter((w: string) => w.length > 2)
+      .filter((w: string) => !STOPWOORDEN.has(w));
+
     let documentContext = "";
     if (allDocs.length > 0) {
-      const keywords = vraag.trim().toLowerCase().split(/\s+/)
-        .filter((w: string) => w.length > 2)
-        .filter((w: string) => !STOPWOORDEN.has(w));
 
       const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
@@ -389,26 +391,17 @@ Deno.serve(async (req: Request) => {
 
     let teamleiderContext = "";
     if (teamleiders && teamleiders.length > 0) {
-      const userTeams: string[] = profile.teams || [];
-      const relevanteTeamleiders = teamleiders.filter((tl: { teams: string[] | null }) => {
-        if (!tl.teams || !userTeams.length) return false;
-        return tl.teams.some((t: string) => userTeams.includes(t));
-      });
+      // Stuur ALLE teamleiders mee zodat de AI elke vraag over teamleiders kan beantwoorden
+      teamleiderContext = "--- VOLLEDIGE TEAMLEIDERS TABEL ---\n" +
+        teamleiders.map((tl: { naam: string; email: string; telefoon: string; teams: string[] }) =>
+          `Teamleider: ${tl.naam}${tl.telefoon ? `, telefoon: ${tl.telefoon}` : ""}${tl.email ? `, email: ${tl.email}` : ""}${tl.teams && tl.teams.length > 0 ? `, teams: ${tl.teams.join(", ")}` : ""}`
+        ).join("\n");
 
-      if (relevanteTeamleiders.length > 0) {
-        teamleiderContext = "--- Teamleiders contactinformatie ---\n" +
-          relevanteTeamleiders.map((tl: { naam: string; email: string; telefoon: string; teams: string[] }) =>
-            `Teamleider: ${tl.naam}${tl.telefoon ? `, telefoon: ${tl.telefoon}` : ""}${tl.email ? `, email: ${tl.email}` : ""}${tl.teams ? `, teams: ${tl.teams.join(", ")}` : ""}`
-          ).join("\n");
-      }
-
-      // Als de medewerker een directe teamleider heeft
+      // Markeer de directe teamleider van deze medewerker
       if (profile.teamleider_naam) {
-        const directeTl = teamleiders.find((tl: { naam: string }) =>
-          tl.naam === profile.teamleider_naam
-        );
+        const directeTl = teamleiders.find((tl: { naam: string }) => tl.naam === profile.teamleider_naam);
         if (directeTl) {
-          teamleiderContext += `\n\nDe directe teamleider van ${profile.naam || "de medewerker"} is ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
+          teamleiderContext += `\n\nDE DIRECTE TEAMLEIDER VAN ${(profile.naam || "de medewerker").toUpperCase()} IS: ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
         }
       }
     }
@@ -477,11 +470,49 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- 6h. Toegestane websites ophalen ----
+    const { data: toegestaneWebsites } = await supabaseAdmin
+      .from("toegestane_websites")
+      .select("naam, url")
+      .eq("tenant_id", profile.tenant_id);
+
+    let websitesContext = "";
+    if (toegestaneWebsites && toegestaneWebsites.length > 0) {
+      // Probeer relevante websites op te halen op basis van de vraag
+      const websiteTexts: string[] = [];
+      for (const site of toegestaneWebsites) {
+        // Check of de vraag gerelateerd is aan deze website
+        const siteNaamLower = site.naam.toLowerCase();
+        if (vraagLower.includes(siteNaamLower) || keywords.some((kw: string) => siteNaamLower.includes(kw))) {
+          try {
+            const siteResponse = await fetch(site.url, {
+              headers: { "User-Agent": "Wegwijzer-Bot/1.0" },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (siteResponse.ok) {
+              const html = await siteResponse.text();
+              const text = html
+                .replace(/<script[\s\S]*?<\/script>/gi, "")
+                .replace(/<style[\s\S]*?<\/style>/gi, "")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim()
+                .substring(0, 4000);
+              if (text.length > 50) {
+                websitesContext += `--- Website: ${site.naam} (${site.url}) ---\n${text}\n\n`;
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+    }
+
     // Bronnen combineren
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
     if (kennisbankContext) bronnen.push(kennisbankContext);
     if (websiteContext) bronnen.push(websiteContext);
+    if (websitesContext) bronnen.push(websitesContext);
     if (persoonlijkContext) bronnen.push(persoonlijkContext);
     if (teamleiderContext) bronnen.push(teamleiderContext);
 
@@ -508,6 +539,9 @@ INSTRUCTIES:
 - Als er een PERSOONLIJK INWERKTRAJECT sectie staat, gebruik die als eerste bron.
 - BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
 - Als de medewerker vraagt naar zijn/haar teamleider, contactpersoon, of wie te bellen: geef direct de naam en het telefoonnummer uit de persoonlijke gegevens of teamleider contactinformatie.
+- Als de medewerker vraagt wie de teamleider is van een specifiek team: gebruik de VOLLEDIGE TEAMLEIDERS TABEL in de kennisbronnen om het juiste antwoord te geven met naam en telefoonnummer.
+- ONZEKERHEID: Als je niet volledig zeker bent van een antwoord, zeg dit ALTIJD expliciet: "Ik denk dat het zo werkt, maar ik ben hier niet volledig zeker van — controleer dit bij je teamleider." Verzin NOOIT informatie. Als het antwoord niet in de beschikbare documenten staat: "Ik kan hier geen betrouwbaar antwoord op geven op basis van de beschikbare informatie. Neem contact op met je teamleider."
+- PROACTIEF AANBIEDEN: Als een medewerker vraagt over rapportage, vraag: "Wil je dat ik je help met het schrijven van die rapportage?" Als een medewerker vraagt over email of brief, vraag: "Wil je dat ik die voor je opstel?" Als een medewerker vraagt over planning, vraag: "Wil je dat ik een dagplanning voor je maak?" Als een medewerker een moeilijke situatie beschrijft, vraag: "Wil je er samen over nadenken?"
 
 ${alleKennisbronnen}`;
 

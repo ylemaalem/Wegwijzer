@@ -35,6 +35,7 @@
     initChatInput();
     initChips();
     initLogout();
+    initSearch();
     laadTenantInstellingen();
   });
 
@@ -219,9 +220,10 @@
       chipsBar.innerHTML = '';
       var kennisChips = [
         { emoji: '📋', text: 'Protocollen opzoeken', vraag: 'Welke protocollen zijn er?' },
-        { emoji: '💼', text: 'Declaraties', vraag: 'Hoe werken declaraties?' },
-        { emoji: '📝', text: 'Rapportage schrijven', vraag: 'Hoe schrijf ik een rapportage?' },
-        { emoji: '❓', text: 'Veelgestelde vragen', vraag: 'Wat zijn veelgestelde vragen?' }
+        { emoji: '📝', text: 'Rapportage schrijven', vraag: 'Ik wil een rapportage schrijven. Kun je me helpen?' },
+        { emoji: '📅', text: 'Planning maken', vraag: 'Kun je een dagplanning voor me maken?' },
+        { emoji: '✉️', text: 'Email opstellen', vraag: 'Kun je me helpen met het opstellen van een email?' },
+        { emoji: '💭', text: 'Situatie doordenken', vraag: 'Ik wil een situatie met je doordenken.' }
       ];
       kennisChips.forEach(function(c) {
         var btn = document.createElement('button');
@@ -561,6 +563,61 @@
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute('content', kleur);
     }
+  }
+
+  // =============================================
+  // ZOEKFUNCTIE IN GESPREKKEN
+  // =============================================
+  function initSearch() {
+    var toggleBtn = document.getElementById('search-toggle-btn');
+    var searchBar = document.getElementById('search-bar');
+    var searchInput = document.getElementById('search-input');
+
+    if (!toggleBtn || !searchBar || !searchInput) return;
+
+    toggleBtn.addEventListener('click', function () {
+      searchBar.classList.toggle('show');
+      if (searchBar.classList.contains('show')) {
+        searchInput.focus();
+      } else {
+        searchInput.value = '';
+        clearSearchHighlights();
+      }
+    });
+
+    searchInput.addEventListener('input', function () {
+      var query = searchInput.value.trim().toLowerCase();
+      clearSearchHighlights();
+
+      if (query.length < 2) return;
+
+      // Zoek in alle chat bubbles
+      var bubbles = chatMessages.querySelectorAll('.chat-bubble');
+      bubbles.forEach(function (bubble) {
+        var text = bubble.textContent || '';
+        if (text.toLowerCase().includes(query)) {
+          // Markeer de bubble
+          bubble.closest('.message-row').style.background = 'rgba(232, 114, 12, 0.06)';
+          bubble.closest('.message-row').style.borderRadius = '8px';
+          bubble.closest('.message-row').classList.add('search-match');
+        }
+      });
+
+      // Scroll naar eerste match
+      var firstMatch = chatMessages.querySelector('.search-match');
+      if (firstMatch) {
+        firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }
+
+  function clearSearchHighlights() {
+    var matches = chatMessages.querySelectorAll('.search-match');
+    matches.forEach(function (el) {
+      el.style.background = '';
+      el.style.borderRadius = '';
+      el.classList.remove('search-match');
+    });
   }
 
   // =============================================

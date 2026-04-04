@@ -370,6 +370,22 @@
           <div id="settings-alert" class="alert mt-8" role="alert">
             <span id="settings-alert-message"></span>
           </div>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+
+          <!-- Toegestane websites -->
+          <h3 style="font-size:1rem;font-weight:600;margin-bottom:12px;color:var(--text)">Toegestane websites</h3>
+          <p class="section-subtitle" style="margin-bottom:12px">
+            Websites die de AI mag raadplegen als aanvullende kennisbron bij relevante vragen.
+          </p>
+
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <input class="form-input" type="text" id="website-naam" placeholder="Naam" style="flex:1;min-width:120px">
+            <input class="form-input" type="url" id="website-url" placeholder="https://..." style="flex:2;min-width:200px">
+            <button class="btn btn-primary" id="add-website-btn" style="flex:0 0 auto;padding:10px 16px;width:auto">Toevoegen</button>
+          </div>
+
+          <div id="websites-list"></div>
         </div>
       </section>
 

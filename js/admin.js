@@ -2065,6 +2065,10 @@
     });
 
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
+
+    // Toegestane websites
+    loadToegestaneWebsites();
+    document.getElementById('add-website-btn').addEventListener('click', addToegestaneWebsite);
   }
 
   async function saveSettings() {
@@ -2118,5 +2122,58 @@
       }, 3000);
     }
   }
+
+  // =============================================
+  // TOEGESTANE WEBSITES
+  // =============================================
+  async function loadToegestaneWebsites() {
+    var container = document.getElementById('websites-list');
+    if (!container) return;
+
+    var result = await supabaseClient
+      .from('toegestane_websites')
+      .select('id, naam, url')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen websites toegevoegd.</p>';
+      return;
+    }
+
+    container.innerHTML = result.data.map(function (w) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<span style="font-weight:600;font-size:0.85rem">' + escapeHtml(w.naam) + '</span>' +
+        '<span style="font-size:0.8rem;color:var(--text-light);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(w.url) + '</span>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteWebsite(\'' + w.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  async function addToegestaneWebsite() {
+    var naamEl = document.getElementById('website-naam');
+    var urlEl = document.getElementById('website-url');
+    var naam = naamEl.value.trim();
+    var url = urlEl.value.trim();
+
+    if (!naam || !url) { alert('Vul naam en URL in.'); return; }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) { alert('URL moet beginnen met http:// of https://'); return; }
+
+    await supabaseClient.from('toegestane_websites').insert({
+      tenant_id: tenantId,
+      naam: naam,
+      url: url
+    });
+
+    naamEl.value = '';
+    urlEl.value = '';
+    loadToegestaneWebsites();
+  }
+
+  window.deleteWebsite = async function (id) {
+    if (!confirm('Website verwijderen?')) return;
+    await supabaseClient.from('toegestane_websites').delete().eq('id', id);
+    loadToegestaneWebsites();
+  };
 
 })();
