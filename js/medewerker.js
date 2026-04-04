@@ -499,6 +499,17 @@
       '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary);word-break:break-all">$1</a>'
     );
 
+    // Bronvermelding visueel scheiden (_Bron: ..._ of *Bron: ...*)
+    escaped = escaped.replace(
+      /<em>Bron:(.*?)<\/em>/g,
+      '<div class="bron-vermelding">Bron:$1</div>'
+    );
+    // Fallback: als het niet als <em> gerenderd is maar als plain tekst
+    escaped = escaped.replace(
+      /(?:<p>|<br>)?\s*_Bron:\s*(.*?)_\s*(?:<\/p>)?$/,
+      '<div class="bron-vermelding">Bron: $1</div>'
+    );
+
     return escaped;
   }
 

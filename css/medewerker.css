@@ -383,13 +383,17 @@
   border-bottom-left-radius: 4px;
 }
 
-/* ---- Markdown in bot bubbles ---- */
+/* ---- Markdown in bot bubbles — compact ---- */
 .chat-bubble-bot p {
-  margin: 0 0 4px 0;
+  margin: 0 0 2px 0;
 }
 
 .chat-bubble-bot p:last-child {
   margin-bottom: 0;
+}
+
+.chat-bubble-bot p + p {
+  margin-top: 2px;
 }
 
 .chat-bubble-bot br + br {
@@ -400,7 +404,7 @@
   font-weight: 700;
   color: var(--primary);
   font-size: 0.92rem;
-  margin: 8px 0 4px 0;
+  margin: 6px 0 2px 0;
 }
 
 .chat-bubble-bot h3:first-child {
@@ -413,20 +417,34 @@
 }
 
 .chat-bubble-bot ul {
-  margin: 2px 0 4px 0;
+  margin: 1px 0 2px 0;
   padding: 0;
   list-style: none;
 }
 
 .chat-bubble-bot ol {
-  margin: 2px 0 4px 18px;
+  margin: 1px 0 2px 18px;
   padding: 0;
 }
 
 .chat-bubble-bot ul li {
   padding-left: 18px;
   position: relative;
-  margin-bottom: 2px;
+  margin-bottom: 0;
+  margin-top: 0;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+/* ---- Bronvermelding ---- */
+.chat-bubble-bot .bron-vermelding {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #F0E0D0;
+  font-size: 0.72rem;
+  color: #999;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 .chat-bubble-bot ul li::before {
@@ -441,7 +459,9 @@
 }
 
 .chat-bubble-bot ol li {
-  margin-bottom: 2px;
+  margin-bottom: 0;
+  padding-top: 1px;
+  padding-bottom: 1px;
 }
 
 /* ---- Tijdstempel ---- */
