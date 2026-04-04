@@ -89,20 +89,54 @@
       return await file.text();
     }
 
-    if (ext === 'pdf') {
-      return await extractPdfText(file);
-    }
+    // PDF en DOCX: probeer eerst Claude extractie, val terug op lokale methode
+    if (ext === 'pdf' || ext === 'docx' || ext === 'doc') {
+      try {
+        var claudeText = await extractViaClaude(file);
+        if (claudeText && claudeText.length > 50) {
+          return claudeText;
+        }
+      } catch (err) {
+        console.error('Claude extractie mislukt, fallback naar lokaal:', err);
+      }
 
-    if (ext === 'docx') {
-      return await extractDocxText(file);
-    }
-
-    if (ext === 'doc') {
+      // Fallback
+      if (ext === 'pdf') return await extractPdfText(file);
+      if (ext === 'docx') return await extractDocxText(file);
       var text = await file.text();
       return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ').replace(/\s{3,}/g, ' ').trim();
     }
 
     return '';
+  }
+
+  async function extractViaClaude(file) {
+    var arrayBuffer = await file.arrayBuffer();
+    var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(arrayBuffer)));
+
+    var mediaType = 'application/pdf';
+    var ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'docx') mediaType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (ext === 'doc') mediaType = 'application/msword';
+
+    var session = await supabaseClient.auth.getSession();
+    var token = session.data.session.access_token;
+
+    var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        extract_pdf: true,
+        pdf_base64: base64,
+        media_type: mediaType
+      })
+    });
+
+    var data = await response.json();
+    return data.extracted_text || '';
   }
 
   async function extractPdfText(file) {
@@ -2100,6 +2134,16 @@
 
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
 
+    // Logo en organisatienaam in admin header
+    if (waarden.logo_url) {
+      var adminLogo = document.getElementById('admin-header-logo');
+      if (adminLogo) adminLogo.src = waarden.logo_url;
+    }
+    if (waarden.organisatienaam) {
+      var adminTitle = document.getElementById('admin-header-title');
+      if (adminTitle) adminTitle.textContent = waarden.organisatienaam;
+    }
+
     // Toegestane websites
     loadToegestaneWebsites();
     document.getElementById('add-website-btn').addEventListener('click', addToegestaneWebsite);
@@ -2269,15 +2313,17 @@
 
     var naam = prompt('Naam:', fg.naam);
     if (naam === null) return;
+    var code = prompt('Code (steekwoorden, komma-gescheiden):', fg.code);
+    if (code === null) return;
     var beschrijving = prompt('Beschrijving (voor AI prompt):', fg.beschrijving || '');
     if (beschrijving === null) return;
-    var code = prompt('Code:', fg.code);
-    if (code === null) return;
+    var isKantoor = confirm('Is dit kantoorpersoneel? (OK = ja, Annuleren = nee)');
 
     await supabaseClient.from('functiegroepen').update({
       naam: naam.trim() || fg.naam,
       beschrijving: beschrijving.trim(),
-      code: code.trim().toLowerCase().replace(/\s+/g, '_') || fg.code
+      code: code.trim().toLowerCase().replace(/\s+/g, '_') || fg.code,
+      is_kantoor: isKantoor
     }).eq('id', id);
 
     loadFunctiegroepen();
@@ -2289,9 +2335,10 @@
     btn.addEventListener('click', async function () {
       var code = document.getElementById('fg-code').value.trim().toLowerCase().replace(/\s+/g, '_');
       var naam = document.getElementById('fg-naam').value.trim();
+      var isKantoor = document.getElementById('fg-is-kantoor') ? document.getElementById('fg-is-kantoor').checked : false;
       if (!code || !naam) { alert('Vul code en naam in.'); return; }
       await supabaseClient.from('functiegroepen').insert({
-        tenant_id: tenantId, code: code, naam: naam, beschrijving: '', is_kantoor: false
+        tenant_id: tenantId, code: code, naam: naam, beschrijving: '', is_kantoor: isKantoor
       });
       document.getElementById('fg-code').value = '';
       document.getElementById('fg-naam').value = '';

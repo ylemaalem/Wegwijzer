@@ -148,6 +148,62 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ---- PDF extractie via Claude ----
+    if (body.extract_pdf && body.pdf_base64) {
+      console.log("[PDF Extract] Start extractie, grootte:", body.pdf_base64.length);
+      try {
+        const pdfResponse = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 4096,
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "document",
+                  source: { type: "base64", media_type: body.media_type || "application/pdf", data: body.pdf_base64 },
+                },
+                {
+                  type: "text",
+                  text: "Lees dit document volledig en geef alle inhoud terug als gestructureerde platte tekst. Behoud alle informatie volledig. Converteer tabellen naar leesbare zinnen — schrijf elke rij als een volledige zin met de kolomnamen als context. Geen markdown, geen opmaakcodes, alleen doorlopende leesbare Nederlandse tekst."
+                }
+              ]
+            }],
+          }),
+        });
+
+        if (!pdfResponse.ok) {
+          const errBody = await pdfResponse.text();
+          console.error("[PDF Extract] API fout:", pdfResponse.status, errBody);
+          return new Response(
+            JSON.stringify({ error: "PDF extractie mislukt", extracted_text: "" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const pdfResult = await pdfResponse.json();
+        const extractedText = pdfResult.content?.[0]?.text || "";
+        console.log("[PDF Extract] Succes, tekst lengte:", extractedText.length);
+
+        return new Response(
+          JSON.stringify({ extracted_text: extractedText }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[PDF Extract] Fout:", err);
+        return new Response(
+          JSON.stringify({ error: "PDF extractie fout", extracted_text: "" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     if (!vraag || typeof vraag !== "string" || vraag.trim().length === 0) {
       return new Response(
         JSON.stringify({ error: "Geen vraag opgegeven" }),
@@ -321,6 +377,7 @@ Deno.serve(async (req: Request) => {
 
     // Combineer alle documenten
     const allDocs = [...(orgDocs || []), ...(persDocs || [])];
+    console.log(`[Chat] Gebruiker: ${profile.naam}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0}, Pers docs: ${persDocs?.length || 0}`);
 
     // Keywords voor relevantie-scoring (gebruikt door documenten en websites)
     const keywords = vraag.trim().toLowerCase().split(/\s+/)
@@ -343,6 +400,8 @@ Deno.serve(async (req: Request) => {
         })
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
         .slice(0, 5);
+
+      console.log(`[Chat] Documenten met score > 0: ${scored.filter((s: {score:number}) => s.score > 0).length}, Keywords: ${keywords.join(", ")}`);
 
       if (scored.length > 0) {
         const docTexts: string[] = [];
@@ -513,7 +572,7 @@ Deno.serve(async (req: Request) => {
     if (bronnen.length > 0) {
       alleKennisbronnen = "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n");
     } else {
-      alleKennisbronnen = "Er zijn nog geen documenten of kennisbronnen beschikbaar. Verwijs de medewerker naar de teamleider voor informatie.";
+      alleKennisbronnen = "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de teamleider voor organisatiespecifieke informatie.";
     }
 
     const systemPrompt = `${basisPrompt}${profielInfo}${weekContext}
@@ -535,7 +594,7 @@ INSTRUCTIES:
 - Als de medewerker vraagt wie de teamleider is van een specifiek team: gebruik de VOLLEDIGE TEAMLEIDERS TABEL in de kennisbronnen om het juiste antwoord te geven met naam en telefoonnummer.
 - ONZEKERHEID: Als je niet volledig zeker bent van een antwoord, zeg dit ALTIJD expliciet: "Ik denk dat het zo werkt, maar ik ben hier niet volledig zeker van — controleer dit bij je teamleider." Verzin NOOIT informatie. Als het antwoord niet in de beschikbare documenten staat: "Ik kan hier geen betrouwbaar antwoord op geven op basis van de beschikbare informatie. Neem contact op met je teamleider."
 - PROACTIEF AANBIEDEN: Als een medewerker vraagt over rapportage, vraag: "Wil je dat ik je help met het schrijven van die rapportage?" Als een medewerker vraagt over email of brief, vraag: "Wil je dat ik die voor je opstel?" Als een medewerker vraagt over planning, vraag: "Wil je dat ik een dagplanning voor je maak?" Als een medewerker een moeilijke situatie beschrijft, vraag: "Wil je er samen over nadenken?"
-- BRONVERMELDING: Vermeld aan het EINDE van elk antwoord op een nieuwe regel in het formaat: _Bron: [documentnaam]_. Als je meerdere documenten gebruikt, noem ze allemaal. Als je eigen AI kennis gebruikt zonder document: _Bron: Op basis van algemene kennis_. Als je het antwoord niet weet: _Bron: Geen relevante documenten gevonden_.
+- BRONVERMELDING: Vermeld GEEN bron standaard. Alleen als de medewerker expliciet vraagt naar de bron (bijv. "waar staat dat?", "wat is de bron?"), noem dan welk document je hebt gebruikt.
 
 ${alleKennisbronnen}`;
 
@@ -566,6 +625,7 @@ ${alleKennisbronnen}`;
 
     const aiResult = await anthropicResponse.json();
     const antwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
+    console.log(`[Chat] AI response ontvangen, lengte: ${antwoord.length}, model: ${aiResult.model || "unknown"}`);
 
     // ---- 9. Gesprek opslaan ----
     const { data: conversation, error: convError } = await supabaseAdmin

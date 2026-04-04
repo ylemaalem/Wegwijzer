@@ -7,8 +7,7 @@
 .medewerker-page .page-container {
   height: 100vh;
   height: 100dvh;
-  width: 100vw;
-  max-width: 100%;
+  width: 100%;
   overflow-x: hidden;
 }
 

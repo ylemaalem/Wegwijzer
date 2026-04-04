@@ -448,13 +448,32 @@
 
   async function geefFeedback(conversationId, waarde, activeBtn, otherBtn) {
     activeBtn.classList.add('selected');
-    activeBtn.disabled = true;
-    otherBtn.disabled = true;
+    otherBtn.classList.remove('selected');
 
+    var nu = new Date();
     await supabaseClient
       .from('conversations')
-      .update({ feedback: waarde })
+      .update({ feedback: waarde, feedback_op: nu.toISOString() })
       .eq('id', conversationId);
+
+    // Toon wijzigbaar-tekst
+    var feedbackRow = activeBtn.parentElement;
+    var bestaandInfo = feedbackRow.querySelector('.feedback-info');
+    if (bestaandInfo) bestaandInfo.remove();
+
+    var info = document.createElement('div');
+    info.className = 'feedback-info';
+    info.style.cssText = 'font-size:0.65rem;color:var(--text-muted);margin-top:4px';
+    var verloopt = new Date(nu.getTime() + 10 * 60 * 1000);
+    info.textContent = 'Aanpasbaar tot ' + verloopt.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+    feedbackRow.appendChild(info);
+
+    // Na 10 minuten: definitief vergrendelen
+    setTimeout(function () {
+      activeBtn.disabled = true;
+      otherBtn.disabled = true;
+      info.textContent = 'Feedback definitief opgeslagen';
+    }, 10 * 60 * 1000);
   }
 
   // =============================================
@@ -481,8 +500,12 @@
     // Genummerde lists
     escaped = escaped.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
 
-    // Paragrafen (dubbele newlines)
-    escaped = escaped.replace(/\n\n/g, '</p><p>');
+    // Paragrafen (dubbele newlines → sectie-scheiding, enkele newlines → spatie of niets)
+    escaped = escaped.replace(/\n\n+/g, '</p><p>');
+    // Enkele newlines na list items of headings: verwijderen (al afgehandeld door HTML tags)
+    escaped = escaped.replace(/(<\/li>)\n/g, '$1');
+    escaped = escaped.replace(/(<\/ul>)\n/g, '$1');
+    escaped = escaped.replace(/(<\/h3>)\n/g, '$1');
     escaped = escaped.replace(/\n/g, '<br>');
     escaped = '<p>' + escaped + '</p>';
 

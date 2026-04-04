@@ -14,6 +14,7 @@
     tenantId = profile.tenant_id;
     initTabs();
     initLogout();
+    loadHeaderLogo();
     loadTeamMedewerkers();
     loadTeamGesprekken();
     loadTeamStatistieken();
@@ -33,6 +34,21 @@
         document.getElementById('tab-' + tab).classList.add('active');
       });
     });
+  }
+
+  async function loadHeaderLogo() {
+    var result = await supabaseClient.from('settings').select('sleutel, waarde').eq('tenant_id', tenantId);
+    if (!result.data) return;
+    var settings = {};
+    result.data.forEach(function (s) { settings[s.sleutel] = s.waarde; });
+    if (settings.logo_url) {
+      var logo = document.getElementById('tl-header-logo');
+      if (logo) logo.src = settings.logo_url;
+    }
+    if (settings.organisatienaam) {
+      var title = document.getElementById('tl-header-title');
+      if (title) title.textContent = settings.organisatienaam;
+    }
   }
 
   function initLogout() {
