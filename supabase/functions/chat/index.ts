@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
     // ---- 3. Profiel ophalen ----
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id, naam, role, functiegroep, startdatum, tenant_id, inwerktraject_url, werkuren, regio, teams, teamleider_naam, account_type, einddatum, inwerken_afgerond")
+      .select("id, naam, role, functiegroep, startdatum, tenant_id, inwerktraject_url, werkuren, afdeling, teams, teamleider_naam, account_type, einddatum, inwerken_afgerond, inwerktraject_actief, vraag_limiet, extra_vragen")
       .eq("user_id", user.id)
       .single();
 
@@ -94,11 +94,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 4. Rate limiting per rol ----
-    // Admin: geen limiet. Teamleider: 100/dag. Medewerker: 30 + optioneel 20 = max 50.
+    // ---- 4. Rate limiting per rol (configureerbaar per profiel) ----
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStr = todayStart.toISOString().split("T")[0];
+    const basisLimiet = profile.vraag_limiet || 30;
+    const extraVragen = profile.extra_vragen || 20;
+    const hardLimiet = basisLimiet + extraVragen;
 
     if (profile.role !== "admin") {
       const { count: todayCount } = await supabaseAdmin
@@ -109,38 +111,25 @@ Deno.serve(async (req: Request) => {
 
       const count = todayCount || 0;
 
-      if (profile.role === "teamleider") {
-        if (count >= 100) {
-          return new Response(
-            JSON.stringify({ error: "Je hebt het dagelijkse maximum van 100 vragen bereikt. Morgen kun je weer vragen stellen.", rate_limited: true, hard_limit: true }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      } else {
-        // Medewerker: check of uitbreiding actief is
-        const { data: extension } = await supabaseAdmin
-          .from("rate_extensions")
-          .select("id")
-          .eq("profile_id", profile.id)
-          .eq("datum", todayStr)
-          .limit(1);
+      const { data: extension } = await supabaseAdmin
+        .from("rate_extensions")
+        .select("id")
+        .eq("profile_id", profile.id)
+        .eq("datum", todayStr)
+        .limit(1);
 
-        const hasExtension = extension && extension.length > 0;
-        const maxVragen = hasExtension ? 50 : 30;
+      const hasExtension = extension && extension.length > 0;
 
-        if (count >= 50) {
-          // Harde stop op 50
-          return new Response(
-            JSON.stringify({ error: "Je hebt het maximale aantal vragen voor vandaag bereikt. Morgen kun je weer vragen stellen.", rate_limited: true, hard_limit: true }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        } else if (count >= 30 && !hasExtension) {
-          // Zachte limiet: popup tonen
-          return new Response(
-            JSON.stringify({ error: "Je hebt je dagelijkse 30 vragen gebruikt. Wil je vandaag nog 20 extra vragen gebruiken?", rate_limited: true, soft_limit: true }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+      if (count >= hardLimiet) {
+        return new Response(
+          JSON.stringify({ error: "Je hebt het maximale aantal vragen voor vandaag bereikt. Morgen kun je weer vragen stellen.", rate_limited: true, hard_limit: true }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } else if (count >= basisLimiet && !hasExtension && extraVragen > 0) {
+        return new Response(
+          JSON.stringify({ error: `Je hebt je dagelijkse ${basisLimiet} vragen gebruikt. Wil je vandaag nog ${extraVragen} extra vragen gebruiken?`, rate_limited: true, soft_limit: true }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 
@@ -406,35 +395,39 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 7. System prompt bouwen (per functiegroep) ----
+    // ---- 7. System prompt bouwen (per functiegroep uit DB) ----
     const naam = profile.naam || "medewerker";
     const org = organisatienaam || "de organisatie";
     const wk = weeknummer || 1;
 
-    // Functiegroep-specifieke system prompts (Opdracht 2)
-    const functiePrompts: Record<string, string> = {
-      ambulant_begeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ambulant begeleider bij ${org}. Als ambulant begeleider ondersteun je cliënten bij hun hulpvragen in hun eigen thuissituatie. Elke cliënt heeft zijn of haar eigen uren — dat kan variëren van één uur per week tot meerdere uren. Je werkt zelfstandig bij cliënten thuis, ondersteunt bij praktische en dagelijkse hulpvragen, de contactfrequentie verschilt per cliënt afhankelijk van de toegekende uren, je werkt alleen zonder collega direct naast je en je reist tussen cliënten. Geef antwoorden die warm en begripvol zijn, rekening houden met het zelfstandig werken, praktisch en direct toepasbaar zijn en bij twijfel doorverwijzen naar de teamleider.`,
-      ambulant_persoonlijk_begeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ambulant persoonlijk begeleider bij ${org}. Als persoonlijk begeleider ben je regiehouder over je cliënten. Jij bewaakt het overzicht over de zorg, de planning en de doelen. Hoe intensief het cliëntcontact is verschilt per situatie en per cliënt — soms sta je meer op de achtergrond en ligt de focus op de organisatie van de zorg. Je bent regiehouder en bewaakt het overzicht, schrijft en verlengt zorgplannen en indicaties, onderhoudt contact met WMO consulenten en het zorgkantoor, bewaakt de ureninzet en de intensiteit van cliëntcontact verschilt per situatie. Geef antwoorden die de regierol centraal stellen, ingaan op plannen en indicaties en WMO procedures, helpen bij organiseren en overzicht houden, ruimte laten voor de nuance dat elke cliënt anders is en doorverwijzen naar de teamleider bij complexe beslissingen.`,
-      woonbegeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als woonbegeleider bij ${org}. Vanuit de woonlocatie ondersteun je cliënten bij hun dagelijkse leven. Er zijn altijd collega's aanwezig. Je werkt vanuit een vaste woonlocatie, er zijn altijd collega's om je heen, je werkt in een teamstructuur met vaste overdracht en teamcommunicatie is essentieel. Geef antwoorden die rekening houden met de teamdynamiek, ingaan op overdracht en samenwerking, praktisch zijn voor de woonlocatie context en warm en ondersteunend zijn.`,
-      persoonlijk_woonbegeleider: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als persoonlijk woonbegeleider bij ${org}. Dit is de regierol binnen de woonlocatie. Je bent regiehouder net als de ambulant PB maar dan vanuit de woonlocatie, schrijft en verlengt zorgplannen en indicaties, werkt samen met een vast team, hebt overzicht over jouw cliënten én afstemming met het team en de intensiteit van cliëntcontact verschilt per situatie. Geef antwoorden die de regierol combineren met de teamcontext, helpen bij plannen en indicaties, rekening houden met de woonlocatie structuur en professioneel maar persoonlijk zijn.`,
-      medewerker_avond_nachtdienst: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als medewerker avond-/nachtdienst bij ${org}. Je werkt in avond- en nachtdiensten, vaak alleen op locatie, buiten kantoortijden. Je bent zelfstandig verantwoordelijk tijdens je dienst. De focus ligt op overdracht, veiligheid, crisisprotocollen en zelfstandig handelen buiten kantooruren. Geef antwoorden die rekening houden met het alleen werken, focus op veiligheid en crisis, praktisch en direct toepasbaar zijn en bij twijfel doorverwijzen naar de teamleider of achterwacht.`,
-      kantoorpersoneel: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als kantoorpersoneel bij ${org}. Je werkt op kantoor en ondersteunt de organisatie. Geef antwoorden die praktisch en professioneel zijn, gericht op kantoorprocessen, administratie en organisatorische zaken.`,
-      stagiaire: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} is stagiaire bij ${org}. Als stagiaire ben je aan het leren en oriënteren. Wees extra geduldig, leg begrippen uit en verwijs waar nodig naar de begeleider of teamleider. Geef antwoorden die leerzaam en ondersteunend zijn.`,
-      zzp_uitzendkracht: `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ZZP'er of uitzendkracht bij ${org}. Je bent flexibel inzetbaar en werkt mogelijk in wisselende teams of locaties. Geef antwoorden die praktisch en direct zijn, gericht op werkwijze en protocollen van de organisatie.`,
-    };
+    // Haal functiegroep beschrijving op uit configureerbare tabel
+    let fgBeschrijving = "";
+    if (profile.functiegroep) {
+      const { data: fgData } = await supabaseAdmin
+        .from("functiegroepen")
+        .select("naam, beschrijving")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("code", profile.functiegroep)
+        .limit(1);
 
-    // Teamleider krijgt eigen prompt
-    let basisPrompt = "";
-    if (profile.role === "teamleider") {
-      basisPrompt = `Je bent Wegwijzer — de kennisassistent van ${naam}, teamleider bij ${org}. ${naam} is leidinggevende en aanspreekpunt voor medewerkers bij vragen over werk, roosters en organisatorische zaken. Een teamleider begeleidt geen cliënten. Geef antwoorden die professioneel en direct zijn, gericht op leidinggevende taken, organisatie en teammanagement.`;
-    } else {
-      basisPrompt = functiePrompts[profile.functiegroep || ""] ||
-        `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam} bij ${org}.`;
+      if (fgData && fgData.length > 0 && fgData[0].beschrijving) {
+        fgBeschrijving = fgData[0].beschrijving;
+      }
     }
 
-    // Weekfase context (niet voor teamleiders, niet als inwerken afgerond)
+    // Teamleider/leidinggevende krijgt eigen prompt
+    let basisPrompt = "";
+    if (profile.role === "teamleider") {
+      basisPrompt = `Je bent Wegwijzer — de kennisassistent van ${naam}, leidinggevende bij ${org}. ${naam} is de leidinggevende van het team en aanspreekpunt voor medewerkers bij vragen over werk en organisatorische zaken. Een leidinggevende begeleidt geen cliënten. Geef antwoorden die professioneel en direct zijn, gericht op leidinggevende taken, organisatie en teammanagement.`;
+    } else if (fgBeschrijving) {
+      basisPrompt = `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam}. ${naam} werkt als ${profile.functiegroep.replace(/_/g, " ")} bij ${org}. ${fgBeschrijving}`;
+    } else {
+      basisPrompt = `Je bent Wegwijzer — de persoonlijke kennisassistent van ${naam} bij ${org}.`;
+    }
+
+    // Weekfase context
     let weekContext = "";
-    const inwerkAfgerond = profile.inwerken_afgerond || wk > 6 || profile.functiegroep === "zzp_uitzendkracht";
+    const inwerkAfgerond = profile.inwerken_afgerond || profile.inwerktraject_actief === false || wk > 6 || profile.functiegroep === "zzp_uitzendkracht";
     if (profile.role === "teamleider") {
       weekContext = `\n\n${naam} is teamleider. Antwoord direct en professioneel als kennisassistent.`;
     } else if (inwerkAfgerond) {
@@ -454,7 +447,7 @@ Deno.serve(async (req: Request) => {
     profielInfo += `\n- Naam: ${naam}`;
     profielInfo += `\n- Functiegroep: ${profile.functiegroep ? profile.functiegroep.replace(/_/g, " ") : "onbekend"}`;
     if (profile.werkuren) profielInfo += `\n- Werkuren per week: ${profile.werkuren}`;
-    if (profile.regio) profielInfo += `\n- Regio: ${profile.regio}`;
+    if (profile.afdeling) profielInfo += `\n- Afdeling: ${profile.afdeling}`;
     if (profile.teams && profile.teams.length > 0) profielInfo += `\n- Team(s): ${profile.teams.join(", ")}`;
     if (profile.startdatum) profielInfo += `\n- Startdatum: ${profile.startdatum}`;
     profielInfo += `\n- Weeknummer inwerktraject: ${wk}${wk > 6 ? " (inwerktraject afgerond)" : " van 6"}`;

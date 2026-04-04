@@ -25,7 +25,13 @@
       "Bash(./deploy.sh)",
       "Bash(find C:\\\\Users\\\\youne\\\\wegwijzer-app:*)",
       "Bash(rm:*)",
-      "Bash(grep -n \"&&\" supabase/migrations/*.sql)"
+      "Bash(grep -n \"&&\" supabase/migrations/*.sql)",
+      "Bash(grep -rn \"&&\" supabase/migrations/*.sql)",
+      "WebFetch(domain:www.ambulantehulpverlening.nl)",
+      "Bash(curl -s -L \"https://www.ambulantehulpverlening.nl\")",
+      "Bash(grep -o -P '.{0,300}site-nav__logo.{0,300}')",
+      "Bash(grep -o -E '.{0,500}site-nav__logo.{0,500}')",
+      "Bash(grep -o -E 'site-nav__logo.{0,200}')"
     ]
   }
 }

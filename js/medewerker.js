@@ -30,7 +30,7 @@
   document.addEventListener('wegwijzer-auth-ready', function (e) {
     profile = e.detail.profile;
     user = e.detail.user;
-    weekNummer = (profile.inwerken_afgerond || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
+    weekNummer = (profile.inwerken_afgerond || profile.inwerktraject_actief === false || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
     initWelkom();
     initChatInput();
     initChips();
@@ -739,4 +739,72 @@
       window.location.href = appUrl('index.html');
     });
   }
+
+  // =============================================
+  // PRIVACY VERZOEK
+  // =============================================
+  (function initPrivacy() {
+    var btn = document.getElementById('privacy-btn');
+    var modal = document.getElementById('modal-privacy');
+    var form = document.getElementById('privacy-form');
+    var cancelBtn = document.getElementById('privacy-cancel');
+
+    if (!btn || !modal) return;
+
+    btn.addEventListener('click', function () {
+      modal.style.display = 'flex';
+      modal.style.alignItems = 'center';
+      modal.style.justifyContent = 'center';
+      modal.style.position = 'fixed';
+      modal.style.top = '0';
+      modal.style.left = '0';
+      modal.style.right = '0';
+      modal.style.bottom = '0';
+      modal.style.background = 'rgba(0,0,0,0.5)';
+      modal.style.zIndex = '300';
+      // Pre-fill name and email
+      if (profile) {
+        document.getElementById('privacy-naam').value = profile.naam || '';
+      }
+      if (user) {
+        document.getElementById('privacy-email').value = user.email || '';
+      }
+    });
+
+    cancelBtn.addEventListener('click', function () {
+      modal.style.display = 'none';
+    });
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var alertBox = document.getElementById('privacy-alert');
+      var alertMsg = document.getElementById('privacy-alert-msg');
+
+      var naam = document.getElementById('privacy-naam').value.trim();
+      var email = document.getElementById('privacy-email').value.trim();
+      var type = document.getElementById('privacy-type').value;
+
+      if (!naam || !email) {
+        alertBox.className = 'alert alert-error show';
+        alertMsg.textContent = 'Vul alle velden in.';
+        return;
+      }
+
+      var result = await supabaseClient.from('privacy_verzoeken').insert({
+        tenant_id: profile.tenant_id,
+        naam: naam,
+        email: email,
+        type: type
+      });
+
+      if (result.error) {
+        alertBox.className = 'alert alert-error show';
+        alertMsg.textContent = 'Versturen mislukt. Probeer het opnieuw.';
+      } else {
+        alertBox.className = 'alert alert-success show';
+        alertMsg.textContent = 'Je verzoek is ontvangen. We behandelen het binnen 30 dagen.';
+        setTimeout(function () { modal.style.display = 'none'; }, 3000);
+      }
+    });
+  })();
 })();

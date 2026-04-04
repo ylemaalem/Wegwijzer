@@ -114,7 +114,38 @@
 
     <footer class="powered-by">
       Mogelijk gemaakt door Wegwijzer
+      <button class="privacy-btn" id="privacy-btn" title="Privacy verzoek">🔒 Privacy</button>
     </footer>
+
+    <!-- Privacy modal -->
+    <div class="modal-overlay" id="modal-privacy" style="display:none">
+      <div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:100%;margin:16px">
+        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:16px">Privacy verzoek</h3>
+        <div id="privacy-alert" class="alert" role="alert"><span id="privacy-alert-msg"></span></div>
+        <form id="privacy-form" novalidate>
+          <div class="form-group">
+            <label class="form-label">Naam</label>
+            <input class="form-input" type="text" id="privacy-naam" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Werkmail</label>
+            <input class="form-input" type="email" id="privacy-email" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type verzoek</label>
+            <select class="form-input" id="privacy-type" required>
+              <option value="inzage">Inzage in mijn gegevens</option>
+              <option value="correctie">Correctie van mijn gegevens</option>
+              <option value="verwijdering">Verwijdering van mijn gegevens</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="button" class="btn btn-secondary" id="privacy-cancel">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="privacy-submit">Versturen</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

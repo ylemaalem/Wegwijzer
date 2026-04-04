@@ -760,6 +760,24 @@
   }
 }
 
+/* ---- Privacy knop ---- */
+.privacy-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: 8px;
+  font-family: var(--font);
+}
+
+.privacy-btn:hover {
+  border-color: var(--text-light);
+  color: var(--text-light);
+}
+
 /* ---- Zoekbalk ---- */
 .search-toggle {
   background: none;

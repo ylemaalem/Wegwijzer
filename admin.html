@@ -30,8 +30,9 @@
       <button class="tab-btn active" data-tab="documenten">Documenten</button>
       <button class="tab-btn" data-tab="medewerkers">Medewerkers</button>
       <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
-      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
       <button class="tab-btn" data-tab="aanvragen">Aanvragen <span id="aanvragen-badge" class="melding-badge" style="display:none">0</span></button>
+      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
+      <button class="tab-btn" data-tab="rapporten">Rapporten</button>
       <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
       <button class="tab-btn" data-tab="teamleiders">Teamleiders</button>
       <button class="tab-btn" data-tab="instellingen">Instellingen</button>
@@ -121,8 +122,8 @@
                 <th>E-mail</th>
                 <th>Functiegroep</th>
                 <th>Teams</th>
+                <th>Afdeling</th>
                 <th>Werkuren</th>
-                <th>Regio</th>
                 <th>Startdatum</th>
                 <th style="width:80px"></th>
               </tr>
@@ -150,7 +151,10 @@
 
       <!-- ========== TAB: GESPREKKEN ========== -->
       <section class="tab-content" id="tab-gesprekken">
-        <h2 class="section-title">Gesprekken</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2 class="section-title" style="margin-bottom:0">Gesprekken</h2>
+          <button class="btn btn-secondary" id="toggle-namen-btn" style="width:auto;padding:8px 16px;font-size:0.8rem">Namen tonen 🔒</button>
+        </div>
 
         <!-- Filters -->
         <div class="filter-bar">
@@ -246,6 +250,14 @@
             </tbody>
           </table>
         </div>
+      </section>
+
+      <!-- ========== TAB: RAPPORTEN ========== -->
+      <section class="tab-content" id="tab-rapporten">
+        <h2 class="section-title">Rapporten</h2>
+        <p class="section-subtitle">Maandelijkse rapportages over gebruik en kwaliteit.</p>
+        <button class="btn btn-primary" id="generate-rapport-btn" style="max-width:280px;margin-bottom:20px">Rapport genereren</button>
+        <div id="rapporten-list"></div>
       </section>
 
       <!-- ========== TAB: VERBETERPUNTEN ========== -->
@@ -344,14 +356,6 @@
             <input class="form-input" type="url" id="setting-website" placeholder="https://www.voorbeeld.nl/kennisbank">
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="setting-logo-url">Logo URL (header)</label>
-            <p class="section-subtitle" style="margin-bottom:6px">
-              Optioneel. URL naar het logo van je organisatie. Wordt getoond links in de header naast de organisatienaam.
-            </p>
-            <input class="form-input" type="url" id="setting-logo-url" placeholder="https://www.voorbeeld.nl/logo.png">
-          </div>
-
           <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
 
           <!-- Disclaimer -->
@@ -386,6 +390,16 @@
           </div>
 
           <div id="websites-list"></div>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+          <h3 style="font-size:1rem;font-weight:600;margin-bottom:12px;color:var(--text)">Functiegroepen</h3>
+          <p class="section-subtitle" style="margin-bottom:12px">Configureer de beschikbare functiegroepen. De beschrijving wordt gebruikt in de AI system prompt.</p>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <input class="form-input" type="text" id="fg-code" placeholder="Code (bijv. begeleider)" style="flex:1;min-width:120px">
+            <input class="form-input" type="text" id="fg-naam" placeholder="Naam" style="flex:1;min-width:120px">
+            <button class="btn btn-primary" id="add-fg-btn" style="flex:0 0 auto;padding:10px 16px;width:auto">Toevoegen</button>
+          </div>
+          <div id="functiegroepen-list"></div>
         </div>
       </section>
 
@@ -413,17 +427,7 @@
 
           <div class="form-group">
             <label class="form-label" for="invite-functiegroep">Functiegroep</label>
-            <select class="form-input" id="invite-functiegroep" required>
-              <option value="">Kies een functiegroep</option>
-              <option value="ambulant_begeleider">Ambulant Begeleider</option>
-              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
-              <option value="woonbegeleider">Woonbegeleider</option>
-              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
-              <option value="medewerker_avond_nachtdienst">Medewerker Avond-/Nachtdienst</option>
-              <option value="kantoorpersoneel">Kantoorpersoneel</option>
-              <option value="stagiaire">Stagiaire</option>
-              <option value="zzp_uitzendkracht">ZZP / Uitzendkracht</option>
-            </select>
+            <select class="form-input" id="invite-functiegroep" required><option value="">Laden...</option></select>
           </div>
 
           <div class="form-group">
@@ -472,13 +476,30 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="invite-regio">Regio</label>
-            <input class="form-input" type="text" id="invite-regio" placeholder="bijv. Utrecht, Amersfoort">
+            <label class="form-label" for="invite-afdeling">Afdeling</label>
+            <select class="form-input" id="invite-afdeling">
+              <option value="">Geen / n.v.t.</option>
+              <option value="HR">HR</option>
+              <option value="Zorgbemiddeling">Zorgbemiddeling</option>
+              <option value="Kennis en Expertise">Kennis en Expertise</option>
+              <option value="Management">Management</option>
+              <option value="Financien">Financiën</option>
+              <option value="Administratie">Administratie</option>
+              <option value="Overig">Overig</option>
+            </select>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="invite-startdatum">Startdatum inwerktraject</label>
             <input class="form-input" type="date" id="invite-startdatum" required>
+          </div>
+
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="invite-inwerktraject-actief" checked style="accent-color:var(--primary)">
+              <span class="form-label" style="margin-bottom:0">Inwerktraject actief</span>
+            </label>
+            <p class="section-subtitle" style="margin-bottom:0;font-size:0.75rem;margin-top:4px">Niet aanvinken = medewerker start direct in kennisassistent modus</p>
           </div>
 
           <div class="form-group">
@@ -538,16 +559,7 @@
 
           <div class="form-group">
             <label class="form-label" for="edit-functiegroep">Functiegroep</label>
-            <select class="form-input" id="edit-functiegroep">
-              <option value="ambulant_begeleider">Ambulant Begeleider</option>
-              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
-              <option value="woonbegeleider">Woonbegeleider</option>
-              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
-              <option value="medewerker_avond_nachtdienst">Medewerker Avond-/Nachtdienst</option>
-              <option value="kantoorpersoneel">Kantoorpersoneel</option>
-              <option value="stagiaire">Stagiaire</option>
-              <option value="zzp_uitzendkracht">ZZP / Uitzendkracht</option>
-            </select>
+            <select class="form-input" id="edit-functiegroep"><option value="">Laden...</option></select>
           </div>
 
           <div class="form-group">
@@ -596,13 +608,30 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="edit-regio">Regio</label>
-            <input class="form-input" type="text" id="edit-regio" placeholder="bijv. Utrecht, Amersfoort">
+            <label class="form-label" for="edit-afdeling">Afdeling</label>
+            <select class="form-input" id="edit-afdeling">
+              <option value="">Geen / n.v.t.</option>
+              <option value="HR">HR</option>
+              <option value="Zorgbemiddeling">Zorgbemiddeling</option>
+              <option value="Kennis en Expertise">Kennis en Expertise</option>
+              <option value="Management">Management</option>
+              <option value="Financien">Financiën</option>
+              <option value="Administratie">Administratie</option>
+              <option value="Overig">Overig</option>
+            </select>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="edit-startdatum">Startdatum</label>
             <input class="form-input" type="date" id="edit-startdatum">
+          </div>
+
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="edit-inwerktraject-actief" checked style="accent-color:var(--primary)">
+              <span class="form-label" style="margin-bottom:0">Inwerktraject actief</span>
+            </label>
+            <p class="section-subtitle" style="margin-bottom:0;font-size:0.75rem;margin-top:4px">Niet aanvinken = medewerker start direct in kennisassistent modus</p>
           </div>
 
           <div class="form-group">

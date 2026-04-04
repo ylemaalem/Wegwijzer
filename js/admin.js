@@ -6,6 +6,7 @@
   'use strict';
 
   // ---- State ----
+  var namenZichtbaar = false;
   var tenantId = null;
   var allConversations = [];
   var allProfiles = [];
@@ -44,6 +45,9 @@
     initEditDocModal();
     initTeamleiderModal();
     initVerbeterModal();
+    loadFunctiegroepen();
+    loadRapporten();
+    initRapportBtn();
   });
 
   // =============================================
@@ -723,7 +727,7 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, regio, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -792,7 +796,7 @@
         '<td class="functiegroep-label">' + fg + '</td>' +
         '<td>' + escapeHtml(teamsStr) + '</td>' +
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
-        '<td>' + escapeHtml(p.regio || '-') + '</td>' +
+        '<td>' + escapeHtml(p.afdeling || '-') + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
@@ -1030,7 +1034,7 @@
       var startdatum = document.getElementById('invite-startdatum').value;
       var inwerktrajectUrl = document.getElementById('invite-inwerktraject-url').value.trim();
       var werkuren = document.getElementById('invite-werkuren').value.trim();
-      var regio = document.getElementById('invite-regio').value.trim();
+      var afdeling = document.getElementById('invite-afdeling').value.trim();
 
       // Nieuwe velden
       var accountTypeEl = document.querySelector('input[name="invite-account-type"]:checked');
@@ -1088,7 +1092,8 @@
             var updateData = { startdatum: startdatum, account_type: accountType };
             if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
             if (werkuren) updateData.werkuren = werkuren;
-            if (regio) updateData.regio = regio;
+            if (afdeling) updateData.afdeling = afdeling;
+            updateData.inwerktraject_actief = document.getElementById('invite-inwerktraject-actief').checked;
             if (einddatum) updateData.einddatum = einddatum;
             if (teams.length > 0) updateData.teams = teams;
             if (teamleiderNaam) updateData.teamleider_naam = teamleiderNaam;
@@ -1105,7 +1110,8 @@
             var updateData2 = { startdatum: startdatum, account_type: accountType };
             if (inwerktrajectUrl) updateData2.inwerktraject_url = inwerktrajectUrl;
             if (werkuren) updateData2.werkuren = werkuren;
-            if (regio) updateData2.regio = regio;
+            if (afdeling) updateData2.afdeling = afdeling;
+            updateData2.inwerktraject_actief = document.getElementById('invite-inwerktraject-actief').checked;
             if (einddatum) updateData2.einddatum = einddatum;
             if (teams.length > 0) updateData2.teams = teams;
             if (teamleiderNaam) updateData2.teamleider_naam = teamleiderNaam;
@@ -1150,8 +1156,9 @@
     document.getElementById('edit-naam').value = p.naam || '';
     document.getElementById('edit-functiegroep').value = p.functiegroep || '';
     document.getElementById('edit-werkuren').value = p.werkuren || '';
-    document.getElementById('edit-regio').value = p.regio || '';
+    document.getElementById('edit-afdeling').value = p.afdeling || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
+    document.getElementById('edit-inwerktraject-actief').checked = p.inwerktraject_actief !== false;
     document.getElementById('edit-inwerktraject-url').value = p.inwerktraject_url || '';
 
     // Account type
@@ -1223,7 +1230,7 @@
       var startdatum = document.getElementById('edit-startdatum').value;
       var inwerktrajectUrl = document.getElementById('edit-inwerktraject-url').value.trim();
       var werkuren = document.getElementById('edit-werkuren').value.trim();
-      var regio = document.getElementById('edit-regio').value.trim();
+      var afdeling = document.getElementById('edit-afdeling').value.trim();
 
       // Nieuwe velden
       var accountTypeEl = document.querySelector('input[name="edit-account-type"]:checked');
@@ -1260,7 +1267,8 @@
         startdatum: startdatum || null,
         inwerktraject_url: inwerktrajectUrl || null,
         werkuren: werkuren || null,
-        regio: regio || null,
+        afdeling: afdeling || null,
+        inwerktraject_actief: document.getElementById('edit-inwerktraject-actief').checked,
         account_type: accountType,
         einddatum: einddatum,
         teams: teams.length > 0 ? teams : null,
@@ -1337,7 +1345,14 @@
       });
 
       var profile = allProfiles.find(function (p) { return p.id === c.user_id; });
-      var naam = profile ? (profile.naam || profile.email) : 'Onbekend';
+      var naam;
+      if (namenZichtbaar) {
+        naam = profile ? (profile.naam || profile.email) : 'Onbekend';
+      } else {
+        var fg = profile ? formatFunctiegroep(profile.functiegroep) : '';
+        var teams = profile && profile.teams ? profile.teams.join(', ') : '';
+        naam = 'Medewerker' + (fg ? ' — ' + fg : '') + (teams ? ' — ' + teams : '');
+      }
 
       var feedbackBadge = '';
       if (c.feedback === 'goed') {
@@ -1392,6 +1407,24 @@
 
     document.getElementById('modal-gesprek').classList.add('show');
   };
+
+  (function initToggleNamen() {
+    var btn = document.getElementById('toggle-namen-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      if (namenZichtbaar) {
+        namenZichtbaar = false;
+        btn.textContent = 'Namen tonen 🔒';
+        renderGesprekken();
+      } else {
+        if (confirm('Je staat op het punt namen zichtbaar te maken. Dit is alleen bedoeld bij klachten of incidenten. Doorgaan?')) {
+          namenZichtbaar = true;
+          btn.textContent = 'Namen verbergen 🔓';
+          renderGesprekken();
+        }
+      }
+    });
+  })();
 
   // =============================================
   // STATISTIEKEN
@@ -2174,6 +2207,170 @@
     if (!confirm('Website verwijderen?')) return;
     await supabaseClient.from('toegestane_websites').delete().eq('id', id);
     loadToegestaneWebsites();
+  };
+
+  // =============================================
+  // FUNCTIEGROEPEN CONFIGURATIE
+  // =============================================
+  async function loadFunctiegroepen() {
+    var result = await supabaseClient
+      .from('functiegroepen')
+      .select('id, code, naam, beschrijving, is_kantoor')
+      .eq('tenant_id', tenantId)
+      .order('naam');
+
+    if (!result.data) return;
+
+    // Populate dropdowns
+    var dropdowns = ['invite-functiegroep', 'edit-functiegroep'];
+    dropdowns.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = '<option value="">Kies een functiegroep</option>';
+      result.data.forEach(function (fg) {
+        var opt = document.createElement('option');
+        opt.value = fg.code;
+        opt.textContent = fg.naam;
+        el.appendChild(opt);
+      });
+    });
+
+    // Render list in settings
+    var container = document.getElementById('functiegroepen-list');
+    if (!container) return;
+    if (result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen functiegroepen.</p>';
+      return;
+    }
+    container.innerHTML = result.data.map(function (fg) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<strong style="font-size:0.85rem;min-width:100px">' + escapeHtml(fg.naam) + '</strong>' +
+        '<span style="font-size:0.78rem;color:var(--text-light);flex:1">' + escapeHtml(fg.beschrijving || '') + '</span>' +
+        (fg.is_kantoor ? '<span class="badge badge-admin" style="font-size:0.65rem">Kantoor</span>' : '') +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteFunctiegroep(\'' + fg.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  window.deleteFunctiegroep = async function (id) {
+    if (!confirm('Functiegroep verwijderen?')) return;
+    await supabaseClient.from('functiegroepen').delete().eq('id', id);
+    loadFunctiegroepen();
+  };
+
+  (function initFgBtn() {
+    var btn = document.getElementById('add-fg-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var code = document.getElementById('fg-code').value.trim().toLowerCase().replace(/\s+/g, '_');
+      var naam = document.getElementById('fg-naam').value.trim();
+      if (!code || !naam) { alert('Vul code en naam in.'); return; }
+      await supabaseClient.from('functiegroepen').insert({
+        tenant_id: tenantId, code: code, naam: naam, beschrijving: '', is_kantoor: false
+      });
+      document.getElementById('fg-code').value = '';
+      document.getElementById('fg-naam').value = '';
+      loadFunctiegroepen();
+    });
+  })();
+
+  // =============================================
+  // RAPPORTEN
+  // =============================================
+  async function loadRapporten() {
+    var container = document.getElementById('rapporten-list');
+    if (!container) return;
+    var result = await supabaseClient
+      .from('rapporten')
+      .select('id, maand, inhoud, created_at')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);padding:24px;text-align:center">Nog geen rapporten beschikbaar.</p>';
+      return;
+    }
+    container.innerHTML = result.data.map(function (r) {
+      return '<div class="kennisbank-item" style="cursor:pointer" onclick="window.showRapport(\'' + r.id + '\')">' +
+        '<div class="kennisbank-item-vraag">Rapport ' + escapeHtml(r.maand) + '</div>' +
+        '<div class="kennisbank-item-antwoord">' + new Date(r.created_at).toLocaleDateString('nl-NL') + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function initRapportBtn() {
+    var btn = document.getElementById('generate-rapport-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      btn.textContent = 'Genereren...';
+
+      var now = new Date();
+      var maand = now.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+
+      // Gather data
+      var convResult = await supabaseClient.from('conversations').select('*').eq('tenant_id', tenantId);
+      var profResult = await supabaseClient.from('profiles').select('*').eq('tenant_id', tenantId);
+      var convs = convResult.data || [];
+      var profs = profResult.data || [];
+
+      var medewerkers = profs.filter(function(p) { return p.role === 'medewerker'; });
+      var actief = medewerkers.filter(function(p) {
+        return convs.some(function(c) { return c.user_id === p.id; });
+      });
+      var inactief = medewerkers.filter(function(p) {
+        return !convs.some(function(c) { return c.user_id === p.id; });
+      });
+
+      var metFeedback = convs.filter(function(c) { return c.feedback !== null; });
+      var positief = metFeedback.filter(function(c) { return c.feedback === 'goed'; });
+      var pct = metFeedback.length > 0 ? Math.round((positief.length / metFeedback.length) * 100) : 0;
+
+      var rapport = {
+        gebruik: { actief: actief.length, inactief: inactief.length, totaal_vragen: convs.length },
+        kwaliteit: { positief_percentage: pct, totaal_met_feedback: metFeedback.length },
+        tijdwinst: { vragen: convs.length, geschatte_minuten: convs.length * 10 },
+        aanbevelingen: []
+      };
+
+      if (pct < 70 && metFeedback.length > 10) rapport.aanbevelingen.push('Positief percentage is onder 70% — overweeg de kennisbank aan te vullen.');
+      if (inactief.length > actief.length) rapport.aanbevelingen.push('Meer inactieve dan actieve accounts — controleer of alle medewerkers op de hoogte zijn.');
+      if (convs.length > 500) rapport.aanbevelingen.push('Hoog gebruik — overweeg extra documenten toe te voegen voor veelgestelde onderwerpen.');
+
+      await supabaseClient.from('rapporten').insert({
+        tenant_id: tenantId, maand: maand, inhoud: rapport
+      });
+
+      btn.disabled = false;
+      btn.textContent = 'Rapport genereren';
+      loadRapporten();
+    });
+  }
+
+  window.showRapport = function (id) {
+    // Simple: find and display
+    var container = document.getElementById('rapporten-list');
+    supabaseClient.from('rapporten').select('*').eq('id', id).single().then(function (result) {
+      if (!result.data) return;
+      var r = result.data.inhoud;
+      var html = '<div style="background:var(--bg-white);padding:24px;border-radius:var(--radius);margin-top:16px">' +
+        '<h3>Rapport ' + escapeHtml(result.data.maand) + '</h3>' +
+        '<h4 style="margin-top:16px;color:var(--primary)">Gebruik</h4>' +
+        '<p>Actieve medewerkers: ' + r.gebruik.actief + ' | Inactief: ' + r.gebruik.inactief + ' | Totaal vragen: ' + r.gebruik.totaal_vragen + '</p>' +
+        '<h4 style="margin-top:12px;color:var(--primary)">Kwaliteit</h4>' +
+        '<p>Positief: ' + r.kwaliteit.positief_percentage + '% (van ' + r.kwaliteit.totaal_met_feedback + ' met feedback)</p>' +
+        '<h4 style="margin-top:12px;color:var(--primary)">Tijdwinst (schatting)</h4>' +
+        '<p>' + r.tijdwinst.vragen + ' vragen × 10 min = ' + r.tijdwinst.geschatte_minuten + ' minuten bespaard</p>' +
+        '<p style="font-size:0.75rem;color:var(--text-muted);font-style:italic">Disclaimer: dit is een schatting</p>';
+
+      if (r.aanbevelingen && r.aanbevelingen.length > 0) {
+        html += '<h4 style="margin-top:12px;color:var(--primary)">Aanbevelingen</h4><ul>';
+        r.aanbevelingen.forEach(function (a) { html += '<li>' + escapeHtml(a) + '</li>'; });
+        html += '</ul>';
+      }
+      html += '</div>';
+      container.innerHTML += html;
+    });
   };
 
 })();
