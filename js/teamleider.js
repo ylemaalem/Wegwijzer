@@ -51,7 +51,7 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, functiegroep, startdatum, user_id')
+      .select('id, naam, email, functiegroep, startdatum, user_id, teams')
       .eq('tenant_id', tenantId)
       .eq('role', 'medewerker');
 
@@ -60,13 +60,12 @@
       return;
     }
 
-    // Filter op teamleden
+    // Client-side filteren op overlappende teams
     teamProfiles = result.data.filter(function (p) {
-      if (!p.teams && myTeams.length > 0) return false;
-      return true; // RLS filtert al op teams
+      if (myTeams.length === 0) return true;
+      if (!p.teams || p.teams.length === 0) return false;
+      return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
     });
-
-    teamProfiles = result.data;
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
