@@ -3,7 +3,7 @@
 -- Fix RLS profiles, hernoem functiegroep, nieuwe functiegroepen
 -- =============================================
 
--- 1. FIX: Teamleider profile policy fixen — NULL teams moet ook werken
+-- 1. FIX: Teamleider profile policy (NULL-safe met COALESCE)
 DROP POLICY IF EXISTS "teamleider_read_team_profiles" ON public.profiles;
 CREATE POLICY "teamleider_read_team_profiles"
   ON public.profiles FOR SELECT
@@ -12,15 +12,14 @@ CREATE POLICY "teamleider_read_team_profiles"
     AND tenant_id = public.get_my_tenant_id()
     AND (
       user_id = auth.uid()
-      OR (
-        teams IS NOT NULL
-        AND (SELECT teams FROM public.profiles WHERE user_id = auth.uid() LIMIT 1) IS NOT NULL
-        AND teams && (SELECT teams FROM public.profiles WHERE user_id = auth.uid() LIMIT 1)
+      OR COALESCE(teams, '{}') && COALESCE(
+        (SELECT p.teams FROM public.profiles p WHERE p.user_id = auth.uid()),
+        '{}'
       )
     )
   );
 
--- 2. FIX: Teamleider conversations policy fixen
+-- 2. FIX: Teamleider conversations policy (NULL-safe met COALESCE)
 DROP POLICY IF EXISTS "teamleider_read_team_conversations" ON public.conversations;
 CREATE POLICY "teamleider_read_team_conversations"
   ON public.conversations FOR SELECT
@@ -30,10 +29,12 @@ CREATE POLICY "teamleider_read_team_conversations"
     AND (
       user_id = public.get_my_profile_id()
       OR user_id IN (
-        SELECT id FROM public.profiles
-        WHERE tenant_id = public.get_my_tenant_id()
-        AND teams IS NOT NULL
-        AND teams && (SELECT teams FROM public.profiles WHERE user_id = auth.uid() LIMIT 1)
+        SELECT p.id FROM public.profiles p
+        WHERE p.tenant_id = public.get_my_tenant_id()
+        AND COALESCE(p.teams, '{}') && COALESCE(
+          (SELECT p2.teams FROM public.profiles p2 WHERE p2.user_id = auth.uid()),
+          '{}'
+        )
       )
     )
   );

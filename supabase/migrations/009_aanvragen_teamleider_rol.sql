@@ -62,8 +62,8 @@ CREATE POLICY "teamleider_insert_aanvragen"
     AND tenant_id = public.get_my_tenant_id()
   );
 
--- 3. Teamleider RLS policies toevoegen
--- Teamleider ziet profielen die dezelfde teams hebben
+-- 3. Teamleider RLS policies (NULL-safe met COALESCE)
+-- Teamleider ziet eigen profiel + profielen met overlappende teams
 CREATE POLICY "teamleider_read_team_profiles"
   ON public.profiles FOR SELECT
   USING (
@@ -71,24 +71,33 @@ CREATE POLICY "teamleider_read_team_profiles"
     AND tenant_id = public.get_my_tenant_id()
     AND (
       user_id = auth.uid()
-      OR teams && (SELECT teams FROM public.profiles WHERE user_id = auth.uid() LIMIT 1)
+      OR COALESCE(teams, '{}') && COALESCE(
+        (SELECT p.teams FROM public.profiles p WHERE p.user_id = auth.uid()),
+        '{}'
+      )
     )
   );
 
--- Teamleider ziet gesprekken van teamleden
+-- Teamleider ziet eigen gesprekken + gesprekken van teamleden
 CREATE POLICY "teamleider_read_team_conversations"
   ON public.conversations FOR SELECT
   USING (
     public.get_my_role() = 'teamleider'
     AND tenant_id = public.get_my_tenant_id()
-    AND user_id IN (
-      SELECT id FROM public.profiles
-      WHERE tenant_id = public.get_my_tenant_id()
-      AND teams && (SELECT teams FROM public.profiles WHERE user_id = auth.uid() LIMIT 1)
+    AND (
+      user_id = public.get_my_profile_id()
+      OR user_id IN (
+        SELECT p.id FROM public.profiles p
+        WHERE p.tenant_id = public.get_my_tenant_id()
+        AND COALESCE(p.teams, '{}') && COALESCE(
+          (SELECT p2.teams FROM public.profiles p2 WHERE p2.user_id = auth.uid()),
+          '{}'
+        )
+      )
     )
   );
 
--- Teamleider kan eigen gesprekken aanmaken (voor chatbot)
+-- Teamleider kan eigen gesprekken aanmaken (chatbot)
 CREATE POLICY "teamleider_insert_conversations"
   ON public.conversations FOR INSERT
   WITH CHECK (
@@ -97,7 +106,7 @@ CREATE POLICY "teamleider_insert_conversations"
     AND tenant_id = public.get_my_tenant_id()
   );
 
--- Teamleider kan feedback geven
+-- Teamleider kan eigen feedback geven
 CREATE POLICY "teamleider_update_own_feedback"
   ON public.conversations FOR UPDATE
   USING (

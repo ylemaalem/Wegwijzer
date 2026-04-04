@@ -97,8 +97,7 @@
           .single();
 
         if (profileError || !profile) {
-          console.error('Profile lookup error:', profileError);
-          showAlert('Profiel niet gevonden. Fout: ' + (profileError ? profileError.message : 'geen profiel') + '. Neem contact op met je teamleider.', 'error');
+          showAlert('Profiel niet gevonden. Neem contact op met je teamleider.', 'error');
           await supabaseClient.auth.signOut();
           setLoading(loginBtn, false);
           return;

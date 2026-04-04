@@ -6,7 +6,26 @@
       "Bash(npx supabase:*)",
       "Bash(npx serve:*)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_d255a9a35f2f971c1590427ac9e1894fd8f79d50 npx supabase:*)",
-      "Bash(gh --version)"
+      "Bash(gh --version)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm list:*)",
+      "Bash(npm install:*)",
+      "Bash(git push:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(ls C:\\\\Users\\\\youne\\\\Downloads\\\\Gemini*:*)",
+      "Bash(ls:*)",
+      "Bash(curl -s -I \"https://ylemaalem.github.io/Wegwijzer/icons/icon-192.png\")",
+      "Bash(curl -s \"https://ylemaalem.github.io/Wegwijzer/icons/icon-192.png\" -o icons/check-icon.png)",
+      "Bash(wc:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=\"sbp_8ddfe30a5cf55d7721c9ba908ac707aa08621758\" npx supabase functions deploy chat --no-verify-jwt --project-ref yboflmfjnrmbsjboaelu)",
+      "Bash(chmod +x:*)",
+      "Bash(./deploy.sh)",
+      "Bash(find C:\\\\Users\\\\youne\\\\wegwijzer-app:*)",
+      "Bash(rm:*)",
+      "Bash(grep -n \"&&\" supabase/migrations/*.sql)"
     ]
   }
 }
