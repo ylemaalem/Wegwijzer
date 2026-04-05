@@ -79,6 +79,15 @@
           </div>
         </div>
 
+        <!-- Geselecteerde bestanden + bevestigingsknop -->
+        <div id="upload-preview" style="display:none;margin-bottom:16px">
+          <div id="upload-preview-list" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="upload-confirm-btn" style="flex:1">Uploaden</button>
+            <button class="btn btn-secondary" id="upload-cancel-btn" style="flex:0 0 auto;width:auto;padding:14px 20px">Annuleren</button>
+          </div>
+        </div>
+
         <!-- Banner: bestaande documenten verwerken -->
         <div class="alert alert-warning" id="reprocess-banner" style="display:none;margin-bottom:16px;cursor:pointer">
           <span id="reprocess-message">Er zijn documenten zonder geëxtraheerde tekst. Klik hier om ze te verwerken.</span>

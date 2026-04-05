@@ -328,9 +328,13 @@
   // =============================================
   // DOCUMENTEN
   // =============================================
+  var pendingFiles = null;
+
   function initUpload() {
     var zone = document.getElementById('upload-zone');
     var input = document.getElementById('file-input');
+    var confirmBtn = document.getElementById('upload-confirm-btn');
+    var cancelBtn = document.getElementById('upload-cancel-btn');
 
     zone.addEventListener('click', function () { input.click(); });
 
@@ -347,19 +351,57 @@
       e.preventDefault();
       zone.classList.remove('drag-over');
       if (e.dataTransfer.files.length > 0) {
-        handleFiles(e.dataTransfer.files);
+        showUploadPreview(e.dataTransfer.files);
       }
     });
 
     input.addEventListener('change', function () {
       if (input.files.length > 0) {
-        handleFiles(input.files);
-        input.value = '';
+        showUploadPreview(input.files);
       }
     });
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', async function () {
+        if (!pendingFiles || pendingFiles.length === 0) return;
+        console.log('[Upload] Bevestigd, start verwerking van', pendingFiles.length, 'bestand(en)');
+        var filesToUpload = pendingFiles;
+        pendingFiles = null;
+        document.getElementById('upload-preview').style.display = 'none';
+        document.getElementById('file-input').value = '';
+        await handleFiles(filesToUpload);
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        pendingFiles = null;
+        document.getElementById('upload-preview').style.display = 'none';
+        document.getElementById('file-input').value = '';
+        console.log('[Upload] Geannuleerd');
+      });
+    }
+  }
+
+  function showUploadPreview(files) {
+    console.log('[Upload] Bestanden geselecteerd:', files.length);
+    pendingFiles = files;
+    var preview = document.getElementById('upload-preview');
+    var list = document.getElementById('upload-preview-list');
+    var confirmBtn = document.getElementById('upload-confirm-btn');
+
+    var items = [];
+    for (var i = 0; i < files.length; i++) {
+      var sizeKb = Math.round(files[i].size / 1024);
+      items.push('<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.85rem"><span>📄 ' + escapeHtml(files[i].name) + '</span><span style="color:var(--text-muted)">' + sizeKb + ' KB</span></div>');
+    }
+    list.innerHTML = items.join('');
+    confirmBtn.textContent = 'Upload ' + files.length + ' bestand' + (files.length > 1 ? 'en' : '');
+    preview.style.display = 'block';
   }
 
   async function handleFiles(files) {
+    console.log('[Upload] handleFiles start met', files.length, 'bestand(en), tenantId:', tenantId);
     var progress = document.getElementById('upload-progress');
     var itemsContainer = document.getElementById('upload-items');
     progress.classList.add('show');
@@ -417,17 +459,20 @@
       }
 
       // Stap 1: Tekst extraheren
+      console.log('[Upload] Stap 1 — Tekst extraheren:', file.name);
       statusEl.textContent = 'Tekst extraheren...';
       fillEl.style.width = '20%';
 
       var extractedText = '';
       try {
         extractedText = await extractTextFromFile(file);
+        console.log('[Upload] Tekst geëxtraheerd, lengte:', extractedText.length);
       } catch (err) {
-        console.error('Extractie fout:', err);
+        console.error('[Upload] Extractie fout:', err);
       }
 
       // Stap 2: Uploaden naar storage
+      console.log('[Upload] Stap 2 — Uploaden naar storage:', file.name);
       statusEl.textContent = 'Uploaden...';
       fillEl.style.width = '50%';
 
@@ -442,8 +487,10 @@
             upsert: false
           });
 
+        console.log('[Upload] Storage resultaat:', uploadResult.error ? 'FOUT: ' + uploadResult.error.message : 'OK, pad: ' + filePath);
+
         if (uploadResult.error) {
-          statusEl.textContent = 'Upload mislukt';
+          statusEl.textContent = 'Upload mislukt: ' + uploadResult.error.message;
           statusEl.style.color = 'var(--error)';
           fillEl.style.width = '100%';
           fillEl.style.background = 'var(--error)';
@@ -451,6 +498,7 @@
         }
 
         // Stap 3: Metadata + content opslaan
+        console.log('[Upload] Stap 3 — Metadata opslaan in documents tabel');
         statusEl.textContent = 'Opslaan...';
         fillEl.style.width = '80%';
 
@@ -470,8 +518,10 @@
           .from('documents')
           .insert(insertData);
 
+        console.log('[Upload] Insert resultaat:', insertResult.error ? 'FOUT: ' + insertResult.error.message : 'OK');
+
         if (insertResult.error) {
-          statusEl.textContent = 'Metadata mislukt';
+          statusEl.textContent = 'Metadata mislukt: ' + insertResult.error.message;
           statusEl.style.color = 'var(--error)';
           fillEl.style.width = '100%';
           fillEl.style.background = 'var(--error)';
@@ -479,26 +529,30 @@
         }
 
         // Klaar
+        console.log('[Upload] ✓ Voltooid:', file.name);
         statusEl.textContent = 'Gereed ✓';
         statusEl.style.color = 'var(--success)';
         fillEl.style.width = '100%';
         fillEl.style.background = 'var(--success)';
 
       } catch (err) {
-        statusEl.textContent = 'Fout';
+        console.error('[Upload] Exception:', err);
+        statusEl.textContent = 'Fout: ' + (err.message || 'onbekend');
         statusEl.style.color = 'var(--error)';
         fillEl.style.width = '100%';
         fillEl.style.background = 'var(--error)';
       }
     }
 
-    // Reset na 3 seconden
+    // Direct lijst verversen
+    console.log('[Upload] Klaar met alle bestanden, lijst verversen');
+    await loadDocuments();
+
+    // Reset progress UI na 3 seconden
     setTimeout(function () {
       progress.classList.remove('show');
       itemsContainer.innerHTML = '';
     }, 3000);
-
-    loadDocuments();
   }
 
   async function loadDocuments() {
