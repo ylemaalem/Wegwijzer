@@ -2025,16 +2025,55 @@
 
         var result;
         if (tlId) {
-          // Update
+          // Update bestaande teamleider
           result = await supabaseClient
             .from('teamleiders')
             .update(data)
             .eq('id', tlId);
         } else {
-          // Insert
+          // Insert nieuwe teamleider
           result = await supabaseClient
             .from('teamleiders')
             .insert(data);
+
+          // Stuur automatisch uitnodigingsmail als email is ingevuld
+          if (!result.error && email) {
+            console.log('[Teamleider] Start uitnodigingsmail voor:', email);
+            try {
+              var signUpResult = await supabaseClient.auth.signUp({
+                email: email,
+                password: generateTempPassword(),
+                options: {
+                  data: {
+                    role: 'teamleider',
+                    naam: naam,
+                    tenant_id: tenantId
+                  },
+                  emailRedirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
+                }
+              });
+
+              if (signUpResult.error) {
+                console.error('[Teamleider] SignUp fout:', signUpResult.error.message);
+                alert('Leidinggevende opgeslagen, maar uitnodigingsmail versturen mislukte: ' + signUpResult.error.message);
+              } else {
+                console.log('[Teamleider] Uitnodigingsmail verstuurd');
+                // Wacht op trigger die profiel aanmaakt
+                await new Promise(function (r) { setTimeout(r, 1500); });
+                // Update profiel met teams als aanwezig
+                if (signUpResult.data && signUpResult.data.user && teams.length > 0) {
+                  await supabaseClient
+                    .from('profiles')
+                    .update({ teams: teams, teamleider_naam: naam })
+                    .eq('user_id', signUpResult.data.user.id);
+                }
+                alert('Leidinggevende/HR toegevoegd. Uitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
+              }
+            } catch (err) {
+              console.error('[Teamleider] Uitnodiging exception:', err);
+              alert('Leidinggevende opgeslagen, maar uitnodigingsmail kon niet verstuurd worden.');
+            }
+          }
         }
 
         if (result.error) {
