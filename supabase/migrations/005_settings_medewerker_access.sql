@@ -13,5 +13,5 @@ CREATE POLICY "medewerker_read_public_settings"
   FOR SELECT
   USING (
     tenant_id = public.get_my_tenant_id()
-    AND sleutel IN ('disclaimer', 'organisatienaam', 'primaire_kleur', 'website_url')
+    AND sleutel IN ('disclaimer', 'organisatienaam', 'primaire_kleur', 'website_url', 'logo_url')
   );
