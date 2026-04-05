@@ -549,6 +549,7 @@
 
     var instellingen = {};
     result.data.forEach(function (s) { instellingen[s.sleutel] = s.waarde; });
+    console.log('[Wegwijzer] Alle opgehaalde settings:', Object.keys(instellingen).join(', '));
 
     // Disclaimer
     if (instellingen.disclaimer) {
@@ -566,13 +567,17 @@
     }
 
     // Organisatielogo in header
-    console.log('[Wegwijzer] logo_url uit settings:', instellingen.logo_url || '(leeg)');
+    console.log('[Wegwijzer] logo_url waarde:', JSON.stringify(instellingen.logo_url));
     var logoContainer = document.getElementById('header-logo-container');
+    console.log('[Wegwijzer] logo container element:', logoContainer ? 'gevonden' : 'NIET gevonden');
     if (logoContainer) {
       if (instellingen.logo_url) {
-        logoContainer.innerHTML = '<img src="' + instellingen.logo_url + '" alt="' + escapeHtml(instellingen.organisatienaam || 'Logo') + '" style="max-height:40px;width:auto;object-fit:contain;border-radius:6px">';
+        var imgHtml = '<img src="' + instellingen.logo_url + '" alt="' + escapeHtml(instellingen.organisatienaam || 'Logo') + '" style="max-height:40px;width:auto;object-fit:contain;border-radius:6px" onerror="console.error(\'[Wegwijzer] Logo laden mislukt:\', this.src)">';
+        logoContainer.innerHTML = imgHtml;
+        console.log('[Wegwijzer] Logo img toegevoegd aan header');
+      } else {
+        console.log('[Wegwijzer] Geen logo_url — check of RLS policy logo_url toestaat');
       }
-      // Als geen logo_url: container blijft leeg, organisatienaam staat al in h1
     }
 
     // Primaire kleur
