@@ -363,13 +363,27 @@
 
     if (confirmBtn) {
       confirmBtn.addEventListener('click', async function () {
-        if (!pendingFiles || pendingFiles.length === 0) return;
+        console.log('[Upload] Upload knop geklikt');
+        if (!pendingFiles || pendingFiles.length === 0) {
+          console.warn('[Upload] Geen bestanden in pendingFiles');
+          return;
+        }
         console.log('[Upload] Bevestigd, start verwerking van', pendingFiles.length, 'bestand(en)');
-        var filesToUpload = pendingFiles;
+        // Kopieer FileList naar array zodat het niet verdwijnt bij input.value reset
+        var filesToUpload = [];
+        for (var k = 0; k < pendingFiles.length; k++) {
+          filesToUpload.push(pendingFiles[k]);
+        }
+        console.log('[Upload] Array gekopieerd:', filesToUpload.length, 'items');
         pendingFiles = null;
         document.getElementById('upload-preview').style.display = 'none';
-        document.getElementById('file-input').value = '';
-        await handleFiles(filesToUpload);
+        confirmBtn.disabled = true;
+        try {
+          await handleFiles(filesToUpload);
+        } finally {
+          confirmBtn.disabled = false;
+          document.getElementById('file-input').value = '';
+        }
       });
     }
 
@@ -556,6 +570,7 @@
   }
 
   async function loadDocuments() {
+    console.log('[loadDocuments] Start, tenantId:', tenantId);
     var tbody = document.getElementById('documents-body');
 
     var result = await supabaseClient
@@ -564,6 +579,8 @@
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
+
+    console.log('[loadDocuments] Resultaat:', result.error ? 'FOUT: ' + result.error.message : (result.data.length + ' documenten'));
 
     if (result.error || !result.data) {
       tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon documenten niet laden.</td></tr>';
