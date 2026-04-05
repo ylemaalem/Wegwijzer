@@ -41,14 +41,10 @@
     if (!result.data) return;
     var settings = {};
     result.data.forEach(function (s) { settings[s.sleutel] = s.waarde; });
-    var logo = document.getElementById('tl-header-logo');
-    if (logo) {
-      if (settings.logo_url) {
-        logo.src = settings.logo_url;
-        logo.style.display = '';
-      } else {
-        logo.style.display = 'none';
-      }
+    console.log('[Teamleider] logo_url uit settings:', settings.logo_url || '(leeg)');
+    var tlLogoContainer = document.getElementById('tl-logo-container');
+    if (tlLogoContainer && settings.logo_url) {
+      tlLogoContainer.innerHTML = '<img src="' + settings.logo_url + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
     }
     if (settings.organisatienaam) {
       var title = document.getElementById('tl-header-title');

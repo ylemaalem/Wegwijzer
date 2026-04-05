@@ -566,15 +566,13 @@
     }
 
     // Organisatielogo in header
-    var headerLogo = document.getElementById('header-logo');
-    if (headerLogo) {
+    console.log('[Wegwijzer] logo_url uit settings:', instellingen.logo_url || '(leeg)');
+    var logoContainer = document.getElementById('header-logo-container');
+    if (logoContainer) {
       if (instellingen.logo_url) {
-        headerLogo.src = instellingen.logo_url;
-        headerLogo.alt = instellingen.organisatienaam || 'Logo';
-        headerLogo.style.display = '';
-      } else {
-        headerLogo.style.display = 'none';
+        logoContainer.innerHTML = '<img src="' + instellingen.logo_url + '" alt="' + escapeHtml(instellingen.organisatienaam || 'Logo') + '" style="max-height:40px;width:auto;object-fit:contain;border-radius:6px">';
       }
+      // Als geen logo_url: container blijft leeg, organisatienaam staat al in h1
     }
 
     // Primaire kleur

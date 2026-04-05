@@ -2135,14 +2135,10 @@
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
 
     // Logo en organisatienaam in admin header
-    var adminLogo = document.getElementById('admin-header-logo');
-    if (adminLogo) {
-      if (waarden.logo_url) {
-        adminLogo.src = waarden.logo_url;
-        adminLogo.style.display = '';
-      } else {
-        adminLogo.style.display = 'none';
-      }
+    console.log('[Admin] logo_url uit settings:', waarden.logo_url || '(leeg)');
+    var adminLogoContainer = document.getElementById('admin-logo-container');
+    if (adminLogoContainer && waarden.logo_url) {
+      adminLogoContainer.innerHTML = '<img src="' + waarden.logo_url + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
     }
     if (waarden.organisatienaam) {
       var adminTitle = document.getElementById('admin-header-title');
