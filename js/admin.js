@@ -12,6 +12,7 @@
   var allProfiles = [];
   var allTeamleiders = [];
   var allDocuments = [];
+  var allFunctiegroepen = [];
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
@@ -49,6 +50,7 @@
     loadRapporten();
     initRapportBtn();
     loadPrivacyVerzoeken();
+    initFunctiegroepFormToggle();
   });
 
   // =============================================
@@ -323,6 +325,79 @@
       if (tl.naam === current) opt.selected = true;
       select.appendChild(opt);
     });
+  }
+
+  // Dynamisch formulier: toon velden op basis van functiegroep
+  function updateFormFields(prefix, fgCode) {
+    var zorgFields = document.querySelectorAll('.' + prefix + '-zorg-field');
+    var kantoorFields = document.querySelectorAll('.' + prefix + '-kantoor-field');
+    var sharedFields = document.querySelectorAll('.' + prefix + '-shared-field');
+    var hint = document.getElementById(prefix + '-fg-hint');
+
+    if (!fgCode) {
+      // Situatie C: geen functiegroep gekozen
+      zorgFields.forEach(function (el) { el.style.display = 'none'; });
+      kantoorFields.forEach(function (el) { el.style.display = 'none'; });
+      sharedFields.forEach(function (el) { el.style.display = 'none'; });
+      if (hint) hint.style.display = '';
+      return;
+    }
+
+    if (hint) hint.style.display = 'none';
+
+    var fg = allFunctiegroepen.find(function (f) { return f.code === fgCode; });
+    var isKantoor = fg && fg.is_kantoor;
+
+    if (isKantoor) {
+      // Situatie B: kantoorpersoneel
+      zorgFields.forEach(function (el) { el.style.display = 'none'; });
+      kantoorFields.forEach(function (el) { el.style.display = ''; });
+      sharedFields.forEach(function (el) { el.style.display = ''; });
+    } else {
+      // Situatie A: zorgfunctie
+      zorgFields.forEach(function (el) { el.style.display = ''; });
+      kantoorFields.forEach(function (el) { el.style.display = 'none'; });
+      sharedFields.forEach(function (el) { el.style.display = ''; });
+    }
+  }
+
+  function initFunctiegroepFormToggle() {
+    // Populeer manager dropdowns met dezelfde data als teamleider
+    function syncManagerDropdowns() {
+      ['invite-manager', 'edit-manager'].forEach(function (id) {
+        var select = document.getElementById(id);
+        if (!select) return;
+        var current = select.value || '';
+        select.innerHTML = '<option value="">— Geen manager —</option>';
+        allTeamleiders.forEach(function (tl) {
+          var opt = document.createElement('option');
+          opt.value = tl.naam;
+          opt.textContent = tl.naam;
+          if (tl.naam === current) opt.selected = true;
+          select.appendChild(opt);
+        });
+      });
+    }
+
+    // Invite formulier
+    var inviteFg = document.getElementById('invite-functiegroep');
+    if (inviteFg) {
+      inviteFg.addEventListener('change', function () {
+        updateFormFields('invite', inviteFg.value);
+        syncManagerDropdowns();
+      });
+      // Start staat: nog geen functiegroep
+      updateFormFields('invite', '');
+    }
+
+    // Edit formulier
+    var editFg = document.getElementById('edit-functiegroep');
+    if (editFg) {
+      editFg.addEventListener('change', function () {
+        updateFormFields('edit', editFg.value);
+        syncManagerDropdowns();
+      });
+    }
   }
 
   // =============================================
@@ -1138,6 +1213,8 @@
       alertBox.className = 'alert';
       populateTeamCheckboxes('invite-teams', []);
       if (einddatumGroup) einddatumGroup.style.display = 'none';
+      // Reset dynamische velden naar situatie C (geen functiegroep)
+      updateFormFields('invite', '');
       modal.classList.add('show');
     });
 
@@ -1308,6 +1385,22 @@
 
     // Teamleider dropdown
     populateTeamleiderDropdown('edit-teamleider', p.teamleider_naam);
+
+    // Manager dropdown (zelfde opties als teamleider)
+    var editManager = document.getElementById('edit-manager');
+    if (editManager) {
+      editManager.innerHTML = '<option value="">— Geen manager —</option>';
+      allTeamleiders.forEach(function (tl) {
+        var opt = document.createElement('option');
+        opt.value = tl.naam;
+        opt.textContent = tl.naam;
+        if (tl.naam === p.teamleider_naam) opt.selected = true;
+        editManager.appendChild(opt);
+      });
+    }
+
+    // Dynamische velden tonen op basis van functiegroep
+    updateFormFields('edit', p.functiegroep || '');
 
     var editAlert = document.getElementById('edit-alert');
     editAlert.className = 'alert';
@@ -2356,15 +2449,15 @@
       .order('naam');
 
     if (!result.data) return;
+    allFunctiegroepen = result.data;
 
-    // Populate dropdowns — filter kantoor-functies eruit
+    // Populate dropdowns — toon alle functiegroepen (zorg + kantoor)
     var dropdowns = ['invite-functiegroep', 'edit-functiegroep'];
     dropdowns.forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.innerHTML = '<option value="">Kies een functiegroep</option>';
       result.data
-        .filter(function (fg) { return !fg.is_kantoor; })
         .forEach(function (fg) {
           var opt = document.createElement('option');
           opt.value = fg.code;

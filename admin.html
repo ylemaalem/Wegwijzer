@@ -480,6 +480,8 @@
             <select class="form-input" id="invite-functiegroep" required><option value="">Laden...</option></select>
           </div>
 
+          <p class="section-subtitle" id="invite-fg-hint" style="margin:0 0 12px;font-style:italic;color:var(--text-muted)">Kies eerst een functiegroep</p>
+
           <div class="form-group">
             <label class="form-label">Account type</label>
             <div id="invite-account-type" style="display:flex;gap:16px;margin-top:4px">
@@ -497,7 +499,7 @@
             <input class="form-input" type="date" id="invite-einddatum">
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-zorg-field" data-fg-section="zorg">
             <label class="form-label">Teams</label>
             <div id="invite-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="invite-teams" value="Team Almere"> Team Almere</label>
@@ -513,19 +515,26 @@
             </div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-zorg-field" data-fg-section="zorg">
             <label class="form-label" for="invite-teamleider">Teamleider</label>
             <select class="form-input" id="invite-teamleider">
               <option value="">Selecteer teamleider</option>
             </select>
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-kantoor-field" data-fg-section="kantoor">
+            <label class="form-label" for="invite-manager">Manager</label>
+            <select class="form-input" id="invite-manager">
+              <option value="">Selecteer manager</option>
+            </select>
+          </div>
+
+          <div class="form-group invite-shared-field" data-fg-section="shared">
             <label class="form-label" for="invite-werkuren">Werkuren per week</label>
             <input class="form-input" type="text" id="invite-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-kantoor-field" data-fg-section="kantoor">
             <label class="form-label" for="invite-afdeling">Afdeling</label>
             <select class="form-input" id="invite-afdeling">
               <option value="">Geen / n.v.t.</option>
@@ -539,12 +548,12 @@
             </select>
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-zorg-field" data-fg-section="zorg">
             <label class="form-label" for="invite-startdatum">Startdatum inwerktraject</label>
-            <input class="form-input" type="date" id="invite-startdatum" required>
+            <input class="form-input" type="date" id="invite-startdatum">
           </div>
 
-          <div class="form-group">
+          <div class="form-group invite-zorg-field" data-fg-section="zorg">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="invite-inwerktraject-actief" checked style="accent-color:var(--primary)">
               <span class="form-label" style="margin-bottom:0">Inwerktraject actief</span>
@@ -612,6 +621,8 @@
             <select class="form-input" id="edit-functiegroep"><option value="">Laden...</option></select>
           </div>
 
+          <p class="section-subtitle" id="edit-fg-hint" style="margin:0 0 12px;font-style:italic;color:var(--text-muted);display:none">Kies eerst een functiegroep</p>
+
           <div class="form-group">
             <label class="form-label">Account type</label>
             <div id="edit-account-type" style="display:flex;gap:16px;margin-top:4px">
@@ -629,7 +640,7 @@
             <input class="form-input" type="date" id="edit-einddatum">
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-zorg-field" data-fg-section="zorg">
             <label class="form-label">Teams</label>
             <div id="edit-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="edit-teams" value="Team Almere"> Team Almere</label>
@@ -645,19 +656,26 @@
             </div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-zorg-field" data-fg-section="zorg">
             <label class="form-label" for="edit-teamleider">Teamleider</label>
             <select class="form-input" id="edit-teamleider">
               <option value="">Selecteer teamleider</option>
             </select>
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-kantoor-field" data-fg-section="kantoor">
+            <label class="form-label" for="edit-manager">Manager</label>
+            <select class="form-input" id="edit-manager">
+              <option value="">Selecteer manager</option>
+            </select>
+          </div>
+
+          <div class="form-group edit-shared-field" data-fg-section="shared">
             <label class="form-label" for="edit-werkuren">Werkuren per week</label>
             <input class="form-input" type="text" id="edit-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-kantoor-field" data-fg-section="kantoor">
             <label class="form-label" for="edit-afdeling">Afdeling</label>
             <select class="form-input" id="edit-afdeling">
               <option value="">Geen / n.v.t.</option>
@@ -671,12 +689,12 @@
             </select>
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-zorg-field" data-fg-section="zorg">
             <label class="form-label" for="edit-startdatum">Startdatum</label>
             <input class="form-input" type="date" id="edit-startdatum">
           </div>
 
-          <div class="form-group">
+          <div class="form-group edit-zorg-field" data-fg-section="zorg">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="edit-inwerktraject-actief" checked style="accent-color:var(--primary)">
               <span class="form-label" style="margin-bottom:0">Inwerktraject actief</span>
