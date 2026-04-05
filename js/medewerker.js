@@ -131,6 +131,10 @@
       chatScreen.classList.remove('active');
       welcomeScreen.style.display = '';
       backBtn.classList.add('hidden');
+      var searchBtn = document.getElementById('search-toggle-btn');
+      if (searchBtn) searchBtn.classList.add('hidden');
+      var searchBar = document.getElementById('search-bar');
+      if (searchBar) searchBar.classList.remove('show');
     });
   }
 
@@ -141,6 +145,8 @@
     welcomeScreen.style.display = 'none';
     chatScreen.classList.add('active');
     backBtn.classList.remove('hidden');
+    var searchBtn = document.getElementById('search-toggle-btn');
+    if (searchBtn) searchBtn.classList.remove('hidden');
 
     // Laad historie alleen de eerste keer
     if (!chatInitialized) {
