@@ -573,6 +573,20 @@
       }
     }
 
+    // Activeer zoekfilter
+    var searchInput = document.getElementById('doc-search');
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = '1';
+      searchInput.addEventListener('input', function () {
+        var q = searchInput.value.trim().toLowerCase();
+        var rows = tbody.querySelectorAll('tr');
+        rows.forEach(function (tr) {
+          var naam = tr.getAttribute('data-doc-naam') || '';
+          tr.style.display = (q === '' || naam.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+        });
+      });
+    }
+
     tbody.innerHTML = result.data.map(function (doc) {
       var datum = new Date(doc.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
@@ -594,7 +608,7 @@
         revisieLabel = '<span style="color:' + color + ';font-weight:600">' + revisieFormatted + '</span>';
       }
 
-      return '<tr>' +
+      return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '">' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
@@ -606,6 +620,11 @@
         '</td>' +
         '</tr>';
     }).join('');
+
+    // Re-apply filter als er al een zoekterm is
+    if (searchInput && searchInput.value.trim()) {
+      searchInput.dispatchEvent(new Event('input'));
+    }
   }
 
   // Verwerk bestaande documenten zonder content
