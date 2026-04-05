@@ -1991,7 +1991,11 @@
     }
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      // Niet sluiten als gebruiker tekst aan het selecteren is (mouseup buiten input)
+      var selection = window.getSelection();
+      if (selection && selection.toString().length > 0) return;
+      modal.classList.remove('show');
     });
 
     if (form) {
