@@ -2135,9 +2135,14 @@
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
 
     // Logo en organisatienaam in admin header
-    if (waarden.logo_url) {
-      var adminLogo = document.getElementById('admin-header-logo');
-      if (adminLogo) adminLogo.src = waarden.logo_url;
+    var adminLogo = document.getElementById('admin-header-logo');
+    if (adminLogo) {
+      if (waarden.logo_url) {
+        adminLogo.src = waarden.logo_url;
+        adminLogo.style.display = '';
+      } else {
+        adminLogo.style.display = 'none';
+      }
     }
     if (waarden.organisatienaam) {
       var adminTitle = document.getElementById('admin-header-title');

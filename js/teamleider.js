@@ -41,9 +41,14 @@
     if (!result.data) return;
     var settings = {};
     result.data.forEach(function (s) { settings[s.sleutel] = s.waarde; });
-    if (settings.logo_url) {
-      var logo = document.getElementById('tl-header-logo');
-      if (logo) logo.src = settings.logo_url;
+    var logo = document.getElementById('tl-header-logo');
+    if (logo) {
+      if (settings.logo_url) {
+        logo.src = settings.logo_url;
+        logo.style.display = '';
+      } else {
+        logo.style.display = 'none';
+      }
     }
     if (settings.organisatienaam) {
       var title = document.getElementById('tl-header-title');

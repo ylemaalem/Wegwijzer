@@ -565,12 +565,15 @@
       }
     }
 
-    // Organisatielogo in header (vervangt standaard Wegwijzer logo)
-    if (instellingen.logo_url) {
-      var headerLogo = document.querySelector('.header-logo');
-      if (headerLogo) {
+    // Organisatielogo in header
+    var headerLogo = document.getElementById('header-logo');
+    if (headerLogo) {
+      if (instellingen.logo_url) {
         headerLogo.src = instellingen.logo_url;
         headerLogo.alt = instellingen.organisatienaam || 'Logo';
+        headerLogo.style.display = '';
+      } else {
+        headerLogo.style.display = 'none';
       }
     }
 
