@@ -277,7 +277,11 @@
     });
 
     cancelBtn.addEventListener('click', function () { modal.classList.remove('show'); });
-    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('show'); });
+    modal.addEventListener('click', function (e) {
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
+    });
 
     form.addEventListener('submit', async function (e) {
       e.preventDefault();

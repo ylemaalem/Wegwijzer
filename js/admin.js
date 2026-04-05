@@ -871,7 +871,9 @@
     });
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
     });
 
     form.addEventListener('submit', async function (e) {
@@ -1223,7 +1225,9 @@
     });
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
     });
 
     form.addEventListener('submit', async function (e) {
@@ -1435,7 +1439,9 @@
     });
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
     });
 
     form.addEventListener('submit', async function (e) {
@@ -1603,7 +1609,9 @@
     });
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
     });
   }
 
@@ -1862,7 +1870,9 @@
     }
 
     modal.addEventListener('click', function (e) {
-      if (e.target === modal) modal.classList.remove('show');
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
     });
 
     if (form) {
