@@ -313,18 +313,24 @@
     return checked;
   }
 
-  function populateTeamleiderDropdown(selectId, selectedNaam) {
+  function populateTeamleiderDropdown(selectId, selectedNaam, filterRol) {
     var select = document.getElementById(selectId);
     if (!select) return;
     var current = selectedNaam || select.value || '';
-    select.innerHTML = '<option value="">— Geen teamleider —</option>';
-    allTeamleiders.forEach(function (tl) {
-      var opt = document.createElement('option');
-      opt.value = tl.naam;
-      opt.textContent = tl.naam;
-      if (tl.naam === current) opt.selected = true;
-      select.appendChild(opt);
-    });
+    var label = filterRol === 'manager' ? 'manager' : 'teamleider';
+    select.innerHTML = '<option value="">— Geen ' + label + ' —</option>';
+    allTeamleiders
+      .filter(function (tl) {
+        if (!filterRol) return true;
+        return (tl.rol || 'teamleider') === filterRol;
+      })
+      .forEach(function (tl) {
+        var opt = document.createElement('option');
+        opt.value = tl.naam;
+        opt.textContent = tl.naam;
+        if (tl.naam === current) opt.selected = true;
+        select.appendChild(opt);
+      });
   }
 
   // Dynamisch formulier: toon velden op basis van functiegroep
@@ -364,19 +370,8 @@
   function initFunctiegroepFormToggle() {
     // Populeer manager dropdowns met dezelfde data als teamleider
     function syncManagerDropdowns() {
-      ['invite-manager', 'edit-manager'].forEach(function (id) {
-        var select = document.getElementById(id);
-        if (!select) return;
-        var current = select.value || '';
-        select.innerHTML = '<option value="">— Geen manager —</option>';
-        allTeamleiders.forEach(function (tl) {
-          var opt = document.createElement('option');
-          opt.value = tl.naam;
-          opt.textContent = tl.naam;
-          if (tl.naam === current) opt.selected = true;
-          select.appendChild(opt);
-        });
-      });
+      populateTeamleiderDropdown('invite-manager', '', 'manager');
+      populateTeamleiderDropdown('edit-manager', '', 'manager');
     }
 
     // Invite formulier
@@ -1193,7 +1188,8 @@
 
     // Populate team checkboxes en teamleider dropdown
     populateTeamCheckboxes('invite-teams', []);
-    populateTeamleiderDropdown('invite-teamleider');
+    populateTeamleiderDropdown('invite-teamleider', '', 'teamleider');
+    populateTeamleiderDropdown('invite-manager', '', 'manager');
 
     // Account type radio toggle einddatum
     var accountRadios = document.querySelectorAll('input[name="invite-account-type"]');
@@ -1387,21 +1383,11 @@
     // Teams checkboxes
     populateTeamCheckboxes('edit-teams', p.teams || []);
 
-    // Teamleider dropdown
-    populateTeamleiderDropdown('edit-teamleider', p.teamleider_naam);
+    // Teamleider dropdown (alleen rol=teamleider)
+    populateTeamleiderDropdown('edit-teamleider', p.teamleider_naam, 'teamleider');
 
-    // Manager dropdown (zelfde opties als teamleider)
-    var editManager = document.getElementById('edit-manager');
-    if (editManager) {
-      editManager.innerHTML = '<option value="">— Geen manager —</option>';
-      allTeamleiders.forEach(function (tl) {
-        var opt = document.createElement('option');
-        opt.value = tl.naam;
-        opt.textContent = tl.naam;
-        if (tl.naam === p.teamleider_naam) opt.selected = true;
-        editManager.appendChild(opt);
-      });
-    }
+    // Manager dropdown (alleen rol=manager)
+    populateTeamleiderDropdown('edit-manager', p.teamleider_naam, 'manager');
 
     // Dynamische velden tonen op basis van functiegroep
     updateFormFields('edit', p.functiegroep || '');
@@ -1947,8 +1933,10 @@
     allTeamleiders = result.data;
 
     // Update teamleider dropdowns in invite en edit modals
-    populateTeamleiderDropdown('invite-teamleider');
-    populateTeamleiderDropdown('edit-teamleider');
+    populateTeamleiderDropdown('invite-teamleider', '', 'teamleider');
+    populateTeamleiderDropdown('edit-teamleider', '', 'teamleider');
+    populateTeamleiderDropdown('invite-manager', '', 'manager');
+    populateTeamleiderDropdown('edit-manager', '', 'manager');
 
     if (!tbody) return;
 
