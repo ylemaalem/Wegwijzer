@@ -396,10 +396,10 @@ Deno.serve(async (req: Request) => {
           },
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
-            max_tokens: 100,
+            max_tokens: 200,
             messages: [{
               role: "user",
-              content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden. Denk breed: gebruik synoniemen, officiële termen, gerelateerde begrippen, praktische varianten en specifieke deelonderwerpen. Bijvoorbeeld bij een vraag over plusuren: genereer ook minuren, jaaruren, JUS, jaarurensystematiek, overuren, compensatie, urenregistratie, arbeidstijd, saldo uren, uitbetaling. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"`
+              content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden. Denk breed: gebruik synoniemen, officiële termen, gerelateerde begrippen, praktische varianten en specifieke deelonderwerpen. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Bijvoorbeeld bij een vraag over plusuren: genereer ook minuren, jaaruren, JUS, jaarurensystematiek, overuren, compensatie, urenregistratie, arbeidstijd, saldo, uitbetaling. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"`
             }],
           }),
         });
@@ -407,8 +407,18 @@ Deno.serve(async (req: Request) => {
         if (synResponse.ok) {
           const synResult = await synResponse.json();
           const synText = synResult.content?.[0]?.text || "";
-          const extraTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
-          console.log(`[Chat] Semantische termen: ${extraTerms.join(", ")}`);
+          // Split op komma's en haal individuele termen
+          const rawTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
+          // Split multi-word termen ook in losse woorden voor betere matching
+          const extraTerms: string[] = [];
+          for (const term of rawTerms) {
+            extraTerms.push(term); // Voeg de hele term toe
+            const words = term.split(/\s+/).filter((w: string) => w.length > 2 && !STOPWOORDEN.has(w));
+            for (const w of words) {
+              if (!extraTerms.includes(w)) extraTerms.push(w);
+            }
+          }
+          console.log(`[Chat] Semantische termen (${extraTerms.length}): ${extraTerms.join(", ")}`);
           keywords = keywords.concat(extraTerms);
         }
       } catch {
@@ -434,7 +444,12 @@ Deno.serve(async (req: Request) => {
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
         .slice(0, 5);
 
-      console.log(`[Chat] Documenten met score > 0: ${scored.filter((s: {score:number}) => s.score > 0).length}, Keywords: ${keywords.join(", ")}`);
+      const matchedDocs = scored.filter((s: {score:number}) => s.score > 0);
+      console.log(`[Chat] Documenten met score > 0: ${matchedDocs.length}/${scored.length}`);
+      console.log(`[Chat] Keywords (${keywords.length}): ${keywords.slice(0, 20).join(", ")}`);
+      matchedDocs.slice(0, 5).forEach((d: {naam:string, score:number}) => {
+        console.log(`[Chat]   ${d.naam}: score ${d.score}`);
+      });
 
       if (scored.length > 0) {
         const docTexts: string[] = [];
