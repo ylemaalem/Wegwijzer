@@ -34,6 +34,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log("[Edge] === Request ontvangen ===");
+
     // ---- 1. Authenticatie ----
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -48,12 +50,7 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
 
-    if (!anthropicApiKey) {
-      return new Response(
-        JSON.stringify({ error: "API configuratie ontbreekt" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    console.log("[Edge] Env vars: URL=", supabaseUrl ? "OK" : "MISSING", "ServiceKey=", supabaseServiceKey ? "OK (" + supabaseServiceKey.substring(0, 10) + "...)" : "MISSING", "AnthropicKey=", anthropicApiKey ? "OK" : "MISSING");
 
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -61,15 +58,19 @@ Deno.serve(async (req: Request) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // ---- 2. Gebruiker verifiëren ----
+    console.log("[Edge] Stap 2: getUser...");
     const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
     if (userError || !user) {
+      console.error("[Edge] getUser fout:", userError?.message);
       return new Response(
         JSON.stringify({ error: "Sessie verlopen. Log opnieuw in." }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    console.log("[Edge] Stap 2 OK: user=", user.email);
 
     // ---- 3. Profiel ophalen ----
+    console.log("[Edge] Stap 3: profiel ophalen...");
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("*")
@@ -77,13 +78,13 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (profileError || !profile) {
-      console.error("[Chat] Profiel niet gevonden voor user:", user.id, "error:", profileError?.message);
+      console.error("[Edge] Profiel niet gevonden:", profileError?.message, "code:", profileError?.code);
       return new Response(
         JSON.stringify({ error: "Profiel niet gevonden: " + (profileError?.message || "geen profiel") }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    console.log("[Chat] Profiel geladen:", profile.naam, "rol:", profile.role);
+    console.log("[Edge] Stap 3 OK: profiel=", profile.naam, "rol=", profile.role, "tenant=", profile.tenant_id);
 
     // Check tijdelijk account verlopen
     if (profile.account_type === "tijdelijk" && profile.einddatum) {
@@ -141,8 +142,10 @@ Deno.serve(async (req: Request) => {
 
     // ---- Gebruiker uitnodigen via admin API (service role) ----
     if (body.invite_user && body.invite_email) {
+      console.log("[Edge] >>> INVITE_USER verzoek ontvangen voor:", body.invite_email);
       // Alleen admin mag uitnodigen
       if (profile.role !== "admin") {
+        console.log("[Edge] AFGEWEZEN: rol is", profile.role, "niet admin");
         return new Response(
           JSON.stringify({ error: "Niet geautoriseerd" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -165,10 +168,12 @@ Deno.serve(async (req: Request) => {
         };
         if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
 
+        console.log("[Invite] Stap: inviteUserByEmail aanroepen...");
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
           data: userData,
           redirectTo: redirectUrl,
         });
+        console.log("[Invite] inviteUserByEmail klaar, error:", inviteError ? inviteError.message : "geen");
 
         if (inviteError) {
           console.error("[Invite] Fout:", JSON.stringify(inviteError));

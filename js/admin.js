@@ -1461,7 +1461,7 @@
         var token = session.data.session.access_token;
 
         var controller = new AbortController();
-        var timeoutId = setTimeout(function () { controller.abort(); }, 10000);
+        var timeoutId = setTimeout(function () { controller.abort(); }, 30000);
 
         var inviteResponse;
         try {
@@ -1483,7 +1483,7 @@
           console.error('[Invite] Fetch fout:', fetchErr.name, fetchErr.message);
           alertBox.className = 'alert alert-error show';
           if (fetchErr.name === 'AbortError') {
-            alertMsg.textContent = 'Uitnodiging kon niet worden verstuurd — timeout na 10 seconden. Controleer of het emailadres correct is.';
+            alertMsg.textContent = 'Uitnodiging kon niet worden verstuurd — timeout na 30 seconden. Controleer of het emailadres correct is.';
           } else {
             alertMsg.textContent = 'Verbindingsfout: ' + fetchErr.message;
           }
