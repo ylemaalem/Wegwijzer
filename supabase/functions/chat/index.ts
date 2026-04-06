@@ -169,14 +169,15 @@ Deno.serve(async (req: Request) => {
         });
 
         if (inviteError) {
-          console.error("[Invite] Fout:", inviteError.message);
+          console.error("[Invite] Fout:", JSON.stringify(inviteError));
+          console.error("[Invite] Error details — message:", inviteError.message, "status:", inviteError.status, "name:", inviteError.name);
           return new Response(
-            JSON.stringify({ error: inviteError.message, invited: false }),
+            JSON.stringify({ error: inviteError.message || "Onbekende fout bij uitnodiging", invited: false }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        console.log("[Invite] Succes, user id:", inviteData?.user?.id);
+        console.log("[Invite] Succes, user id:", inviteData?.user?.id, "email:", inviteData?.user?.email);
         return new Response(
           JSON.stringify({ invited: true, user_id: inviteData?.user?.id }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

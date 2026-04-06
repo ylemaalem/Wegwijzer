@@ -1448,34 +1448,77 @@
       submitBtn.textContent = 'Even geduld...';
 
       try {
-        // Uitnodiging via Edge Function (service role key)
-        console.log('[Invite Medewerker] Start voor:', email);
+        // Uitnodiging via Edge Function (service role key) met 10s timeout
+        console.log('[Invite] Start voor:', email);
         var session = await supabaseClient.auth.getSession();
+        if (!session.data.session) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Sessie verlopen. Log opnieuw in.';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
         var token = session.data.session.access_token;
 
-        var inviteResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-          body: JSON.stringify({
-            invite_user: true,
-            invite_email: email,
-            invite_naam: naam,
-            invite_role: 'medewerker',
-            invite_functiegroep: functiegroep,
-            redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
-          })
-        });
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 10000);
 
-        var inviteData = await inviteResponse.json();
-        console.log('[Invite Medewerker] Response:', JSON.stringify(inviteData));
+        var inviteResponse;
+        try {
+          inviteResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            signal: controller.signal,
+            body: JSON.stringify({
+              invite_user: true,
+              invite_email: email,
+              invite_naam: naam,
+              invite_role: 'medewerker',
+              invite_functiegroep: functiegroep,
+              redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
+            })
+          });
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          console.error('[Invite] Fetch fout:', fetchErr.name, fetchErr.message);
+          alertBox.className = 'alert alert-error show';
+          if (fetchErr.name === 'AbortError') {
+            alertMsg.textContent = 'Uitnodiging kon niet worden verstuurd — timeout na 10 seconden. Controleer of het emailadres correct is.';
+          } else {
+            alertMsg.textContent = 'Verbindingsfout: ' + fetchErr.message;
+          }
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
+        clearTimeout(timeoutId);
+
+        console.log('[Invite] HTTP status:', inviteResponse.status);
+        var inviteText = await inviteResponse.text();
+        console.log('[Invite] Ruwe response:', inviteText);
+
+        var inviteData;
+        try {
+          inviteData = JSON.parse(inviteText);
+        } catch (parseErr) {
+          console.error('[Invite] JSON parse fout:', parseErr.message);
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Onverwacht antwoord van server. Probeer opnieuw.';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
 
         if (inviteData.error) {
+          console.error('[Invite] Server fout:', inviteData.error);
           alertBox.className = 'alert alert-error show';
           alertMsg.textContent = 'Uitnodigen mislukt: ' + inviteData.error;
           submitBtn.disabled = false;
           submitBtn.textContent = 'Uitnodigen';
           return;
         }
+
+        console.log('[Invite] Succes, user_id:', inviteData.user_id);
 
         // Wacht op trigger die profiel aanmaakt
         await new Promise(function (r) { setTimeout(r, 2000); });
@@ -1491,30 +1534,22 @@
           if (einddatum) updateData.einddatum = einddatum;
           if (teams.length > 0) updateData.teams = teams;
           if (teamleiderNaam) updateData.teamleider_naam = teamleiderNaam;
-
-          console.log('[Invite Medewerker] Profiel updaten voor user_id:', inviteData.user_id);
-          await supabaseClient
-            .from('profiles')
-            .update(updateData)
-            .eq('user_id', inviteData.user_id);
+          console.log('[Invite] Profiel updaten');
+          await supabaseClient.from('profiles').update(updateData).eq('user_id', inviteData.user_id);
         }
 
         alertBox.className = 'alert alert-success show';
         alertMsg.innerHTML = 'Uitnodiging verstuurd naar <strong>' + escapeHtml(email) + '</strong>.<br>' +
           '<span style="font-size:0.8rem;margin-top:4px;display:inline-block">' +
-          '⚠️ Let op: de uitnodigingsmail kan in de spamfolder terechtkomen. ' +
-          'Vraag de medewerker om ook de spam/ongewenste mail te controleren.</span>';
+          '⚠️ Let op: de uitnodigingsmail kan in de spamfolder terechtkomen.</span>';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Uitnodigen';
-
         loadMedewerkers();
-
-        setTimeout(function () {
-          modal.classList.remove('show');
-        }, 5000);
+        setTimeout(function () { modal.classList.remove('show'); }, 5000);
       } catch (err) {
+        console.error('[Invite] Exception:', err);
         alertBox.className = 'alert alert-error show';
-        alertMsg.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+        alertMsg.textContent = 'Uitnodiging kon niet worden verstuurd. Controleer of het emailadres correct is.';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Uitnodigen';
       }
