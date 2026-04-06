@@ -18,3 +18,8 @@ var BASE_PATH = (function () {
 function appUrl(page) {
   return BASE_PATH + page;
 }
+
+// Onderdruk Chrome PWA installatiebanner permanent
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+});
