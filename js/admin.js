@@ -1495,7 +1495,23 @@
 
         console.log('[Invite] HTTP status:', inviteResponse.status);
         var inviteText = await inviteResponse.text();
-        console.log('[Invite] Ruwe response:', inviteText);
+        console.log('[Invite] Ruwe response:', inviteText.substring(0, 500));
+
+        if (inviteResponse.status === 404) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Profiel niet gevonden. Mogelijk zijn database migraties niet uitgevoerd.';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
+
+        if (inviteResponse.status === 403) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Niet geautoriseerd. Log opnieuw in als admin.';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
 
         var inviteData;
         try {
@@ -1503,7 +1519,7 @@
         } catch (parseErr) {
           console.error('[Invite] JSON parse fout:', parseErr.message);
           alertBox.className = 'alert alert-error show';
-          alertMsg.textContent = 'Onverwacht antwoord van server. Probeer opnieuw.';
+          alertMsg.textContent = 'Server gaf onverwacht antwoord (status ' + inviteResponse.status + '). Check de console.';
           submitBtn.disabled = false;
           submitBtn.textContent = 'Uitnodigen';
           return;

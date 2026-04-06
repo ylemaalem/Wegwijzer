@@ -72,16 +72,18 @@ Deno.serve(async (req: Request) => {
     // ---- 3. Profiel ophalen ----
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id, naam, role, functiegroep, startdatum, tenant_id, inwerktraject_url, werkuren, afdeling, teams, teamleider_naam, account_type, einddatum, inwerken_afgerond, inwerktraject_actief, vraag_limiet, extra_vragen")
+      .select("*")
       .eq("user_id", user.id)
       .single();
 
     if (profileError || !profile) {
+      console.error("[Chat] Profiel niet gevonden voor user:", user.id, "error:", profileError?.message);
       return new Response(
-        JSON.stringify({ error: "Profiel niet gevonden" }),
+        JSON.stringify({ error: "Profiel niet gevonden: " + (profileError?.message || "geen profiel") }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    console.log("[Chat] Profiel geladen:", profile.naam, "rol:", profile.role);
 
     // Check tijdelijk account verlopen
     if (profile.account_type === "tijdelijk" && profile.einddatum) {
@@ -98,8 +100,8 @@ Deno.serve(async (req: Request) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStr = todayStart.toISOString().split("T")[0];
-    const basisLimiet = profile.vraag_limiet || 30;
-    const extraVragen = profile.extra_vragen || 20;
+    const basisLimiet = (profile as Record<string, unknown>).vraag_limiet as number || 30;
+    const extraVragen = (profile as Record<string, unknown>).extra_vragen as number || 20;
     const hardLimiet = basisLimiet + extraVragen;
 
     if (profile.role !== "admin") {
