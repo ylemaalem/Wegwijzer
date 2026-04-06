@@ -749,7 +749,8 @@
         revisieLabel = '<span style="color:' + color + ';font-weight:600">' + revisieFormatted + '</span>';
       }
 
-      return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '">' +
+      return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
+        '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
@@ -767,6 +768,61 @@
       searchInput.dispatchEvent(new Event('input'));
     }
   }
+
+  // ---- Bulk selectie ----
+  window.updateBulkBar = function () {
+    var checked = document.querySelectorAll('.doc-select-cb:checked');
+    var bar = document.getElementById('bulk-delete-bar');
+    var btn = document.getElementById('bulk-delete-btn');
+    if (checked.length > 0) {
+      bar.style.display = '';
+      btn.textContent = 'Verwijder geselecteerde (' + checked.length + ')';
+    } else {
+      bar.style.display = 'none';
+    }
+    // Sync select-all checkbox
+    var allCbs = document.querySelectorAll('.doc-select-cb');
+    var selectAll = document.getElementById('doc-select-all');
+    if (selectAll) selectAll.checked = allCbs.length > 0 && checked.length === allCbs.length;
+  };
+
+  (function initBulkSelect() {
+    var selectAll = document.getElementById('doc-select-all');
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        var cbs = document.querySelectorAll('.doc-select-cb');
+        cbs.forEach(function (cb) { cb.checked = selectAll.checked; });
+        window.updateBulkBar();
+      });
+    }
+
+    var bulkBtn = document.getElementById('bulk-delete-btn');
+    if (bulkBtn) {
+      bulkBtn.addEventListener('click', async function () {
+        var checked = document.querySelectorAll('.doc-select-cb:checked');
+        if (checked.length === 0) return;
+        if (!confirm('Weet je zeker dat je ' + checked.length + ' document' + (checked.length > 1 ? 'en' : '') + ' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.')) return;
+
+        bulkBtn.disabled = true;
+        bulkBtn.textContent = 'Verwijderen...';
+
+        for (var i = 0; i < checked.length; i++) {
+          var docId = checked[i].value;
+          var row = checked[i].closest('tr');
+          var pad = row ? row.getAttribute('data-doc-pad') : null;
+          if (pad) {
+            await supabaseClient.storage.from('documents').remove([pad]);
+          }
+          await supabaseClient.from('documents').delete().eq('id', docId);
+        }
+
+        bulkBtn.disabled = false;
+        document.getElementById('bulk-delete-bar').style.display = 'none';
+        if (selectAll) selectAll.checked = false;
+        await loadDocuments();
+      });
+    }
+  })();
 
   // Verwerk bestaande documenten zonder content
   async function reprocessDocuments(documents) {

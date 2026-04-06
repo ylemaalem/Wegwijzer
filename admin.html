@@ -101,11 +101,17 @@
           <input class="form-input" type="text" id="doc-search" placeholder="🔍 Zoek in documenten..." style="padding:10px 14px;font-size:0.9rem">
         </div>
 
+        <!-- Bulk actie -->
+        <div id="bulk-delete-bar" style="display:none;margin-bottom:12px">
+          <button class="btn btn-primary" id="bulk-delete-btn" style="background:var(--error);width:auto;padding:10px 20px;font-size:0.85rem">Verwijder geselecteerde (0)</button>
+        </div>
+
         <!-- Documenten tabel -->
         <div class="data-table-wrap">
           <table class="data-table" id="documents-table">
             <thead>
               <tr>
+                <th style="width:36px"><input type="checkbox" id="doc-select-all" style="accent-color:var(--primary)"></th>
                 <th>Naam</th>
                 <th>Type</th>
                 <th>Revisie</th>
@@ -114,7 +120,7 @@
               </tr>
             </thead>
             <tbody id="documents-body">
-              <tr><td colspan="5" class="no-data">Documenten laden...</td></tr>
+              <tr><td colspan="6" class="no-data">Documenten laden...</td></tr>
             </tbody>
           </table>
         </div>
