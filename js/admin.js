@@ -1093,6 +1093,14 @@
     }
 
     allProfiles = result.data;
+
+    // Debug: toon admin profiel data
+    result.data.forEach(function (p) {
+      if (p.role === 'admin') {
+        console.log('[DEBUG] Admin profiel uit profiles tabel:', JSON.stringify({ id: p.id, email: p.email, naam: p.naam, role: p.role, user_id: p.user_id }));
+      }
+    });
+
     updateMedewerkerFilter();
 
     if (result.data.length === 0) {
