@@ -38,6 +38,11 @@
       .single();
     profile = freshResult.data || e.detail.profile;
     weekNummer = (profile.inwerken_afgerond || profile.inwerktraject_actief === false || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
+    // Toon dashboard knop voor teamleiders
+    if (profile.role === 'teamleider') {
+      var dashBtn = document.getElementById('dashboard-btn');
+      if (dashBtn) dashBtn.classList.remove('hidden');
+    }
     initWelkom();
     initChatInput();
     initChips();
