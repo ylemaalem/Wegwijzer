@@ -13,6 +13,7 @@
   var isSending = false;
   var chatInitialized = false;
   var historieGeladen = false;
+  var conversatieHistorie = []; // {role: 'user'|'assistant', content: string}
 
   // ---- DOM ----
   var welcomeScreen = document.getElementById('welcome-screen');
@@ -303,6 +304,12 @@
       var session = await supabaseClient.auth.getSession();
       var token = session.data.session.access_token;
 
+      // Voeg vraag toe aan conversatiehistorie
+      conversatieHistorie.push({ role: 'user', content: vraag });
+
+      // Beperk historie tot laatste 20 berichten (10 vraag-antwoord paren)
+      var historieVoorApi = conversatieHistorie.slice(-20);
+
       var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
         method: 'POST',
         headers: {
@@ -312,7 +319,8 @@
         body: JSON.stringify({
           vraag: vraag,
           functiegroep: profile.functiegroep,
-          weeknummer: weekNummer
+          weeknummer: weekNummer,
+          messages: historieVoorApi
         })
       });
 
@@ -339,6 +347,8 @@
         );
       } else {
         renderBotBericht(data.antwoord, data.conversation_id, null, null);
+        // Voeg antwoord toe aan conversatiehistorie
+        conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');

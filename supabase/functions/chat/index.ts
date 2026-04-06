@@ -135,7 +135,7 @@ Deno.serve(async (req: Request) => {
 
     // ---- 5. Request body ----
     const body = await req.json();
-    const { vraag, functiegroep, weeknummer, extend_limit } = body;
+    const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
 
     // Als medewerker rate limit wil uitbreiden
     if (extend_limit && profile.role === "medewerker") {
@@ -650,7 +650,12 @@ ${alleKennisbronnen}`;
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
         system: systemPrompt,
-        messages: [{ role: "user", content: vraag.trim() }],
+        messages: (clientMessages && Array.isArray(clientMessages) && clientMessages.length > 0)
+          ? clientMessages.map((m: { role: string; content: string }) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.content
+            }))
+          : [{ role: "user", content: vraag.trim() }],
       }),
     });
 
