@@ -186,6 +186,82 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Uitnodiging opnieuw sturen ----
+    if (body.resend_invite && body.invite_email) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Niet geautoriseerd" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const resendEmail = body.invite_email;
+      const resendNaam = body.invite_naam || "";
+      const resendRedirect = body.redirect_url || "";
+      console.log("[Resend] Start voor:", resendEmail);
+
+      try {
+        // Check of user al bestaat
+        const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const existingUser = existingUsers?.users?.find((u: { email: string }) => u.email === resendEmail);
+
+        if (existingUser) {
+          // User bestaat — stuur recovery link (wachtwoord reset)
+          console.log("[Resend] User bestaat, genereer recovery link");
+          const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+            type: "recovery",
+            email: resendEmail,
+            options: { redirectTo: resendRedirect || undefined },
+          });
+
+          if (linkError) {
+            console.error("[Resend] Recovery link fout:", linkError.message);
+            return new Response(
+              JSON.stringify({ error: linkError.message }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          console.log("[Resend] Recovery link gegenereerd");
+          return new Response(
+            JSON.stringify({ success: true, message: "Wachtwoord-reset mail verstuurd" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } else {
+          // User bestaat niet — stuur invite
+          console.log("[Resend] User bestaat niet, stuur invite");
+          const { data: invData, error: invError } = await supabaseAdmin.auth.admin.inviteUserByEmail(resendEmail, {
+            data: {
+              role: "teamleider",
+              naam: resendNaam,
+              tenant_id: profile.tenant_id,
+            },
+            redirectTo: resendRedirect || undefined,
+          });
+
+          if (invError) {
+            console.error("[Resend] Invite fout:", invError.message);
+            return new Response(
+              JSON.stringify({ error: invError.message }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          console.log("[Resend] Invite verstuurd, user id:", invData?.user?.id);
+          return new Response(
+            JSON.stringify({ success: true, message: "Uitnodigingsmail verstuurd" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch (err) {
+        console.error("[Resend] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: "Versturen mislukt" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Als medewerker rate limit wil uitbreiden
     if (extend_limit && profile.role === "medewerker") {
       await supabaseAdmin

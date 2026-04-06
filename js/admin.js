@@ -2133,6 +2133,7 @@
         '<td>' + escapeHtml(koppelingStr) + '</td>' +
         '<td>' +
           '<button class="btn-icon" onclick="window.editTeamleider(\'' + tl.id + '\')" title="Bewerken">✏️</button>' +
+          (tl.email ? '<button class="btn-icon" onclick="window.resendInvite(\'' + escapeHtml(tl.email) + '\', \'' + escapeHtml(tl.naam) + '\')" title="Uitnodiging opnieuw sturen">📧</button>' : '') +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteTeamleider(\'' + tl.id + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
@@ -2347,6 +2348,42 @@
     if (modalTitle) modalTitle.textContent = rolTitelsEdit[rol] || 'Bewerken';
 
     modal.classList.add('show');
+  };
+
+  window.resendInvite = async function (email, naam) {
+    if (!confirm('Uitnodigingsmail opnieuw sturen naar ' + email + '?')) return;
+
+    console.log('[Invite] Heruitnodiging starten voor:', email);
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          resend_invite: true,
+          invite_email: email,
+          invite_naam: naam,
+          redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
+        })
+      });
+
+      var data = await response.json();
+      console.log('[Invite] Response:', JSON.stringify(data));
+
+      if (data.error) {
+        alert('Uitnodiging mislukt: ' + data.error);
+      } else {
+        alert('Uitnodigingsmail verstuurd naar ' + email + '.\nControleer ook de spamfolder.');
+      }
+    } catch (err) {
+      console.error('[Invite] Exception:', err);
+      alert('Er ging iets mis bij het versturen van de uitnodiging.');
+    }
   };
 
   window.deleteTeamleider = async function (id) {
