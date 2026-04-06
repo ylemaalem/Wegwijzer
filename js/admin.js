@@ -2245,7 +2245,8 @@
 
           // Stuur automatisch uitnodigingsmail als email is ingevuld
           if (!result.error && email) {
-            console.log('[Teamleider] Start uitnodigingsmail voor:', email);
+            var rolLabel = { teamleider: 'teamleider', manager: 'manager', hr: 'hr_medewerker' };
+            console.log('[Leidinggevende] Start uitnodigingsmail voor:', email, 'rol:', rol);
             try {
               var signUpResult = await supabaseClient.auth.signUp({
                 email: email,
@@ -2261,24 +2262,27 @@
               });
 
               if (signUpResult.error) {
-                console.error('[Teamleider] SignUp fout:', signUpResult.error.message);
-                alert('Leidinggevende opgeslagen, maar uitnodigingsmail versturen mislukte: ' + signUpResult.error.message);
+                console.error('[Leidinggevende] SignUp fout:', signUpResult.error.message);
+                alert('Opgeslagen, maar uitnodigingsmail mislukt: ' + signUpResult.error.message);
               } else {
-                console.log('[Teamleider] Uitnodigingsmail verstuurd');
-                // Wacht op trigger die profiel aanmaakt
+                console.log('[Leidinggevende] Uitnodigingsmail verstuurd');
                 await new Promise(function (r) { setTimeout(r, 1500); });
-                // Update profiel met teams als aanwezig
-                if (signUpResult.data && signUpResult.data.user && teams.length > 0) {
+                // Update profiel met teams of afdelingen
+                if (signUpResult.data && signUpResult.data.user) {
+                  var profileUpdate = { teamleider_naam: naam };
+                  if (rol === 'teamleider' && teams.length > 0) profileUpdate.teams = teams;
+                  if (rol === 'manager') profileUpdate.afdeling = afdelingen.length > 0 ? afdelingen[0] : null;
                   await supabaseClient
                     .from('profiles')
-                    .update({ teams: teams, teamleider_naam: naam })
+                    .update(profileUpdate)
                     .eq('user_id', signUpResult.data.user.id);
                 }
-                alert('Leidinggevende/HR toegevoegd. Uitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
+                var rolNaam = { teamleider: 'Teamleider', manager: 'Manager', hr: 'HR Medewerker' };
+                alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd. Uitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
               }
             } catch (err) {
-              console.error('[Teamleider] Uitnodiging exception:', err);
-              alert('Leidinggevende opgeslagen, maar uitnodigingsmail kon niet verstuurd worden.');
+              console.error('[Leidinggevende] Uitnodiging exception:', err);
+              alert('Opgeslagen, maar uitnodigingsmail kon niet verstuurd worden.');
             }
           }
         }
