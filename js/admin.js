@@ -1411,8 +1411,11 @@
       var einddatum = document.getElementById('invite-einddatum').value || null;
       var teams = getCheckedTeams('invite-teams');
       var teamleiderNaam = document.getElementById('invite-teamleider').value || null;
+      var managerNaam = document.getElementById('invite-manager').value || null;
+      // Gebruik manager als leidinggevende als dat ingevuld is
+      if (managerNaam && !teamleiderNaam) teamleiderNaam = managerNaam;
 
-      if (!naam || !email || !functiegroep || !startdatum) {
+      if (!naam || !email || !functiegroep) {
         alertBox.className = 'alert alert-error show';
         alertMsg.textContent = 'Vul alle verplichte velden in.';
         return;
@@ -1615,6 +1618,8 @@
       var einddatum = document.getElementById('edit-einddatum').value || null;
       var teams = getCheckedTeams('edit-teams');
       var teamleiderNaam = document.getElementById('edit-teamleider').value || null;
+      var managerNaam = document.getElementById('edit-manager').value || null;
+      if (managerNaam && !teamleiderNaam) teamleiderNaam = managerNaam;
 
       if (!naam || !functiegroep) {
         alertBox.className = 'alert alert-error show';
