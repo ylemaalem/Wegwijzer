@@ -137,6 +137,55 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
 
+    // ---- Gebruiker uitnodigen via admin API (service role) ----
+    if (body.invite_user && body.invite_email) {
+      // Alleen admin mag uitnodigen
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Niet geautoriseerd" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const inviteEmail = body.invite_email;
+      const inviteNaam = body.invite_naam || "";
+      const inviteRole = body.invite_role || "teamleider";
+      const redirectUrl = body.redirect_url || "";
+
+      console.log("[Invite] Start uitnodiging voor:", inviteEmail, "rol:", inviteRole);
+
+      try {
+        const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
+          data: {
+            role: inviteRole,
+            naam: inviteNaam,
+            tenant_id: profile.tenant_id,
+          },
+          redirectTo: redirectUrl || undefined,
+        });
+
+        if (inviteError) {
+          console.error("[Invite] Fout:", inviteError.message);
+          return new Response(
+            JSON.stringify({ error: inviteError.message, invited: false }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        console.log("[Invite] Succes, user id:", inviteData?.user?.id);
+        return new Response(
+          JSON.stringify({ invited: true, user_id: inviteData?.user?.id }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Invite] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: "Uitnodiging mislukt", invited: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Als medewerker rate limit wil uitbreiden
     if (extend_limit && profile.role === "medewerker") {
       await supabaseAdmin

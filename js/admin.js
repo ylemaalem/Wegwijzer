@@ -2243,45 +2243,53 @@
             .from('teamleiders')
             .insert(data);
 
-          // Stuur automatisch uitnodigingsmail als email is ingevuld
+          // Stuur automatisch uitnodigingsmail via Edge Function (service role)
           if (!result.error && email) {
-            var rolLabel = { teamleider: 'teamleider', manager: 'manager', hr: 'hr_medewerker' };
-            console.log('[Leidinggevende] Start uitnodigingsmail voor:', email, 'rol:', rol);
+            console.log('[Leidinggevende] Start uitnodigingsmail via Edge Function voor:', email, 'rol:', rol);
             try {
-              var signUpResult = await supabaseClient.auth.signUp({
-                email: email,
-                password: generateTempPassword(),
-                options: {
-                  data: {
-                    role: 'teamleider',
-                    naam: naam,
-                    tenant_id: tenantId
-                  },
-                  emailRedirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
-                }
+              var session = await supabaseClient.auth.getSession();
+              var token = session.data.session.access_token;
+
+              var inviteResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                  invite_user: true,
+                  invite_email: email,
+                  invite_naam: naam,
+                  invite_role: 'teamleider',
+                  redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
+                })
               });
 
-              if (signUpResult.error) {
-                console.error('[Leidinggevende] SignUp fout:', signUpResult.error.message);
-                alert('Opgeslagen, maar uitnodigingsmail mislukt: ' + signUpResult.error.message);
-              } else {
-                console.log('[Leidinggevende] Uitnodigingsmail verstuurd');
+              var inviteData = await inviteResponse.json();
+              console.log('[Leidinggevende] Invite response:', JSON.stringify(inviteData));
+
+              if (inviteData.error) {
+                console.error('[Leidinggevende] Invite fout:', inviteData.error);
+                alert('Opgeslagen, maar uitnodigingsmail mislukt: ' + inviteData.error);
+              } else if (inviteData.invited) {
+                console.log('[Leidinggevende] Uitnodigingsmail verstuurd, user_id:', inviteData.user_id);
+                // Wacht op trigger die profiel aanmaakt
                 await new Promise(function (r) { setTimeout(r, 1500); });
                 // Update profiel met teams of afdelingen
-                if (signUpResult.data && signUpResult.data.user) {
+                if (inviteData.user_id) {
                   var profileUpdate = { teamleider_naam: naam };
                   if (rol === 'teamleider' && teams.length > 0) profileUpdate.teams = teams;
                   if (rol === 'manager') profileUpdate.afdeling = afdelingen.length > 0 ? afdelingen[0] : null;
                   await supabaseClient
                     .from('profiles')
                     .update(profileUpdate)
-                    .eq('user_id', signUpResult.data.user.id);
+                    .eq('user_id', inviteData.user_id);
                 }
                 var rolNaam = { teamleider: 'Teamleider', manager: 'Manager', hr: 'HR Medewerker' };
-                alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd. Uitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
+                alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd.\nUitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
               }
             } catch (err) {
-              console.error('[Leidinggevende] Uitnodiging exception:', err);
+              console.error('[Leidinggevende] Invite exception:', err);
               alert('Opgeslagen, maar uitnodigingsmail kon niet verstuurd worden.');
             }
           }
