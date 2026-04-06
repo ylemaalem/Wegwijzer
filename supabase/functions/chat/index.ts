@@ -380,9 +380,42 @@ Deno.serve(async (req: Request) => {
     console.log(`[Chat] Gebruiker: ${profile.naam}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0}, Pers docs: ${persDocs?.length || 0}`);
 
     // Keywords voor relevantie-scoring (gebruikt door documenten en websites)
-    const keywords = vraag.trim().toLowerCase().split(/\s+/)
+    let keywords = vraag.trim().toLowerCase().split(/\s+/)
       .filter((w: string) => w.length > 2)
       .filter((w: string) => !STOPWOORDEN.has(w));
+
+    // Semantisch zoeken: genereer verwante zoektermen via Claude
+    if (allDocs.length > 0 && keywords.length > 0) {
+      try {
+        const synResponse = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 100,
+            messages: [{
+              role: "user",
+              content: `Genereer 5 korte zoektermen in het Nederlands die betekenisverwant zijn aan deze vraag: "${vraag.trim()}". Alleen de termen, gescheiden door komma's, geen uitleg.`
+            }],
+          }),
+        });
+
+        if (synResponse.ok) {
+          const synResult = await synResponse.json();
+          const synText = synResult.content?.[0]?.text || "";
+          const extraTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
+          console.log(`[Chat] Semantische termen: ${extraTerms.join(", ")}`);
+          keywords = keywords.concat(extraTerms);
+        }
+      } catch {
+        // Semantisch zoeken gefaald, ga door met originele keywords
+        console.log("[Chat] Semantisch zoeken mislukt, fallback naar originele keywords");
+      }
+    }
 
     let documentContext = "";
     if (allDocs.length > 0) {
