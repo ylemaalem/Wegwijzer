@@ -1167,6 +1167,7 @@
         '<td>' + escapeHtml(teamsStr) + '</td>' +
         '<td>' + escapeHtml(p.afdeling || '-') + '</td>' +
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
+        '<td>' + escapeHtml(p.teamleider_naam || '-') + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
