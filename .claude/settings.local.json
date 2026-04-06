@@ -31,7 +31,12 @@
       "Bash(curl -s -L \"https://www.ambulantehulpverlening.nl\")",
       "Bash(grep -o -P '.{0,300}site-nav__logo.{0,300}')",
       "Bash(grep -o -E '.{0,500}site-nav__logo.{0,500}')",
-      "Bash(grep -o -E 'site-nav__logo.{0,200}')"
+      "Bash(grep -o -E 'site-nav__logo.{0,200}')",
+      "Bash(cp wegwijzer-logo-512.png icon-512.png)",
+      "Bash(cp wegwijzer-logo-192.png icon-192.png)",
+      "Bash(cp wegwijzer-logo-192.png wegwijzer-app-icon-192.png)",
+      "Bash(rm wegwijzer-logo-512.png wegwijzer-logo-192.png)",
+      "Bash(cp:*)"
     ]
   }
 }

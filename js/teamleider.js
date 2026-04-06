@@ -273,6 +273,52 @@
   // =============================================
   // AANVRAAG MODAL
   // =============================================
+  var allFunctiegroepen = [];
+
+  async function loadTlaFunctiegroepen() {
+    var result = await supabaseClient
+      .from('functiegroepen')
+      .select('id, code, naam, is_kantoor')
+      .eq('tenant_id', tenantId)
+      .order('naam');
+
+    if (!result.data) return;
+    allFunctiegroepen = result.data;
+
+    var el = document.getElementById('tl-aanvraag-functiegroep');
+    if (!el) return;
+    el.innerHTML = '<option value="">Kies een functiegroep</option>';
+    result.data.forEach(function (fg) {
+      var opt = document.createElement('option');
+      opt.value = fg.code;
+      opt.textContent = fg.naam;
+      el.appendChild(opt);
+    });
+  }
+
+  function updateTlaFormFields(fgCode) {
+    var zorgFields = document.querySelectorAll('.tla-zorg-field');
+    var kantoorFields = document.querySelectorAll('.tla-kantoor-field');
+    var sharedFields = document.querySelectorAll('.tla-shared-field');
+    var hint = document.getElementById('tla-fg-hint');
+
+    if (!fgCode) {
+      zorgFields.forEach(function (el) { el.style.display = 'none'; });
+      kantoorFields.forEach(function (el) { el.style.display = 'none'; });
+      sharedFields.forEach(function (el) { el.style.display = 'none'; });
+      if (hint) hint.style.display = '';
+      return;
+    }
+
+    if (hint) hint.style.display = 'none';
+    var fg = allFunctiegroepen.find(function (f) { return f.code === fgCode; });
+    var isKantoor = fg && fg.is_kantoor;
+
+    zorgFields.forEach(function (el) { el.style.display = isKantoor ? 'none' : ''; });
+    kantoorFields.forEach(function (el) { el.style.display = isKantoor ? '' : 'none'; });
+    sharedFields.forEach(function (el) { el.style.display = ''; });
+  }
+
   function initAanvraagModal() {
     var modal = document.getElementById('modal-tl-aanvraag');
     var form = document.getElementById('tl-aanvraag-form');
@@ -282,12 +328,47 @@
     var alertBox = document.getElementById('tl-aanvraag-alert');
     var alertMsg = document.getElementById('tl-aanvraag-alert-message');
 
+    // Laad functiegroepen uit DB
+    loadTlaFunctiegroepen();
+
+    // Functiegroep change handler
+    var fgSelect = document.getElementById('tl-aanvraag-functiegroep');
+    if (fgSelect) {
+      fgSelect.addEventListener('change', function () {
+        updateTlaFormFields(fgSelect.value);
+      });
+    }
+
+    // Account type radio toggle
+    var accountRadios = document.querySelectorAll('input[name="tla-account-type"]');
+    var einddatumGroup = document.getElementById('tla-einddatum-group');
+    accountRadios.forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        if (einddatumGroup) einddatumGroup.style.display = radio.value === 'tijdelijk' ? '' : 'none';
+      });
+    });
+
+    // Pre-fill teamleider dropdown met eigen naam
+    var tlSelect = document.getElementById('tla-teamleider');
+    if (tlSelect && profile.naam) {
+      var opt = document.createElement('option');
+      opt.value = profile.naam;
+      opt.textContent = profile.naam;
+      opt.selected = true;
+      tlSelect.appendChild(opt);
+    }
+
     btn.addEventListener('click', function () {
       form.reset();
       alertBox.className = 'alert';
-      // Vul team voor als teamleider maar 1 team heeft
-      if (profile.teams && profile.teams.length === 1) {
-        document.getElementById('tl-aanvraag-team').value = profile.teams[0];
+      updateTlaFormFields('');
+      if (einddatumGroup) einddatumGroup.style.display = 'none';
+      // Pre-select eigen teams
+      if (profile.teams && profile.teams.length > 0) {
+        var checkboxes = document.querySelectorAll('input[name="tla-teams"]');
+        checkboxes.forEach(function (cb) {
+          cb.checked = profile.teams.indexOf(cb.value) !== -1;
+        });
       }
       modal.classList.add('show');
     });
@@ -306,12 +387,16 @@
       var naam = document.getElementById('tl-aanvraag-naam').value.trim();
       var email = document.getElementById('tl-aanvraag-email').value.trim();
       var fg = document.getElementById('tl-aanvraag-functiegroep').value;
-      var team = document.getElementById('tl-aanvraag-team').value.trim();
-      var startdatum = document.getElementById('tl-aanvraag-startdatum').value;
+      var startdatum = document.getElementById('tl-aanvraag-startdatum') ? document.getElementById('tl-aanvraag-startdatum').value : '';
       var werkuren = document.getElementById('tl-aanvraag-werkuren').value.trim();
-      var regio = document.getElementById('tl-aanvraag-regio').value.trim();
 
-      if (!naam || !email || !fg || !startdatum) {
+      // Teams ophalen uit checkboxes
+      var teamCheckboxes = document.querySelectorAll('input[name="tla-teams"]:checked');
+      var teams = [];
+      teamCheckboxes.forEach(function (cb) { teams.push(cb.value); });
+      var team = teams.join(', ');
+
+      if (!naam || !email || !fg) {
         alertBox.className = 'alert alert-error show';
         alertMsg.textContent = 'Vul alle verplichte velden in.';
         return;
@@ -330,8 +415,7 @@
         medewerker_functiegroep: fg,
         medewerker_team: team,
         medewerker_startdatum: startdatum || null,
-        medewerker_werkuren: werkuren || null,
-        medewerker_regio: regio || null
+        medewerker_werkuren: werkuren || null
       });
 
       if (result.error) {

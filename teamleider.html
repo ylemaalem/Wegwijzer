@@ -148,40 +148,91 @@
             <label class="form-label" for="tl-aanvraag-naam">Naam</label>
             <input class="form-input" type="text" id="tl-aanvraag-naam" placeholder="Volledige naam" required>
           </div>
+
           <div class="form-group">
             <label class="form-label" for="tl-aanvraag-email">Werkmail</label>
             <input class="form-input" type="email" id="tl-aanvraag-email" placeholder="naam@werkmail.nl" required>
           </div>
+
           <div class="form-group">
             <label class="form-label" for="tl-aanvraag-functiegroep">Functiegroep</label>
-            <select class="form-input" id="tl-aanvraag-functiegroep" required>
-              <option value="">Kies een functiegroep</option>
-              <option value="ambulant_begeleider">Ambulant Begeleider</option>
-              <option value="ambulant_persoonlijk_begeleider">Ambulant Persoonlijk Begeleider</option>
-              <option value="woonbegeleider">Woonbegeleider</option>
-              <option value="persoonlijk_woonbegeleider">Persoonlijk Woonbegeleider</option>
-              <option value="medewerker_avond_nachtdienst">Medewerker Avond-/Nachtdienst</option>
-              <option value="kantoorpersoneel">Kantoorpersoneel</option>
-              <option value="stagiaire">Stagiaire</option>
-              <option value="zzp_uitzendkracht">ZZP / Uitzendkracht</option>
+            <select class="form-input" id="tl-aanvraag-functiegroep" required><option value="">Laden...</option></select>
+          </div>
+
+          <p class="section-subtitle" id="tla-fg-hint" style="margin:0 0 12px;font-style:italic;color:var(--text-muted)">Kies eerst een functiegroep</p>
+
+          <div class="form-group">
+            <label class="form-label">Account type</label>
+            <div style="display:flex;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="tla-account-type" value="vast" checked> Vast
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="tla-account-type" value="tijdelijk"> Tijdelijk
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" id="tla-einddatum-group" style="display:none">
+            <label class="form-label" for="tl-aanvraag-einddatum">Einddatum contract</label>
+            <input class="form-input" type="date" id="tl-aanvraag-einddatum">
+          </div>
+
+          <div class="form-group tla-zorg-field">
+            <label class="form-label">Teams</label>
+            <div id="tla-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Almere"> Team Almere</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Veluwe 1"> Team Veluwe 1</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Veluwe 2"> Team Veluwe 2</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Middelste Wei"> Team Middelste Wei</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Molenweg"> Team Molenweg</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Gele Weiland"> Team Gele Weiland</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Manuscript"> Team Manuscript</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team VAN"> Team VAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team FAN"> Team FAN</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team FANMN"> Team FANMN</label>
+            </div>
+          </div>
+
+          <div class="form-group tla-zorg-field">
+            <label class="form-label" for="tla-teamleider">Teamleider</label>
+            <select class="form-input" id="tla-teamleider">
+              <option value="">Selecteer teamleider</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="tl-aanvraag-team">Team</label>
-            <input class="form-input" type="text" id="tl-aanvraag-team" placeholder="Team naam">
+
+          <div class="form-group tla-kantoor-field" style="display:none">
+            <label class="form-label" for="tla-manager">Manager</label>
+            <select class="form-input" id="tla-manager">
+              <option value="">Selecteer manager</option>
+            </select>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="tl-aanvraag-startdatum">Startdatum</label>
-            <input class="form-input" type="date" id="tl-aanvraag-startdatum" required>
-          </div>
-          <div class="form-group">
+
+          <div class="form-group tla-shared-field">
             <label class="form-label" for="tl-aanvraag-werkuren">Werkuren per week</label>
-            <input class="form-input" type="text" id="tl-aanvraag-werkuren" placeholder="bijv. 32 uur">
+            <input class="form-input" type="text" id="tl-aanvraag-werkuren" placeholder="bijv. 32 uur, ma-do 9-17">
           </div>
-          <div class="form-group">
-            <label class="form-label" for="tl-aanvraag-regio">Regio</label>
-            <input class="form-input" type="text" id="tl-aanvraag-regio" placeholder="bijv. Utrecht">
+
+          <div class="form-group tla-kantoor-field" style="display:none">
+            <label class="form-label" for="tla-afdeling">Afdeling</label>
+            <select class="form-input" id="tla-afdeling">
+              <option value="">Geen / n.v.t.</option>
+            </select>
           </div>
+
+          <div class="form-group tla-zorg-field">
+            <label class="form-label" for="tl-aanvraag-startdatum">Startdatum inwerktraject</label>
+            <input class="form-input" type="date" id="tl-aanvraag-startdatum">
+          </div>
+
+          <div class="form-group tla-zorg-field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="tla-inwerktraject-actief" checked style="accent-color:var(--primary)">
+              <span class="form-label" style="margin-bottom:0">Inwerktraject actief</span>
+            </label>
+            <p class="section-subtitle" style="margin-bottom:0;font-size:0.75rem;margin-top:4px">Niet aanvinken = medewerker start direct in kennisassistent modus</p>
+          </div>
+
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="tl-aanvraag-cancel">Annuleren</button>
             <button type="submit" class="btn btn-primary" id="tl-aanvraag-submit">Aanvraag indienen</button>
