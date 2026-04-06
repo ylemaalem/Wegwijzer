@@ -1448,74 +1448,55 @@
       submitBtn.textContent = 'Even geduld...';
 
       try {
-        var result = await supabaseClient.auth.admin.inviteUserByEmail(email, {
-          data: {
-            role: 'medewerker',
-            naam: naam,
-            functiegroep: functiegroep,
-            tenant_id: tenantId
-          },
-          redirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
+        // Uitnodiging via Edge Function (service role key)
+        console.log('[Invite Medewerker] Start voor:', email);
+        var session = await supabaseClient.auth.getSession();
+        var token = session.data.session.access_token;
+
+        var inviteResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            invite_user: true,
+            invite_email: email,
+            invite_naam: naam,
+            invite_role: 'medewerker',
+            invite_functiegroep: functiegroep,
+            redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
+          })
         });
 
-        if (result.error) {
-          var signUpResult = await supabaseClient.auth.signUp({
-            email: email,
-            password: generateTempPassword(),
-            options: {
-              data: {
-                role: 'medewerker',
-                naam: naam,
-                functiegroep: functiegroep,
-                tenant_id: tenantId
-              },
-              emailRedirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
-            }
-          });
+        var inviteData = await inviteResponse.json();
+        console.log('[Invite Medewerker] Response:', JSON.stringify(inviteData));
 
-          if (signUpResult.error) {
-            alertBox.className = 'alert alert-error show';
-            alertMsg.textContent = 'Uitnodigen mislukt: ' + signUpResult.error.message;
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Uitnodigen';
-            return;
-          }
+        if (inviteData.error) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Uitnodigen mislukt: ' + inviteData.error;
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Uitnodigen';
+          return;
+        }
 
-          await new Promise(function (r) { setTimeout(r, 1500); });
+        // Wacht op trigger die profiel aanmaakt
+        await new Promise(function (r) { setTimeout(r, 2000); });
 
-          if (signUpResult.data && signUpResult.data.user) {
-            var updateData = { startdatum: startdatum, account_type: accountType };
-            if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
-            if (werkuren) updateData.werkuren = werkuren;
-            if (afdeling) updateData.afdeling = afdeling;
-            updateData.inwerktraject_actief = document.getElementById('invite-inwerktraject-actief').checked;
-            if (einddatum) updateData.einddatum = einddatum;
-            if (teams.length > 0) updateData.teams = teams;
-            if (teamleiderNaam) updateData.teamleider_naam = teamleiderNaam;
+        // Update profiel met extra velden
+        if (inviteData.user_id) {
+          var updateData = { startdatum: startdatum || null, account_type: accountType };
+          if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
+          if (werkuren) updateData.werkuren = werkuren;
+          if (afdeling) updateData.afdeling = afdeling;
+          var inwerkCheckbox = document.getElementById('invite-inwerktraject-actief');
+          if (inwerkCheckbox) updateData.inwerktraject_actief = inwerkCheckbox.checked;
+          if (einddatum) updateData.einddatum = einddatum;
+          if (teams.length > 0) updateData.teams = teams;
+          if (teamleiderNaam) updateData.teamleider_naam = teamleiderNaam;
 
-            await supabaseClient
-              .from('profiles')
-              .update(updateData)
-              .eq('user_id', signUpResult.data.user.id);
-          }
-        } else {
-          await new Promise(function (r) { setTimeout(r, 1500); });
-
-          if (result.data && result.data.user) {
-            var updateData2 = { startdatum: startdatum, account_type: accountType };
-            if (inwerktrajectUrl) updateData2.inwerktraject_url = inwerktrajectUrl;
-            if (werkuren) updateData2.werkuren = werkuren;
-            if (afdeling) updateData2.afdeling = afdeling;
-            updateData2.inwerktraject_actief = document.getElementById('invite-inwerktraject-actief').checked;
-            if (einddatum) updateData2.einddatum = einddatum;
-            if (teams.length > 0) updateData2.teams = teams;
-            if (teamleiderNaam) updateData2.teamleider_naam = teamleiderNaam;
-
-            await supabaseClient
-              .from('profiles')
-              .update(updateData2)
-              .eq('user_id', result.data.user.id);
-          }
+          console.log('[Invite Medewerker] Profiel updaten voor user_id:', inviteData.user_id);
+          await supabaseClient
+            .from('profiles')
+            .update(updateData)
+            .eq('user_id', inviteData.user_id);
         }
 
         alertBox.className = 'alert alert-success show';
@@ -2558,39 +2539,43 @@
     var a = result.data;
 
     if (a.type === 'nieuw') {
-      // Maak medewerker aan via signUp
-      var signUpResult = await supabaseClient.auth.signUp({
-        email: a.medewerker_email,
-        password: generateTempPassword(),
-        options: {
-          data: {
-            role: 'medewerker',
-            naam: a.medewerker_naam,
-            functiegroep: a.medewerker_functiegroep,
-            tenant_id: tenantId
-          },
-          emailRedirectTo: window.location.origin + appUrl('wachtwoord-instellen.html')
-        }
+      // Uitnodiging via Edge Function (service role key)
+      console.log('[Aanvraag] Goedkeuren, uitnodiging sturen naar:', a.medewerker_email);
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+
+      var invResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          invite_user: true,
+          invite_email: a.medewerker_email,
+          invite_naam: a.medewerker_naam,
+          invite_role: 'medewerker',
+          invite_functiegroep: a.medewerker_functiegroep,
+          redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
+        })
       });
 
-      if (signUpResult.error) {
-        alert('Aanmaken mislukt: ' + signUpResult.error.message);
+      var invData = await invResp.json();
+      console.log('[Aanvraag] Invite response:', JSON.stringify(invData));
+
+      if (invData.error) {
+        alert('Uitnodigen mislukt: ' + invData.error);
         return;
       }
 
-      // Wacht op trigger
-      await new Promise(function (r) { setTimeout(r, 1500); });
+      await new Promise(function (r) { setTimeout(r, 2000); });
 
-      if (signUpResult.data && signUpResult.data.user) {
+      if (invData.user_id) {
         var updateData = {};
         if (a.medewerker_startdatum) updateData.startdatum = a.medewerker_startdatum;
         if (a.medewerker_werkuren) updateData.werkuren = a.medewerker_werkuren;
-        if (a.medewerker_regio) updateData.regio = a.medewerker_regio;
         if (a.medewerker_team) updateData.teams = [a.medewerker_team];
         await supabaseClient
           .from('profiles')
           .update(updateData)
-          .eq('user_id', signUpResult.data.user.id);
+          .eq('user_id', invData.user_id);
       }
     } else if (a.type === 'verwijder' && a.medewerker_profile_id) {
       await supabaseClient.from('profiles').delete().eq('id', a.medewerker_profile_id);

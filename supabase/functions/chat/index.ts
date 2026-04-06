@@ -150,17 +150,21 @@ Deno.serve(async (req: Request) => {
       const inviteEmail = body.invite_email;
       const inviteNaam = body.invite_naam || "";
       const inviteRole = body.invite_role || "teamleider";
+      const inviteFunctiegroep = body.invite_functiegroep || null;
       const redirectUrl = body.redirect_url || "";
 
-      console.log("[Invite] Start uitnodiging voor:", inviteEmail, "rol:", inviteRole);
+      console.log("[Invite] Start uitnodiging voor:", inviteEmail, "rol:", inviteRole, "functiegroep:", inviteFunctiegroep);
 
       try {
+        const userData: Record<string, unknown> = {
+          role: inviteRole,
+          naam: inviteNaam,
+          tenant_id: profile.tenant_id,
+        };
+        if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
+
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
-          data: {
-            role: inviteRole,
-            naam: inviteNaam,
-            tenant_id: profile.tenant_id,
-          },
+          data: userData,
           redirectTo: redirectUrl || undefined,
         });
 
