@@ -9,7 +9,7 @@
   var profile = null;
   var teamProfiles = [];
 
-  document.addEventListener('wegwijzer-auth-ready', function (e) {
+  document.addEventListener('wegwijzer-auth-ready', async function (e) {
     profile = e.detail.profile;
     tenantId = profile.tenant_id;
     initTabs();
