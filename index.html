@@ -112,6 +112,7 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register(BASE_PATH + 'sw.js');
     }
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); });
   </script>
 </body>
 </html>
