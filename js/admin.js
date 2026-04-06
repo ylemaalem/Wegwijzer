@@ -1595,7 +1595,7 @@
     document.getElementById('edit-werkuren').value = p.werkuren || '';
     document.getElementById('edit-afdeling').value = p.afdeling || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
-    document.getElementById('edit-inwerktraject-actief').checked = p.inwerktraject_actief !== false;
+    document.getElementById('edit-inwerktraject-actief').checked = p.inwerktraject_actief === true;
     document.getElementById('edit-inwerktraject-url').value = p.inwerktraject_url || '';
 
     // Account type

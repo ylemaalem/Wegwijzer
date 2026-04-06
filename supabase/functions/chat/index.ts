@@ -729,7 +729,8 @@ Deno.serve(async (req: Request) => {
 
     // Weekfase context
     let weekContext = "";
-    const inwerkAfgerond = profile.inwerken_afgerond || profile.inwerktraject_actief === false || wk > 6 || profile.functiegroep === "zzp_uitzendkracht";
+    // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true) en niet afgerond
+    const inwerkAfgerond = profile.inwerktraject_actief !== true || profile.inwerken_afgerond || wk > 6;
     if (profile.role === "teamleider") {
       weekContext = `\n\n${naam} is teamleider. Antwoord direct en professioneel als kennisassistent.`;
     } else if (inwerkAfgerond) {

@@ -38,7 +38,9 @@
       .single();
     console.log('[Profiel] Vers profiel:', freshResult.error ? 'FOUT: ' + freshResult.error.message : 'OK, naam: ' + (freshResult.data && freshResult.data.naam));
     profile = freshResult.data || e.detail.profile;
-    weekNummer = (profile.inwerken_afgerond || profile.inwerktraject_actief === false || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
+    // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true)
+    var heeftInwerktraject = profile.inwerktraject_actief === true && !profile.inwerken_afgerond;
+    weekNummer = heeftInwerktraject ? berekenWeekNummer(profile.startdatum) : 99;
     // Toon dashboard knop voor teamleiders
     if (profile.role === 'teamleider') {
       var dashBtn = document.getElementById('dashboard-btn');
