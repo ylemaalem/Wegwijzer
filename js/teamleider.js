@@ -65,12 +65,20 @@
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
     var myTeams = profile.teams || [];
+    console.log('[TL] Mijn teams:', JSON.stringify(myTeams));
 
     var result = await supabaseClient
       .from('profiles')
       .select('id, naam, email, functiegroep, startdatum, user_id, teams')
       .eq('tenant_id', tenantId)
       .eq('role', 'medewerker');
+
+    console.log('[TL] Alle medewerkers in tenant:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
+    if (result.data) {
+      result.data.forEach(function (p) {
+        console.log('[TL]   ' + p.naam + ' teams:', JSON.stringify(p.teams));
+      });
+    }
 
     if (result.error || !result.data) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
@@ -83,6 +91,8 @@
       if (!p.teams || p.teams.length === 0) return false;
       return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
     });
+
+    console.log('[TL] Na team-filter:', teamProfiles.length, 'medewerkers');
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
@@ -132,15 +142,17 @@
     teamIds.push(profile.id);
     console.log('[TL] Gesprekken ophalen voor', teamIds.length, 'profielen');
 
-    if (teamIds.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen medewerkers in jouw team.</td></tr>';
-      return;
+    if (teamIds.length <= 1) {
+      // Alleen eigen profiel ID, geen teamleden gevonden
+      console.log('[TL] Geen teamleden gevonden, probeer alle tenant gesprekken');
     }
+
+    console.log('[TL] Gesprekken ophalen voor profiel IDs:', JSON.stringify(teamIds));
 
     var result = await supabaseClient
       .from('conversations')
       .select('id, vraag, feedback, created_at, user_id')
-      .in('user_id', teamIds)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -151,12 +163,25 @@
       return;
     }
 
-    tbody.innerHTML = result.data.map(function (c) {
+    // Filter client-side op teamleden + eigen profiel
+    var teamIds = teamProfiles.map(function (p) { return p.id; });
+    teamIds.push(profile.id);
+    var filtered = result.data.filter(function (c) {
+      return teamIds.indexOf(c.user_id) !== -1;
+    });
+    console.log('[TL] Na team-filter:', filtered.length, 'van', result.data.length, 'gesprekken');
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken van jouw team gevonden.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(function (c) {
       var datum = new Date(c.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
       var p = teamProfiles.find(function (pr) { return pr.id === c.user_id; });
-      var naam = p ? (p.naam || p.email) : 'Onbekend';
+      var naam = p ? (p.naam || p.email) : (c.user_id === profile.id ? profile.naam : 'Onbekend');
       var fb = '';
       if (c.feedback === 'goed') fb = '<span class="badge badge-goed">👍</span>';
       else if (c.feedback === 'niet_goed') fb = '<span class="badge badge-niet-goed">👎</span>';
@@ -180,12 +205,16 @@
 
     var result = await supabaseClient
       .from('conversations')
-      .select('id, feedback, created_at')
-      .in('user_id', teamIds);
+      .select('id, feedback, created_at, user_id')
+      .eq('tenant_id', tenantId);
 
     if (result.error || !result.data) return;
 
-    var data = result.data;
+    // Filter client-side op teamleden
+    var data = result.data.filter(function (c) {
+      return teamIds.indexOf(c.user_id) !== -1;
+    });
+    console.log('[TL Stats] Gesprekken voor team:', data.length, 'van', result.data.length);
     var now = new Date();
     var dayOfWeek = now.getDay();
     var mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
