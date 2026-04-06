@@ -399,7 +399,7 @@ Deno.serve(async (req: Request) => {
             max_tokens: 200,
             messages: [{
               role: "user",
-              content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden. Denk breed: gebruik synoniemen, officiële termen, gerelateerde begrippen, praktische varianten en specifieke deelonderwerpen. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Bijvoorbeeld bij een vraag over plusuren: genereer ook minuren, jaaruren, JUS, jaarurensystematiek, overuren, compensatie, urenregistratie, arbeidstijd, saldo, uitbetaling. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"`
+              content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden in een kennisbank. Denk breed: gebruik synoniemen, officiële HR-termen, gerelateerde begrippen, samengestelde woorden, praktische varianten en specifieke regelingen of beleidsdocumenten. Bijvoorbeeld: bij 'iemand aandragen voor een baan' genereer: aanbrengbonus, referralbonus, wervingsvergoeding, doorverwijzen, werving, vacature, beloning, kandidaat, aanbrengen, sollicitatie. Bij 'plusuren': genereer: minuren, jaaruren, JUS, jaarurensystematiek, overuren, compensatie, urenregistratie, arbeidstijd, saldo, uitbetaling. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"`
             }],
           }),
         });
@@ -433,12 +433,28 @@ Deno.serve(async (req: Request) => {
       const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
         .map((d: { naam: string; content: string }) => {
-          const lower = d.content.toLowerCase();
+          const lowerContent = d.content.toLowerCase();
+          const lowerNaam = d.naam.toLowerCase();
           let score = 0;
+
           for (const kw of keywords) {
+            // Zoek in documentinhoud
             let pos = 0;
-            while ((pos = lower.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
+            while ((pos = lowerContent.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
+
+            // Bonus: zoek in documentnaam (zwaarder gewogen)
+            if (lowerNaam.indexOf(kw) !== -1) { score += 5; }
+
+            // Stam-matching: als keyword > 4 tekens, zoek ook op de eerste 4+ letters
+            if (kw.length >= 5) {
+              const stam = kw.substring(0, Math.max(5, Math.floor(kw.length * 0.7)));
+              if (stam !== kw) {
+                pos = 0;
+                while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; }
+              }
+            }
           }
+
           return { naam: d.naam, content: d.content, score };
         })
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
