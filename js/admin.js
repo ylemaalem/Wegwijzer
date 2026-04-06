@@ -91,6 +91,16 @@
       return await file.text();
     }
 
+    // CSV: lees als tekst, converteer rijen naar zinnen, stuur naar Claude
+    if (ext === 'csv') {
+      return await extractCsvText(file);
+    }
+
+    // XLSX: gebruik SheetJS, converteer naar tekst, stuur naar Claude
+    if (ext === 'xlsx') {
+      return await extractXlsxText(file);
+    }
+
     // PDF en DOCX: probeer eerst Claude extractie, val terug op lokale methode
     if (ext === 'pdf' || ext === 'docx' || ext === 'doc') {
       try {
@@ -134,6 +144,99 @@
         extract_pdf: true,
         pdf_base64: base64,
         media_type: mediaType
+      })
+    });
+
+    var data = await response.json();
+    return data.extracted_text || '';
+  }
+
+  async function extractCsvText(file) {
+    try {
+      var text = await file.text();
+      var lines = text.split('\n').filter(function (l) { return l.trim().length > 0; });
+      if (lines.length < 2) return text;
+
+      var headers = lines[0].split(/[,;\t]/).map(function (h) { return h.trim().replace(/"/g, ''); });
+      var zinnen = [];
+      for (var i = 1; i < lines.length; i++) {
+        var cols = lines[i].split(/[,;\t]/).map(function (c) { return c.trim().replace(/"/g, ''); });
+        var zin = headers.map(function (h, idx) {
+          return h + ': ' + (cols[idx] || '');
+        }).join(', ');
+        zinnen.push(zin + '.');
+      }
+      var rawText = zinnen.join(' ');
+      console.log('[CSV] Geëxtraheerd:', rawText.length, 'tekens uit', lines.length - 1, 'rijen');
+
+      // Stuur naar Claude voor structurering
+      try {
+        var claudeText = await structureerViaClaude(rawText);
+        if (claudeText && claudeText.length > 50) return claudeText;
+      } catch (err) {
+        console.error('[CSV] Claude structurering mislukt:', err);
+      }
+      return rawText;
+    } catch (err) {
+      console.error('[CSV] Extractie mislukt:', err);
+      return '';
+    }
+  }
+
+  async function extractXlsxText(file) {
+    try {
+      var arrayBuffer = await file.arrayBuffer();
+      var workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      var allText = [];
+
+      workbook.SheetNames.forEach(function (sheetName) {
+        var sheet = workbook.Sheets[sheetName];
+        var data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (data.length < 2) return;
+
+        var headers = data[0].map(function (h) { return String(h || '').trim(); });
+        for (var i = 1; i < data.length; i++) {
+          var row = data[i];
+          if (!row || row.length === 0) continue;
+          var zin = headers.map(function (h, idx) {
+            return h + ': ' + String(row[idx] || '');
+          }).join(', ');
+          allText.push(zin + '.');
+        }
+      });
+
+      var rawText = allText.join(' ');
+      console.log('[XLSX] Geëxtraheerd:', rawText.length, 'tekens uit', workbook.SheetNames.length, 'sheets');
+
+      // Stuur naar Claude voor structurering
+      try {
+        var claudeText = await structureerViaClaude(rawText);
+        if (claudeText && claudeText.length > 50) return claudeText;
+      } catch (err) {
+        console.error('[XLSX] Claude structurering mislukt:', err);
+      }
+      return rawText;
+    } catch (err) {
+      console.error('[XLSX] Extractie mislukt:', err);
+      return '';
+    }
+  }
+
+  async function structureerViaClaude(rawText) {
+    var session = await supabaseClient.auth.getSession();
+    var token = session.data.session.access_token;
+    var truncated = rawText.substring(0, 15000);
+
+    var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        extract_pdf: true,
+        pdf_base64: btoa(unescape(encodeURIComponent(truncated))),
+        media_type: 'text/plain'
       })
     });
 
@@ -526,7 +629,7 @@
       var statusEl = document.getElementById('upload-status-' + i);
       var fillEl = document.getElementById('upload-fill-' + i);
 
-      if (!['pdf', 'doc', 'docx', 'txt'].includes(ext)) {
+      if (!['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx'].includes(ext)) {
         statusEl.textContent = 'Ongeldig type';
         statusEl.style.color = 'var(--error)';
         fillEl.style.width = '100%';
@@ -1183,7 +1286,7 @@
       var file = files[i];
       var ext = file.name.split('.').pop().toLowerCase();
 
-      if (!['pdf', 'doc', 'docx', 'txt'].includes(ext)) continue;
+      if (!['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx'].includes(ext)) continue;
       if (file.size > 20 * 1024 * 1024) continue;
 
       var extractedText = '';
