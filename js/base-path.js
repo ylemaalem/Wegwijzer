@@ -19,7 +19,8 @@ function appUrl(page) {
   return BASE_PATH + page;
 }
 
-// Onderdruk Chrome PWA installatiebanner permanent
+// Onderdruk PWA installatiebanner permanent (Chrome + Edge)
 window.addEventListener('beforeinstallprompt', function (e) {
   e.preventDefault();
+  return false;
 });
