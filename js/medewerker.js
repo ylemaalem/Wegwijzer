@@ -36,6 +36,7 @@
       .select('*')
       .eq('user_id', user.id)
       .single();
+    console.log('[Profiel] Vers profiel:', freshResult.error ? 'FOUT: ' + freshResult.error.message : 'OK, naam: ' + (freshResult.data && freshResult.data.naam));
     profile = freshResult.data || e.detail.profile;
     weekNummer = (profile.inwerken_afgerond || profile.inwerktraject_actief === false || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
     // Toon dashboard knop voor teamleiders
