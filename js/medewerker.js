@@ -136,6 +136,8 @@
       if (searchBtn) searchBtn.classList.add('hidden');
       var searchBar = document.getElementById('search-bar');
       if (searchBar) searchBar.classList.remove('show');
+      // Reset conversatiehistorie bij terugkeer naar welkomscherm
+      conversatieHistorie = [];
     });
   }
 
