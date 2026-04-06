@@ -28,9 +28,15 @@
   var chipsBar = document.getElementById('chips-bar');
 
   // ---- Wacht op auth ----
-  document.addEventListener('wegwijzer-auth-ready', function (e) {
-    profile = e.detail.profile;
+  document.addEventListener('wegwijzer-auth-ready', async function (e) {
     user = e.detail.user;
+    // Haal altijd vers profiel op uit database (niet gecached)
+    var freshResult = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+    profile = freshResult.data || e.detail.profile;
     weekNummer = (profile.inwerken_afgerond || profile.inwerktraject_actief === false || profile.functiegroep === 'zzp_uitzendkracht') ? 99 : berekenWeekNummer(profile.startdatum);
     initWelkom();
     initChatInput();
