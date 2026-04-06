@@ -27,10 +27,11 @@
   ];
 
   // ---- Wacht op auth ----
-  document.addEventListener('wegwijzer-auth-ready', function (e) {
+  document.addEventListener('wegwijzer-auth-ready', async function (e) {
     tenantId = e.detail.profile.tenant_id;
     initTabs();
     initLogout();
+    await loadFunctiegroepen();
     loadDocuments();
     loadMedewerkers();
     loadGesprekken();
@@ -46,7 +47,6 @@
     initEditDocModal();
     initTeamleiderModal();
     initVerbeterModal();
-    loadFunctiegroepen();
     loadRapporten();
     initRapportBtn();
     loadPrivacyVerzoeken();
@@ -329,6 +329,12 @@
   }
 
   function formatFunctiegroep(fg) {
+    // Zoek eerst in de dynamische functiegroepen tabel
+    if (allFunctiegroepen && allFunctiegroepen.length > 0) {
+      var found = allFunctiegroepen.find(function (f) { return f.code === fg; });
+      if (found) return found.naam;
+    }
+    // Fallback: hardcoded map
     var map = {
       'ambulant_begeleider': 'Ambulant Begeleider',
       'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
