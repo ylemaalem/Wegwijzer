@@ -393,9 +393,7 @@
 
     TEAMS_LIJST.forEach(function (team) {
       var label = document.createElement('label');
-      label.className = 'checkbox-label';
-      label.style.display = 'block';
-      label.style.marginBottom = '4px';
+      label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:0.88rem';
 
       var cb = document.createElement('input');
       cb.type = 'checkbox';
