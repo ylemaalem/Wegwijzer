@@ -140,7 +140,7 @@
     });
 
     // Terug knop
-    backBtn.addEventListener('click', function () {
+    backBtn.addEventListener('click', async function () {
       chatScreen.classList.remove('active');
       welcomeScreen.style.display = '';
       backBtn.classList.add('hidden');
@@ -148,8 +148,14 @@
       if (searchBtn) searchBtn.classList.add('hidden');
       var searchBar = document.getElementById('search-bar');
       if (searchBar) searchBar.classList.remove('show');
-      // Reset conversatiehistorie bij terugkeer naar welkomscherm
       conversatieHistorie = [];
+      // Ververs naam uit database
+      var freshResult = await supabaseClient.from('profiles').select('naam').eq('user_id', user.id).single();
+      if (freshResult.data && freshResult.data.naam) {
+        profile.naam = freshResult.data.naam;
+        var voornaam = profile.naam.split(' ')[0];
+        document.getElementById('welcome-title').textContent = 'Welkom, ' + voornaam + '!';
+      }
     });
   }
 
