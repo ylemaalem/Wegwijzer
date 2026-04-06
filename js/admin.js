@@ -1935,12 +1935,12 @@
 
     var result = await supabaseClient
       .from('teamleiders')
-      .select('id, naam, email, telefoon, teams')
+      .select('id, naam, email, telefoon, teams, rol, afdelingen')
       .eq('tenant_id', tenantId)
       .order('naam', { ascending: true });
 
     if (result.error || !result.data) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon teamleiders niet laden.</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon leidinggevenden niet laden.</td></tr>';
       return;
     }
 
@@ -1953,21 +1953,29 @@
     if (!tbody) return;
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Nog geen teamleiders.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Nog geen leidinggevenden.</td></tr>';
       return;
     }
 
+    var rolLabels = { teamleider: 'Teamleider', manager: 'Manager', hr: 'HR Medewerker' };
+
     tbody.innerHTML = result.data.map(function (tl) {
-      var teamsStr = '-';
-      if (tl.teams && Array.isArray(tl.teams) && tl.teams.length > 0) {
-        teamsStr = tl.teams.join(', ');
+      var rolLabel = rolLabels[tl.rol] || 'Teamleider';
+      var koppelingStr = '-';
+      if (tl.rol === 'manager' && tl.afdelingen && tl.afdelingen.length > 0) {
+        koppelingStr = tl.afdelingen.join(', ');
+      } else if (tl.teams && Array.isArray(tl.teams) && tl.teams.length > 0) {
+        koppelingStr = tl.teams.join(', ');
+      } else if (tl.rol === 'hr') {
+        koppelingStr = 'Alle medewerkers';
       }
 
       return '<tr>' +
         '<td>' + escapeHtml(tl.naam) + '</td>' +
         '<td>' + escapeHtml(tl.email || '-') + '</td>' +
         '<td>' + escapeHtml(tl.telefoon || '-') + '</td>' +
-        '<td>' + escapeHtml(teamsStr) + '</td>' +
+        '<td><span class="badge badge-admin">' + rolLabel + '</span></td>' +
+        '<td>' + escapeHtml(koppelingStr) + '</td>' +
         '<td>' +
           '<button class="btn-icon" onclick="window.editTeamleider(\'' + tl.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteTeamleider(\'' + tl.id + '\')" title="Verwijderen">🗑️</button>' +
@@ -1985,11 +1993,37 @@
     var submitBtn = document.getElementById('tl-submit-btn');
     var addBtn = document.getElementById('add-teamleider-btn');
 
+    var rolSelect = document.getElementById('tl-rol');
+    var teamsGroup = document.getElementById('tl-teams-group');
+    var afdelingenGroup = document.getElementById('tl-afdelingen-group');
+    var modalTitle = document.getElementById('teamleider-modal-title');
+
+    var rolTitels = { teamleider: 'Teamleider toevoegen', manager: 'Manager toevoegen', hr: 'HR Medewerker toevoegen' };
+    var rolTitelsEdit = { teamleider: 'Teamleider bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
+
+    function toggleRolVelden() {
+      var rol = rolSelect ? rolSelect.value : 'teamleider';
+      if (teamsGroup) teamsGroup.style.display = (rol === 'teamleider') ? '' : 'none';
+      if (afdelingenGroup) afdelingenGroup.style.display = (rol === 'manager') ? '' : 'none';
+      // Update modal titel als het een nieuw record is
+      var isEdit = document.getElementById('tl-id').value;
+      if (modalTitle) modalTitle.textContent = isEdit ? (rolTitelsEdit[rol] || 'Bewerken') : (rolTitels[rol] || 'Toevoegen');
+    }
+
+    if (rolSelect) {
+      rolSelect.addEventListener('change', toggleRolVelden);
+    }
+
     if (addBtn) {
       addBtn.addEventListener('click', function () {
         if (form) form.reset();
         document.getElementById('tl-id').value = '';
+        if (rolSelect) rolSelect.value = 'teamleider';
         populateTeamCheckboxes('tl-teams', []);
+        // Reset afdelingen checkboxes
+        var afdCheckboxes = document.querySelectorAll('input[name="tl-afdelingen"]');
+        afdCheckboxes.forEach(function (cb) { cb.checked = false; });
+        toggleRolVelden();
         modal.classList.add('show');
       });
     }
@@ -2016,7 +2050,13 @@
         var naam = document.getElementById('tl-naam').value.trim();
         var email = document.getElementById('tl-email').value.trim();
         var telefoon = document.getElementById('tl-telefoon').value.trim();
+        var rol = rolSelect ? rolSelect.value : 'teamleider';
         var teams = getCheckedTeams('tl-teams');
+
+        // Afdelingen ophalen
+        var afdelingen = [];
+        var afdCheckboxes = document.querySelectorAll('input[name="tl-afdelingen"]:checked');
+        afdCheckboxes.forEach(function (cb) { afdelingen.push(cb.value); });
 
         if (!naam) return;
 
@@ -2030,7 +2070,9 @@
           naam: naam,
           email: email || null,
           telefoon: telefoon || null,
-          teams: teams.length > 0 ? teams : null
+          rol: rol,
+          teams: (rol === 'teamleider' && teams.length > 0) ? teams : null,
+          afdelingen: (rol === 'manager' && afdelingen.length > 0) ? afdelingen : null
         };
 
         var result;
@@ -2112,7 +2154,30 @@
     document.getElementById('tl-naam').value = tl.naam || '';
     document.getElementById('tl-email').value = tl.email || '';
     document.getElementById('tl-telefoon').value = tl.telefoon || '';
+
+    // Rol instellen
+    var rolSelect = document.getElementById('tl-rol');
+    if (rolSelect) rolSelect.value = tl.rol || 'teamleider';
+
+    // Teams checkboxes
     populateTeamCheckboxes('tl-teams', tl.teams || []);
+
+    // Afdelingen checkboxes
+    var selectedAfd = tl.afdelingen || [];
+    var afdCheckboxes = document.querySelectorAll('input[name="tl-afdelingen"]');
+    afdCheckboxes.forEach(function (cb) {
+      cb.checked = selectedAfd.indexOf(cb.value) !== -1;
+    });
+
+    // Toggle velden op basis van rol
+    var teamsGroup = document.getElementById('tl-teams-group');
+    var afdelingenGroup = document.getElementById('tl-afdelingen-group');
+    var modalTitle = document.getElementById('teamleider-modal-title');
+    var rolTitelsEdit = { teamleider: 'Teamleider bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
+    var rol = tl.rol || 'teamleider';
+    if (teamsGroup) teamsGroup.style.display = (rol === 'teamleider') ? '' : 'none';
+    if (afdelingenGroup) afdelingenGroup.style.display = (rol === 'manager') ? '' : 'none';
+    if (modalTitle) modalTitle.textContent = rolTitelsEdit[rol] || 'Bewerken';
 
     modal.classList.add('show');
   };

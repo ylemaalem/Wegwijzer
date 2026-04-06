@@ -324,12 +324,13 @@
                 <th>Naam</th>
                 <th>E-mail</th>
                 <th>Telefoon</th>
-                <th>Teams</th>
+                <th>Rol</th>
+                <th>Teams / Afdelingen</th>
                 <th>Acties</th>
               </tr>
             </thead>
             <tbody id="teamleiders-body">
-              <tr><td colspan="5" class="no-data">Leidinggevende/HR laden...</td></tr>
+              <tr><td colspan="6" class="no-data">Leidinggevende/HR laden...</td></tr>
             </tbody>
           </table>
         </div>
@@ -803,6 +804,15 @@
           <input type="hidden" id="tl-id">
 
           <div class="form-group">
+            <label class="form-label" for="tl-rol">Rol</label>
+            <select class="form-input" id="tl-rol">
+              <option value="teamleider">Teamleider</option>
+              <option value="manager">Manager</option>
+              <option value="hr">HR Medewerker</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="tl-naam">Naam</label>
             <input class="form-input" type="text" id="tl-naam" placeholder="Volledige naam" required>
           </div>
@@ -817,7 +827,7 @@
             <input class="form-input" type="tel" id="tl-telefoon" placeholder="06-12345678">
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="tl-teams-group">
             <label class="form-label">Teams</label>
             <div id="tl-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team Almere"> Team Almere</label>
@@ -830,6 +840,19 @@
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team VAN"> Team VAN</label>
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team FAN"> Team FAN</label>
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-teams" value="Team FANMN"> Team FANMN</label>
+            </div>
+          </div>
+
+          <div class="form-group" id="tl-afdelingen-group" style="display:none">
+            <label class="form-label">Afdelingen</label>
+            <div id="tl-afdelingen" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="HR"> HR</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Zorgbemiddeling"> Zorgbemiddeling</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Kennis en Expertise"> Kennis en Expertise</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Management"> Management</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Financien"> Financiën</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Administratie"> Administratie</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tl-afdelingen" value="Overig"> Overig</label>
             </div>
           </div>
 
