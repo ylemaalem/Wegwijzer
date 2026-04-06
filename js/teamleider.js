@@ -15,7 +15,7 @@
     initTabs();
     initLogout();
     loadHeaderLogo();
-    loadTeamMedewerkers();
+    await loadTeamMedewerkers();
     loadTeamGesprekken();
     loadTeamStatistieken();
     loadMijnAanvragen();
@@ -126,12 +126,25 @@
   async function loadTeamGesprekken() {
     var tbody = document.getElementById('tl-gesprekken-body');
 
+    // Haal alleen gesprekken op van teamleden
+    var teamIds = teamProfiles.map(function (p) { return p.id; });
+    // Voeg eigen profiel ID toe
+    teamIds.push(profile.id);
+    console.log('[TL] Gesprekken ophalen voor', teamIds.length, 'profielen');
+
+    if (teamIds.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen medewerkers in jouw team.</td></tr>';
+      return;
+    }
+
     var result = await supabaseClient
       .from('conversations')
       .select('id, vraag, feedback, created_at, user_id')
-      .eq('tenant_id', tenantId)
+      .in('user_id', teamIds)
       .order('created_at', { ascending: false })
       .limit(100);
+
+    console.log('[TL] Gesprekken gevonden:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
 
     if (result.error || !result.data || result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken gevonden.</td></tr>';
@@ -162,10 +175,13 @@
   // STATISTIEKEN
   // =============================================
   async function loadTeamStatistieken() {
+    var teamIds = teamProfiles.map(function (p) { return p.id; });
+    teamIds.push(profile.id);
+
     var result = await supabaseClient
       .from('conversations')
       .select('id, feedback, created_at')
-      .eq('tenant_id', tenantId);
+      .in('user_id', teamIds);
 
     if (result.error || !result.data) return;
 
