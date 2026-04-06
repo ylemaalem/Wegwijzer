@@ -2584,6 +2584,17 @@
         });
     });
 
+    // Vul afdelingen-checkboxes in Leidinggevende/HR modal vanuit kantoor-functiegroepen
+    var afdContainer = document.getElementById('tl-afdelingen');
+    if (afdContainer) {
+      var kantoorFgs = result.data.filter(function (fg) { return fg.is_kantoor; });
+      afdContainer.innerHTML = kantoorFgs.map(function (fg) {
+        return '<label style="display:flex;align-items:center;gap:4px;font-size:0.88rem">' +
+          '<input type="checkbox" name="tl-afdelingen" value="' + escapeHtml(fg.naam) + '"> ' + escapeHtml(fg.naam) +
+          '</label>';
+      }).join('');
+    }
+
     // Render list in settings
     var container = document.getElementById('functiegroepen-list');
     if (!container) return;
