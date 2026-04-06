@@ -3,12 +3,11 @@
   "short_name": "Wegwijzer",
   "description": "AI-gestuurde kennisassistent voor medewerkers",
   "start_url": ".",
-  "display": "browser",
+  "display": "standalone",
   "background_color": "#0D5C6B",
   "theme_color": "#E8720C",
   "orientation": "portrait",
   "lang": "nl",
-  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icons/wegwijzer-app-icon-192.png",
