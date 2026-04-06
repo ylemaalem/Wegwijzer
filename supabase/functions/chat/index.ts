@@ -446,11 +446,18 @@ Deno.serve(async (req: Request) => {
         ).join("\n");
 
       // Markeer de directe teamleider van deze medewerker
+      let directeTl = null;
       if (profile.teamleider_naam) {
-        const directeTl = teamleiders.find((tl: { naam: string }) => tl.naam === profile.teamleider_naam);
-        if (directeTl) {
-          teamleiderContext += `\n\nDE DIRECTE TEAMLEIDER VAN ${(profile.naam || "de medewerker").toUpperCase()} IS: ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
-        }
+        directeTl = teamleiders.find((tl: { naam: string }) => tl.naam === profile.teamleider_naam);
+      }
+      // Fallback: zoek teamleider op basis van team-overlap
+      if (!directeTl && profile.teams && profile.teams.length > 0) {
+        directeTl = teamleiders.find((tl: { teams: string[] | null }) =>
+          tl.teams && tl.teams.some((t: string) => profile.teams.includes(t))
+        );
+      }
+      if (directeTl) {
+        teamleiderContext += `\n\nDE DIRECTE LEIDINGGEVENDE VAN ${(profile.naam || "de medewerker").toUpperCase()} IS: ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
       }
     }
 
