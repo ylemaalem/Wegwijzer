@@ -92,7 +92,7 @@
         // Login gelukt — haal profiel op om rol te bepalen
         const { data: profile, error: profileError } = await supabaseClient
           .from('profiles')
-          .select('role')
+          .select('role, functiegroep, dashboard_toegang')
           .eq('user_id', data.user.id)
           .single();
 
@@ -103,10 +103,15 @@
           return;
         }
 
-        // Doorsturen op basis van rol
+        // Doorsturen op basis van rol of functiegroep
+        var isTeamleider = profile.role === 'teamleider' ||
+          (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
+          (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
+          profile.dashboard_toegang === true;
+
         if (profile.role === 'admin') {
           window.location.href = appUrl('admin.html');
-        } else if (profile.role === 'teamleider') {
+        } else if (isTeamleider) {
           window.location.href = appUrl('teamleider.html');
         } else {
           window.location.href = appUrl('medewerker.html');
@@ -161,14 +166,19 @@
       if (session) {
         const { data: profile } = await supabaseClient
           .from('profiles')
-          .select('role')
+          .select('role, functiegroep, dashboard_toegang')
           .eq('user_id', session.user.id)
           .single();
 
         if (profile) {
+          var isTeamleider = profile.role === 'teamleider' ||
+            (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
+            (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
+            profile.dashboard_toegang === true;
+
           if (profile.role === 'admin') {
             window.location.href = appUrl('admin.html');
-          } else if (profile.role === 'teamleider') {
+          } else if (isTeamleider) {
             window.location.href = appUrl('teamleider.html');
           } else {
             window.location.href = appUrl('medewerker.html');

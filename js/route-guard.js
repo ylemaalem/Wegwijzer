@@ -35,17 +35,23 @@
 
       var profile = profileResult.data;
 
+      // Bepaal of deze gebruiker teamleider-rechten heeft
+      var isTeamleider = profile.role === 'teamleider' ||
+        (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
+        (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
+        profile.dashboard_toegang === true;
+
       // Check rol als die vereist is
       if (requiredRole) {
         var allowed = false;
         if (requiredRole === 'admin' && profile.role === 'admin') allowed = true;
-        if (requiredRole === 'medewerker' && (profile.role === 'medewerker' || profile.role === 'teamleider')) allowed = true;
-        if (requiredRole === 'teamleider' && profile.role === 'teamleider') allowed = true;
+        if (requiredRole === 'medewerker' && (profile.role === 'medewerker' || profile.role === 'teamleider' || isTeamleider)) allowed = true;
+        if (requiredRole === 'teamleider' && (profile.role === 'teamleider' || isTeamleider)) allowed = true;
 
         if (!allowed) {
           if (profile.role === 'admin') {
             window.location.href = appUrl('admin.html');
-          } else if (profile.role === 'teamleider') {
+          } else if (isTeamleider) {
             window.location.href = appUrl('teamleider.html');
           } else {
             window.location.href = appUrl('medewerker.html');
