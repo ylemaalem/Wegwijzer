@@ -399,7 +399,7 @@ Deno.serve(async (req: Request) => {
             max_tokens: 100,
             messages: [{
               role: "user",
-              content: `Genereer 5 korte zoektermen in het Nederlands die betekenisverwant zijn aan deze vraag: "${vraag.trim()}". Alleen de termen, gescheiden door komma's, geen uitleg.`
+              content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden. Denk breed: gebruik synoniemen, officiële termen, gerelateerde begrippen, praktische varianten en specifieke deelonderwerpen. Bijvoorbeeld bij een vraag over plusuren: genereer ook minuren, jaaruren, JUS, jaarurensystematiek, overuren, compensatie, urenregistratie, arbeidstijd, saldo uren, uitbetaling. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"`
             }],
           }),
         });
