@@ -262,6 +262,41 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Gebruiker permanent verwijderen uit auth.users ----
+    if (body.delete_user && body.delete_user_id) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Niet geautoriseerd" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const deleteUserId = body.delete_user_id;
+      console.log("[Delete] Permanent verwijderen auth user:", deleteUserId);
+
+      try {
+        const { error: delError } = await supabaseAdmin.auth.admin.deleteUser(deleteUserId);
+        if (delError) {
+          console.error("[Delete] Fout:", delError.message);
+          return new Response(
+            JSON.stringify({ error: delError.message, deleted: false }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        console.log("[Delete] Succes");
+        return new Response(
+          JSON.stringify({ deleted: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Delete] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: "Verwijdering mislukt", deleted: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Als medewerker rate limit wil uitbreiden
     if (extend_limit && profile.role === "medewerker") {
       await supabaseAdmin
