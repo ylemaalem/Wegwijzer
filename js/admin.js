@@ -448,7 +448,7 @@
     var hint = document.getElementById(prefix + '-fg-hint');
 
     if (!fgCode) {
-      // Situatie C: geen functiegroep gekozen
+      // Situatie C: geen functiegroep gekozen — toon hint, verberg alles
       zorgFields.forEach(function (el) { el.style.display = 'none'; });
       kantoorFields.forEach(function (el) { el.style.display = 'none'; });
       sharedFields.forEach(function (el) { el.style.display = 'none'; });
@@ -459,7 +459,8 @@
     if (hint) hint.style.display = 'none';
 
     var fg = allFunctiegroepen.find(function (f) { return f.code === fgCode; });
-    var isKantoor = fg && fg.is_kantoor;
+    // Onbekende functiegroep = behandel als zorgfunctie (toon teams etc.)
+    var isKantoor = fg ? fg.is_kantoor : false;
 
     if (isKantoor) {
       // Situatie B: kantoorpersoneel
@@ -1581,7 +1582,16 @@
 
     document.getElementById('edit-profile-id').value = p.id;
     document.getElementById('edit-naam').value = p.naam || '';
-    document.getElementById('edit-functiegroep').value = p.functiegroep || '';
+    var editFgSelect = document.getElementById('edit-functiegroep');
+    editFgSelect.value = p.functiegroep || '';
+    // Als functiegroep niet in dropdown staat, voeg als optie toe
+    if (editFgSelect.value !== (p.functiegroep || '')) {
+      var tempOpt = document.createElement('option');
+      tempOpt.value = p.functiegroep;
+      tempOpt.textContent = p.functiegroep.replace(/_/g, ' ');
+      editFgSelect.appendChild(tempOpt);
+      editFgSelect.value = p.functiegroep;
+    }
     document.getElementById('edit-werkuren').value = p.werkuren || '';
     document.getElementById('edit-afdeling').value = p.afdeling || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
