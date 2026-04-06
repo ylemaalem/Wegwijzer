@@ -151,9 +151,9 @@ Deno.serve(async (req: Request) => {
       const inviteNaam = body.invite_naam || "";
       const inviteRole = body.invite_role || "teamleider";
       const inviteFunctiegroep = body.invite_functiegroep || null;
-      const redirectUrl = body.redirect_url || "";
+      const redirectUrl = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
 
-      console.log("[Invite] Start uitnodiging voor:", inviteEmail, "rol:", inviteRole, "functiegroep:", inviteFunctiegroep);
+      console.log("[Invite] Start uitnodiging voor:", inviteEmail, "rol:", inviteRole, "redirect:", redirectUrl);
 
       try {
         const userData: Record<string, unknown> = {
@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
 
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
           data: userData,
-          redirectTo: redirectUrl || undefined,
+          redirectTo: redirectUrl,
         });
 
         if (inviteError) {
@@ -202,7 +202,7 @@ Deno.serve(async (req: Request) => {
 
       const resendEmail = body.invite_email;
       const resendNaam = body.invite_naam || "";
-      const resendRedirect = body.redirect_url || "";
+      const resendRedirect = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
       console.log("[Resend] Start voor:", resendEmail);
 
       try {
