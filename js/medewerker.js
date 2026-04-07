@@ -826,40 +826,19 @@
       } else if (gekozenScore === 3) {
         modal.querySelector('div > div').innerHTML = '<h3 style="margin-bottom:12px">Oké week 👍</h3><p style="font-size:0.9rem">Heb je ergens hulp bij nodig? Je kunt altijd een vraag stellen aan Wegwijzer.</p><button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
       } else {
-        // Score 1-2: toon vervolgopties
+        // Score 1-2: vraag of medewerker wil delen met leidinggevende
         var vervolg = document.getElementById('vc-vervolg');
         var vervolgTekst = document.getElementById('vc-vervolg-tekst');
         opslaanBtn.style.display = 'none';
         gekozenEl.style.display = 'none';
         document.getElementById('vc-sterren').style.display = 'none';
-        if (vervolgTekst) vervolgTekst.textContent = 'We merken dat het een lastige week was. Wat wil je doen?';
+        if (vervolgTekst) vervolgTekst.textContent = 'Wil je dit delen met je leidinggevende?';
         if (vervolg) vervolg.style.display = '';
 
         document.getElementById('vc-signaal').addEventListener('click', async function () {
           await supabaseClient.from('vertrouwens_scores').update({ signaal_verstuurd: true }).eq('user_id', user.id).eq('week_nummer', weekNummer);
-          await supabaseClient.from('meldingen').insert({
-            tenant_id: profile.tenant_id,
-            type: 'vertrouwenscheck',
-            bericht: 'Een medewerker in jouw team geeft aan dat een check-in welkom is deze week.'
-          });
           modal.style.display = 'none';
-          alert('Signaal verstuurd. Je teamleider ontvangt een anonieme melding.');
-        });
-
-        document.getElementById('vc-tips').addEventListener('click', async function () {
-          var tipsEl = document.getElementById('vc-tips-result');
-          tipsEl.style.display = '';
-          tipsEl.textContent = 'Tips laden...';
-          try {
-            var session2 = await supabaseClient.auth.getSession();
-            var tipResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session2.data.session.access_token },
-              body: JSON.stringify({ generate_tips: true, week_nummer: weekNummer })
-            });
-            var tipData = await tipResp.json();
-            tipsEl.textContent = tipData.tips || 'Geen tips beschikbaar.';
-          } catch (e) { tipsEl.textContent = 'Kon tips niet laden.'; }
+          alert('Je score is gedeeld met je leidinggevende.');
         });
 
         document.getElementById('vc-zelf').addEventListener('click', function () {

@@ -3443,9 +3443,10 @@
     var tbody = document.getElementById('vertrouwen-body');
     if (!tbody) return;
 
+    // Haal scores op met user_id zodat we namen kunnen tonen bij toestemming
     var result = await supabaseClient
       .from('vertrouwens_scores')
-      .select('week_nummer, score, signaal_verstuurd')
+      .select('user_id, week_nummer, score, signaal_verstuurd')
       .order('week_nummer');
 
     if (!result.data || result.data.length === 0) {
@@ -3453,33 +3454,43 @@
       return;
     }
 
-    // Groepeer per week
-    var perWeek = {};
-    var totaalScore = 0;
-    var totaalSignalen = 0;
-    result.data.forEach(function (s) {
-      if (!perWeek[s.week_nummer]) perWeek[s.week_nummer] = { scores: [], signalen: 0 };
-      perWeek[s.week_nummer].scores.push(s.score);
-      if (s.signaal_verstuurd) { perWeek[s.week_nummer].signalen++; totaalSignalen++; }
-      totaalScore += s.score;
-    });
-
-    var gemScore = result.data.length > 0 ? (totaalScore / result.data.length).toFixed(1) : '-';
+    // Statistieken: alleen gedeelde scores tellen voor gemiddelde
+    var gedeeld = result.data.filter(function (s) { return s.signaal_verstuurd; });
     var gemEl = document.getElementById('vc-gem-score');
     var sigEl = document.getElementById('vc-signalen');
-    if (gemEl) gemEl.textContent = gemScore;
-    if (sigEl) sigEl.textContent = totaalSignalen;
+    if (gemEl) {
+      if (gedeeld.length > 0) {
+        var totaal = gedeeld.reduce(function (a, b) { return a + b.score; }, 0);
+        gemEl.textContent = (totaal / gedeeld.length).toFixed(1);
+      } else {
+        gemEl.textContent = '-';
+      }
+    }
+    if (sigEl) sigEl.textContent = gedeeld.length;
 
-    var weeks = Object.keys(perWeek).sort(function (a, b) { return parseInt(a) - parseInt(b); });
-    tbody.innerHTML = weeks.map(function (w) {
-      var data = perWeek[w];
-      var gem = (data.scores.reduce(function (a, b) { return a + b; }, 0) / data.scores.length).toFixed(1);
-      var barWidth = Math.round((parseFloat(gem) / 5) * 100);
+    // Toon alleen scores waar toestemming voor is gegeven (signaal_verstuurd = true)
+    if (gedeeld.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen medewerkers hebben hun score gedeeld.</td></tr>';
+      return;
+    }
+
+    // Zoek namen op
+    var userIds = gedeeld.map(function (s) { return s.user_id; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+    var profielResult = await supabaseClient.from('profiles').select('user_id, naam').in('user_id', userIds);
+    var naamMap = {};
+    if (profielResult.data) {
+      profielResult.data.forEach(function (p) { naamMap[p.user_id] = p.naam; });
+    }
+
+    tbody.innerHTML = gedeeld.map(function (s) {
+      var naam = naamMap[s.user_id] || 'Onbekend';
+      var sterren = '';
+      for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
       return '<tr>' +
-        '<td>Week ' + w + '</td>' +
-        '<td><div style="display:flex;align-items:center;gap:8px"><div style="background:var(--primary);height:8px;border-radius:4px;width:' + barWidth + '%;min-width:4px"></div>' + gem + '</div></td>' +
-        '<td>' + data.scores.length + '</td>' +
-        '<td>' + (data.signalen > 0 ? data.signalen + ' signaal(en)' : '-') + '</td>' +
+        '<td>' + escapeHtml(naam) + '</td>' +
+        '<td>Week ' + s.week_nummer + '</td>' +
+        '<td>' + sterren + ' (' + s.score + '/5)</td>' +
+        '<td><span class="badge badge-goed">Gedeeld</span></td>' +
         '</tr>';
     }).join('');
   }
