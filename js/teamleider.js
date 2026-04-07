@@ -15,6 +15,7 @@
     initTabs();
     initLogout();
     loadHeaderLogo();
+    await loadTlaFunctiegroepen();
     await loadTeamMedewerkers();
     loadTeamGesprekken();
     loadTeamStatistieken();
@@ -149,14 +150,30 @@
 
     console.log('[TL] Gesprekken ophalen voor profiel IDs:', JSON.stringify(teamIds));
 
+    // Probeer eerst alle tenant gesprekken (als RLS policy bestaat)
     var result = await supabaseClient
       .from('conversations')
       .select('id, vraag, feedback, created_at, user_id')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(200);
 
-    console.log('[TL] Gesprekken gevonden:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
+    console.log('[TL] Tenant query:', result.data ? result.data.length + ' gesprekken' : 'FOUT: ' + (result.error ? result.error.message : 'geen data'));
+
+    // Als tenant query geen resultaat geeft, probeer per user_id
+    if (!result.data || result.data.length === 0) {
+      var teamIds2 = teamProfiles.map(function (p) { return p.id; });
+      teamIds2.push(profile.id);
+      if (teamIds2.length > 0) {
+        result = await supabaseClient
+          .from('conversations')
+          .select('id, vraag, feedback, created_at, user_id')
+          .in('user_id', teamIds2)
+          .order('created_at', { ascending: false })
+          .limit(200);
+        console.log('[TL] Fallback per user_id:', result.data ? result.data.length + ' gesprekken' : 'FOUT');
+      }
+    }
 
     if (result.error || !result.data || result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken gevonden.</td></tr>';
@@ -473,6 +490,11 @@
   }
 
   function formatFunctiegroep(fg) {
+    // Zoek eerst in dynamische functiegroepen uit DB
+    if (allFunctiegroepen && allFunctiegroepen.length > 0) {
+      var found = allFunctiegroepen.find(function (f) { return f.code === fg; });
+      if (found) return found.naam;
+    }
     var map = {
       'ambulant_begeleider': 'Ambulant Begeleider',
       'ambulant_persoonlijk_begeleider': 'Ambulant Pers. Begeleider',
@@ -483,6 +505,7 @@
       'stagiaire': 'Stagiaire',
       'zzp_uitzendkracht': 'ZZP / Uitzendkracht'
     };
-    return map[fg] || fg || '-';
+    // Fallback: nette weergave van de code
+    return map[fg] || (fg ? fg.replace(/_/g, ' ').replace(/,/g, ' / ') : '-');
   }
 })();
