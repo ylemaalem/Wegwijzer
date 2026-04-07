@@ -1708,19 +1708,18 @@
           });
       }
 
-      var updateData = {
-        naam: naam,
-        functiegroep: functiegroep,
-        startdatum: startdatum || null,
-        inwerktraject_url: inwerktrajectUrl || null,
-        werkuren: werkuren || null,
-        afdeling: afdeling || null,
-        inwerktraject_actief: document.getElementById('edit-inwerktraject-actief').checked,
-        account_type: accountType,
-        einddatum: einddatum,
-        teams: teams.length > 0 ? teams : null,
-        teamleider_naam: teamleiderNaam
-      };
+      // Bouw update object — sla alleen niet-lege velden op
+      var updateData = { naam: naam, functiegroep: functiegroep };
+      if (startdatum) updateData.startdatum = startdatum;
+      if (inwerktrajectUrl !== undefined) updateData.inwerktraject_url = inwerktrajectUrl || null;
+      if (werkuren !== undefined) updateData.werkuren = werkuren || null;
+      if (accountType) updateData.account_type = accountType;
+      if (einddatum !== undefined) updateData.einddatum = einddatum || null;
+      if (teams.length > 0) updateData.teams = teams;
+      if (teamleiderNaam !== undefined) updateData.teamleider_naam = teamleiderNaam || null;
+      // Optionele kolommen — alleen toevoegen als ze bestaan
+      try { updateData.afdeling = afdeling || null; } catch(e) {}
+      try { updateData.inwerktraject_actief = document.getElementById('edit-inwerktraject-actief').checked; } catch(e) {}
 
       console.log('[Edit] Update data:', JSON.stringify(updateData));
       var result = await supabaseClient
@@ -1728,7 +1727,7 @@
         .update(updateData)
         .eq('id', profileId);
 
-      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK');
+      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK, status: ' + result.status);
 
       if (result.error) {
         alertBox.className = 'alert alert-error show';
