@@ -670,16 +670,17 @@ Deno.serve(async (req: Request) => {
     // ---- 6g. Teamleider informatie ophalen ----
     const { data: teamleiders } = await supabaseAdmin
       .from("teamleiders")
-      .select("naam, email, telefoon, teams")
+      .select("naam, titel, email, telefoon, teams, rol")
       .eq("tenant_id", profile.tenant_id);
 
     let teamleiderContext = "";
     if (teamleiders && teamleiders.length > 0) {
-      // Stuur ALLE teamleiders mee zodat de AI elke vraag over teamleiders kan beantwoorden
-      teamleiderContext = "--- VOLLEDIGE TEAMLEIDERS TABEL ---\n" +
-        teamleiders.map((tl: { naam: string; email: string; telefoon: string; teams: string[] }) =>
-          `Teamleider: ${tl.naam}${tl.telefoon ? `, telefoon: ${tl.telefoon}` : ""}${tl.email ? `, email: ${tl.email}` : ""}${tl.teams && tl.teams.length > 0 ? `, teams: ${tl.teams.join(", ")}` : ""}`
-        ).join("\n");
+      // Stuur ALLE leidinggevenden mee met hun titel
+      teamleiderContext = "--- LEIDINGGEVENDEN EN MANAGERS ---\n" +
+        teamleiders.map((tl: { naam: string; titel: string; email: string; telefoon: string; teams: string[]; rol: string }) => {
+          const label = tl.titel || (tl.rol === 'manager' ? 'Manager' : tl.rol === 'hr' ? 'HR Medewerker' : 'Teamleider');
+          return `${label}: ${tl.naam}${tl.telefoon ? `, telefoon: ${tl.telefoon}` : ""}${tl.email ? `, email: ${tl.email}` : ""}${tl.teams && tl.teams.length > 0 ? `, teams: ${tl.teams.join(", ")}` : ""}`;
+        }).join("\n");
 
       // Markeer de directe teamleider van deze medewerker
       let directeTl = null;
@@ -693,7 +694,8 @@ Deno.serve(async (req: Request) => {
         );
       }
       if (directeTl) {
-        teamleiderContext += `\n\nDE DIRECTE LEIDINGGEVENDE VAN ${(profile.naam || "de medewerker").toUpperCase()} IS: ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
+        const directeLabel = directeTl.titel || (directeTl.rol === 'manager' ? 'Manager' : 'Teamleider');
+        teamleiderContext += `\n\nDE DIRECTE LEIDINGGEVENDE VAN ${(profile.naam || "de medewerker").toUpperCase()} IS: ${directeLabel} ${directeTl.naam}${directeTl.telefoon ? ` (telefoon: ${directeTl.telefoon})` : ""}${directeTl.email ? ` (email: ${directeTl.email})` : ""}.`;
       }
     }
 

@@ -1722,10 +1722,14 @@
         teamleider_naam: teamleiderNaam
       };
 
+      console.log('[Edit] Update data:', JSON.stringify(updateData));
       var result = await supabaseClient
         .from('profiles')
         .update(updateData)
-        .eq('id', profileId);
+        .eq('id', profileId)
+        .select();
+
+      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK, rijen: ' + (result.data ? result.data.length : 0));
 
       if (result.error) {
         alertBox.className = 'alert alert-error show';
@@ -2158,7 +2162,7 @@
 
     var result = await supabaseClient
       .from('teamleiders')
-      .select('id, naam, email, telefoon, teams, rol, afdelingen')
+      .select('id, naam, titel, email, telefoon, teams, rol, afdelingen')
       .eq('tenant_id', tenantId)
       .order('naam', { ascending: true });
 
@@ -2197,6 +2201,7 @@
 
       return '<tr>' +
         '<td>' + escapeHtml(tl.naam) + '</td>' +
+        '<td>' + escapeHtml(tl.titel || '-') + '</td>' +
         '<td>' + escapeHtml(tl.email || '-') + '</td>' +
         '<td>' + escapeHtml(tl.telefoon || '-') + '</td>' +
         '<td><span class="badge badge-admin">' + rolLabel + '</span></td>' +
@@ -2276,6 +2281,7 @@
         var naam = document.getElementById('tl-naam').value.trim();
         var email = document.getElementById('tl-email').value.trim();
         var telefoon = document.getElementById('tl-telefoon').value.trim();
+        var titel = document.getElementById('tl-titel') ? document.getElementById('tl-titel').value.trim() : '';
         var rol = rolSelect ? rolSelect.value : 'teamleider';
         var teams = getCheckedTeams('tl-teams');
 
@@ -2294,6 +2300,7 @@
         var data = {
           tenant_id: tenantId,
           naam: naam,
+          titel: titel || null,
           email: email || null,
           telefoon: telefoon || null,
           rol: rol,
@@ -2390,6 +2397,8 @@
 
     document.getElementById('tl-id').value = tl.id;
     document.getElementById('tl-naam').value = tl.naam || '';
+    var titelEl = document.getElementById('tl-titel');
+    if (titelEl) titelEl.value = tl.titel || '';
     document.getElementById('tl-email').value = tl.email || '';
     document.getElementById('tl-telefoon').value = tl.telefoon || '';
 
