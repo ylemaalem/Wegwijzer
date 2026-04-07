@@ -64,6 +64,18 @@
             <label class="form-label" for="doc-revisiedatum">Revisiedatum</label>
             <input class="form-input" type="date" id="doc-revisiedatum">
           </div>
+          <div class="form-group" style="flex:1;min-width:160px">
+            <label class="form-label" for="doc-map">Map</label>
+            <select class="form-input" id="doc-map">
+              <option value="">Geen map (Overig)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Mappen beheer -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end">
+          <input class="form-input" type="text" id="nieuwe-map-naam" placeholder="Nieuwe map aanmaken..." style="flex:1;padding:8px 12px;font-size:0.85rem">
+          <button class="btn btn-primary" id="add-map-btn" style="width:auto;padding:8px 16px;font-size:0.85rem">+ Map</button>
         </div>
 
         <!-- Upload zone -->
@@ -759,6 +771,13 @@
           <div class="form-group">
             <label class="form-label" for="edit-doc-revisie">Revisiedatum</label>
             <input class="form-input" type="date" id="edit-doc-revisie">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-map">Map</label>
+            <select class="form-input" id="edit-doc-map">
+              <option value="">Geen map (Overig)</option>
+            </select>
           </div>
 
           <div class="modal-actions">

@@ -32,6 +32,7 @@
     initTabs();
     initLogout();
     await loadFunctiegroepen();
+    loadMappen();
     loadDocuments();
     loadMedewerkers();
     loadGesprekken();
@@ -507,6 +508,69 @@
   // DOCUMENTEN
   // =============================================
   var pendingFiles = null;
+  var allMappen = [];
+
+  async function loadMappen() {
+    // Haal unieke mappen op uit documenten
+    var result = await supabaseClient
+      .from('documents')
+      .select('map')
+      .eq('tenant_id', tenantId)
+      .is('user_id', null)
+      .not('map', 'is', null);
+
+    var mapSet = {};
+    if (result.data) {
+      result.data.forEach(function (d) {
+        if (d.map && d.map.trim()) mapSet[d.map.trim()] = true;
+      });
+    }
+    allMappen = Object.keys(mapSet).sort();
+
+    // Vul map dropdowns
+    ['doc-map', 'edit-doc-map'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var current = el.value;
+      el.innerHTML = '<option value="">Geen map (Overig)</option>';
+      allMappen.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        el.appendChild(opt);
+      });
+      el.value = current;
+    });
+  }
+
+  (function initMapBtn() {
+    var btn = document.getElementById('add-map-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var input = document.getElementById('nieuwe-map-naam');
+      var naam = input ? input.value.trim() : '';
+      if (!naam) { alert('Vul een mapnaam in.'); return; }
+      // Maak een dummy document aan om de map te registreren, of voeg gewoon toe aan de dropdown
+      allMappen.push(naam);
+      allMappen.sort();
+      // Vul dropdowns opnieuw
+      ['doc-map', 'edit-doc-map'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = '<option value="">Geen map (Overig)</option>';
+        allMappen.forEach(function (m) {
+          var opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          el.appendChild(opt);
+        });
+      });
+      // Selecteer de nieuwe map
+      var docMap = document.getElementById('doc-map');
+      if (docMap) docMap.value = naam;
+      if (input) input.value = '';
+    });
+  })();
 
   function initUpload() {
     var zone = document.getElementById('upload-zone');
@@ -604,6 +668,8 @@
     var docRevisieEl = document.getElementById('doc-revisiedatum');
     var documenttype = docTypeEl ? docTypeEl.value : null;
     var revisiedatum = docRevisieEl ? docRevisieEl.value : null;
+    var docMapEl = document.getElementById('doc-map');
+    var docMap = docMapEl ? docMapEl.value : null;
 
     // Maak per-bestand voortgangsitems
     var fileItems = [];
@@ -703,8 +769,8 @@
           user_id: null
         };
         if (documenttype) insertData.documenttype = documenttype;
-
         if (revisiedatum) insertData.revisiedatum = revisiedatum;
+        if (docMap) insertData.map = docMap;
 
         var insertResult = await supabaseClient
           .from('documents')
@@ -738,6 +804,7 @@
 
     // Direct lijst verversen
     console.log('[Upload] Klaar met alle bestanden, lijst verversen');
+    await loadMappen();
     await loadDocuments();
 
     // Reset progress UI na 3 seconden
@@ -753,7 +820,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -836,18 +903,29 @@
       });
     }
 
-    tbody.innerHTML = result.data.map(function (doc) {
+    // Groepeer documenten per map
+    var grouped = {};
+    result.data.forEach(function (doc) {
+      var mapNaam = doc.map || 'Overig';
+      if (!grouped[mapNaam]) grouped[mapNaam] = [];
+      grouped[mapNaam].push(doc);
+    });
+
+    // Sorteer mappen: benoemde mappen eerst, Overig laatst
+    var mapKeys = Object.keys(grouped).sort(function (a, b) {
+      if (a === 'Overig') return 1;
+      if (b === 'Overig') return -1;
+      return a.localeCompare(b);
+    });
+
+    function renderDocRow(doc) {
       var datum = new Date(doc.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       });
       var contentStatus = doc.content
         ? '<span style="color:var(--success);font-size:0.75rem" title="Tekst geëxtraheerd">✓</span>'
         : '<span style="color:var(--error);font-size:0.75rem" title="Geen tekst">✗</span>';
-
       var typeLabel = formatDocumentType(doc.documenttype);
-      // versienummer verwijderd
-
-      // Revisie kolom met kleurcodering
       var revisieLabel = '-';
       if (doc.revisiedatum) {
         var color = getRevisieColor(doc.revisiedatum);
@@ -856,7 +934,6 @@
         });
         revisieLabel = '<span style="color:' + color + ';font-weight:600">' + revisieFormatted + '</span>';
       }
-
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
@@ -869,7 +946,16 @@
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
-    }).join('');
+    }
+
+    var html = '';
+    mapKeys.forEach(function (mapNaam) {
+      html += '<tr><td colspan="6" style="background:var(--bg);font-weight:700;font-size:0.85rem;color:var(--primary);padding:10px 12px;border-bottom:2px solid var(--primary)">📁 ' + escapeHtml(mapNaam) + ' (' + grouped[mapNaam].length + ')</td></tr>';
+      grouped[mapNaam].forEach(function (doc) {
+        html += renderDocRow(doc);
+      });
+    });
+    tbody.innerHTML = html;
 
     // Re-apply filter als er al een zoekterm is
     if (searchInput && searchInput.value.trim()) {
@@ -1009,6 +1095,8 @@
     document.getElementById('edit-doc-naam').value = doc.naam || '';
     document.getElementById('edit-doc-type').value = doc.documenttype || 'overig';
     document.getElementById('edit-doc-revisie').value = doc.revisiedatum || '';
+    var editMapEl = document.getElementById('edit-doc-map');
+    if (editMapEl) editMapEl.value = doc.map || '';
 
     var alertBox = document.getElementById('edit-doc-alert');
     if (alertBox) alertBox.className = 'alert';
@@ -1044,6 +1132,8 @@
       var documenttype = document.getElementById('edit-doc-type').value;
       // versienummer verwijderd
       var revisiedatum = document.getElementById('edit-doc-revisie').value || null;
+      var editMapVal = document.getElementById('edit-doc-map');
+      var mapValue = editMapVal ? editMapVal.value || null : null;
 
       if (!naam) {
         alertBox.className = 'alert alert-error show';
@@ -1059,7 +1149,8 @@
         .update({
           naam: naam,
           documenttype: documenttype,
-          revisiedatum: revisiedatum
+          revisiedatum: revisiedatum,
+          map: mapValue
         })
         .eq('id', docId);
 
@@ -1069,6 +1160,7 @@
       } else {
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Document bijgewerkt.';
+        loadMappen();
         loadDocuments();
         setTimeout(function () {
           modal.classList.remove('show');
