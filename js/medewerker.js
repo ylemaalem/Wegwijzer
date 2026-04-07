@@ -43,12 +43,16 @@
         profile = freshResult.data;
         console.log('[Profiel] Vers profiel geladen, naam:', profile.naam);
       } else {
-        profile = e.detail.profile;
-        console.warn('[Profiel] Vers profiel mislukt, fallback:', freshResult.error ? freshResult.error.message : 'geen data');
+        console.error('[Profiel] Verse query mislukt, uitloggen. Error:', freshResult.error ? freshResult.error.message : 'geen data', 'Status:', freshResult.status);
+        await supabaseClient.auth.signOut();
+        window.location.href = appUrl('index.html');
+        return;
       }
     } catch (err) {
-      profile = e.detail.profile;
-      console.error('[Profiel] Exception:', err);
+      console.error('[Profiel] Exception bij ophalen, uitloggen:', err.message || err);
+      await supabaseClient.auth.signOut();
+      window.location.href = appUrl('index.html');
+      return;
     }
     // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true)
     var heeftInwerktraject = profile.inwerktraject_actief === true && !profile.inwerken_afgerond;
