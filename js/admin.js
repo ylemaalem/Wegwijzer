@@ -1008,14 +1008,47 @@
         '</tr>';
     }
 
+    // Lees ingeklapte mappen uit localStorage
+    var ingeklapt = {};
+    try { ingeklapt = JSON.parse(localStorage.getItem('wegwijzer_mappen_ingeklapt') || '{}'); } catch (e) {}
+
     var html = '';
     mapKeys.forEach(function (mapNaam) {
-      html += '<tr><td colspan="6" style="background:var(--bg);font-weight:700;font-size:0.85rem;color:var(--primary);padding:10px 12px;border-bottom:2px solid var(--primary)">📁 ' + escapeHtml(mapNaam) + ' (' + grouped[mapNaam].length + ')</td></tr>';
+      var isIngeklapt = ingeklapt[mapNaam] === true;
+      var icoon = isIngeklapt ? '📁' : '📂';
+      html += '<tr class="map-header" data-map="' + escapeHtml(mapNaam) + '" style="cursor:pointer;user-select:none">' +
+        '<td colspan="6" style="background:var(--bg);font-weight:700;font-size:0.85rem;color:var(--primary);padding:10px 12px;border-bottom:2px solid var(--primary)">' +
+        '<span class="map-icoon">' + icoon + '</span> ' + escapeHtml(mapNaam) + ' (' + grouped[mapNaam].length + ')' +
+        '</td></tr>';
       grouped[mapNaam].forEach(function (doc) {
-        html += renderDocRow(doc);
+        html += renderDocRow(doc).replace('<tr ', '<tr data-map-groep="' + escapeHtml(mapNaam) + '" ' + (isIngeklapt ? 'style="display:none" ' : '') );
       });
     });
     tbody.innerHTML = html;
+
+    // Event delegation voor map headers
+    if (!tbody.dataset.mapListenerBound) {
+      tbody.dataset.mapListenerBound = '1';
+      tbody.addEventListener('click', function (e) {
+        var header = e.target.closest('.map-header');
+        if (!header) return;
+        var mapNaam = header.getAttribute('data-map');
+        var rijen = tbody.querySelectorAll('tr[data-map-groep="' + mapNaam + '"]');
+        var icoonEl = header.querySelector('.map-icoon');
+
+        // Toggle
+        var nuIngeklapt = rijen.length > 0 && rijen[0].style.display !== 'none';
+        rijen.forEach(function (r) { r.style.display = nuIngeklapt ? 'none' : ''; });
+        if (icoonEl) icoonEl.textContent = nuIngeklapt ? '📁' : '📂';
+
+        // Sla staat op
+        try {
+          var staat = JSON.parse(localStorage.getItem('wegwijzer_mappen_ingeklapt') || '{}');
+          staat[mapNaam] = nuIngeklapt;
+          localStorage.setItem('wegwijzer_mappen_ingeklapt', JSON.stringify(staat));
+        } catch (e) {}
+      });
+    }
 
     // Re-apply filter als er al een zoekterm is
     if (searchInput && searchInput.value.trim()) {
