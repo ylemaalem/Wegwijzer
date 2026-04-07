@@ -30,14 +30,24 @@
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
     user = e.detail.user;
-    // Haal altijd vers profiel op uit database (niet gecached)
-    var freshResult = await supabaseClient
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-    console.log('[Profiel] Vers profiel:', freshResult.error ? 'FOUT: ' + freshResult.error.message : 'OK, naam: ' + (freshResult.data && freshResult.data.naam));
-    profile = freshResult.data || e.detail.profile;
+    // Haal altijd vers profiel op uit database
+    try {
+      var freshResult = await supabaseClient
+        .from('profiles')
+        .select('naam, role, functiegroep, startdatum, tenant_id, teams, teamleider_naam, werkuren, account_type, einddatum, inwerktraject_url, inwerken_afgerond, inwerktraject_actief')
+        .eq('user_id', user.id)
+        .single();
+      if (freshResult.data) {
+        profile = freshResult.data;
+        console.log('[Profiel] Vers profiel geladen, naam:', profile.naam);
+      } else {
+        profile = e.detail.profile;
+        console.warn('[Profiel] Vers profiel mislukt, fallback:', freshResult.error ? freshResult.error.message : 'geen data');
+      }
+    } catch (err) {
+      profile = e.detail.profile;
+      console.error('[Profiel] Exception:', err);
+    }
     // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true)
     var heeftInwerktraject = profile.inwerktraject_actief === true && !profile.inwerken_afgerond;
     weekNummer = heeftInwerktraject ? berekenWeekNummer(profile.startdatum) : 99;
