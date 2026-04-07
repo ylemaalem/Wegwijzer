@@ -1733,7 +1733,7 @@
       } else {
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Medewerker bijgewerkt.';
-        loadMedewerkers();
+        await loadMedewerkers();
         setTimeout(function () {
           modal.classList.remove('show');
         }, 1500);
