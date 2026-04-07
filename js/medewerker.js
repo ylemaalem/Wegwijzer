@@ -34,7 +34,7 @@
     try {
       var freshResult = await supabaseClient
         .from('profiles')
-        .select('naam, role, functiegroep, startdatum, tenant_id, teams, teamleider_naam, werkuren, account_type, einddatum, inwerktraject_url, inwerken_afgerond, inwerktraject_actief')
+        .select('*')
         .eq('user_id', user.id)
         .single();
       if (freshResult.data) {
