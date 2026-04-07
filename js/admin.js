@@ -1949,7 +1949,7 @@
   // VERBETERPUNTEN
   // =============================================
   async function loadVerbeterpunten() {
-    var tbody = document.getElementById('verbeter-body');
+    var tbody = document.getElementById('verbeterpunten-body');
     if (!tbody) return;
 
     // Haal alle gesprekken op met feedback niet_goed
