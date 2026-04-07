@@ -11,6 +11,8 @@
 
   async function checkAuth() {
     try {
+      // Ververs JWT sessietoken zodat user_metadata actueel is
+      await supabaseClient.auth.refreshSession();
       var result = await supabaseClient.auth.getSession();
       var session = result.data.session;
 
