@@ -1726,10 +1726,9 @@
       var result = await supabaseClient
         .from('profiles')
         .update(updateData)
-        .eq('id', profileId)
-        .select();
+        .eq('id', profileId);
 
-      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK, rijen: ' + (result.data ? result.data.length : 0));
+      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK');
 
       if (result.error) {
         alertBox.className = 'alert alert-error show';
@@ -2162,7 +2161,7 @@
 
     var result = await supabaseClient
       .from('teamleiders')
-      .select('id, naam, titel, email, telefoon, teams, rol, afdelingen')
+      .select('*')
       .eq('tenant_id', tenantId)
       .order('naam', { ascending: true });
 
