@@ -30,6 +30,8 @@
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
     user = e.detail.user;
+    console.log('[Auth] user.id:', user.id, 'email:', user.email);
+    console.log('[Auth] route-guard profiel naam:', e.detail.profile ? e.detail.profile.naam : '(geen)');
     // Haal altijd vers profiel op uit database
     try {
       var freshResult = await supabaseClient
