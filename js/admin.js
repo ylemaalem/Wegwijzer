@@ -1733,6 +1733,27 @@
         alertBox.className = 'alert alert-error show';
         alertMsg.textContent = 'Opslaan mislukt: ' + result.error.message;
       } else {
+        // Update ook auth.users metadata via Edge Function
+        var huidigProfiel2 = allProfiles.find(function (pr) { return pr.id === profileId; });
+        if (huidigProfiel2 && huidigProfiel2.user_id) {
+          try {
+            var session = await supabaseClient.auth.getSession();
+            var token = session.data.session.access_token;
+            await fetch(SUPABASE_URL + '/functions/v1/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({
+                update_user_meta: true,
+                update_user_id: huidigProfiel2.user_id,
+                user_metadata: { naam: naam, functiegroep: functiegroep }
+              })
+            });
+            console.log('[Edit] Auth metadata bijgewerkt');
+          } catch (metaErr) {
+            console.error('[Edit] Auth metadata update fout:', metaErr);
+          }
+        }
+
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Medewerker bijgewerkt.';
         await loadMedewerkers();

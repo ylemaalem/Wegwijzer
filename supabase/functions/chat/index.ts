@@ -274,6 +274,42 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Auth user metadata bijwerken ----
+    if (body.update_user_meta && body.update_user_id) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Niet geautoriseerd" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(body.update_user_id, {
+          user_metadata: body.user_metadata || {},
+        });
+
+        if (updateErr) {
+          console.error("[UpdateMeta] Fout:", updateErr.message);
+          return new Response(
+            JSON.stringify({ error: updateErr.message }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        console.log("[UpdateMeta] OK voor user:", body.update_user_id);
+        return new Response(
+          JSON.stringify({ updated: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[UpdateMeta] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: "Update mislukt" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- Gebruiker permanent verwijderen uit auth.users ----
     if (body.delete_user && body.delete_user_id) {
       if (profile.role !== "admin") {
