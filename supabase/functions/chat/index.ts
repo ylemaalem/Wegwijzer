@@ -274,6 +274,189 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Weekstart briefing genereren ----
+    if (body.generate_briefing && body.week_nummer) {
+      const wk = body.week_nummer;
+      const fg = profile.functiegroep || "medewerker";
+      console.log("[Briefing] Genereren voor week", wk, "functiegroep:", fg);
+
+      // Check of briefing al bestaat
+      const { data: bestaand } = await supabaseAdmin
+        .from("weekstart_briefings")
+        .select("briefing_tekst")
+        .eq("user_id", user.id)
+        .eq("week_nummer", wk)
+        .limit(1);
+
+      if (bestaand && bestaand.length > 0) {
+        return new Response(
+          JSON.stringify({ briefing: bestaand[0].briefing_tekst, cached: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Haal top 3 documenten op basis van weeknummer + functiegroep
+      const { data: docs } = await supabaseAdmin
+        .from("documents")
+        .select("naam, content")
+        .eq("tenant_id", profile.tenant_id)
+        .is("user_id", null)
+        .not("content", "is", null)
+        .limit(10);
+
+      let docContext = "";
+      if (docs && docs.length > 0) {
+        const searchTerm = ("week " + wk + " " + fg.replace(/_/g, " ")).toLowerCase();
+        const scored = docs.map((d: {naam: string; content: string}) => {
+          const lower = (d.content + " " + d.naam).toLowerCase();
+          let score = 0;
+          searchTerm.split(/\s+/).forEach((w: string) => {
+            if (w.length > 2 && lower.indexOf(w) !== -1) score++;
+          });
+          return { ...d, score };
+        }).sort((a: {score:number}, b: {score:number}) => b.score - a.score).slice(0, 3);
+
+        docContext = scored.map((d: {naam:string; content:string}) =>
+          "--- " + d.naam + " ---\n" + d.content.substring(0, 3000)
+        ).join("\n\n");
+      }
+
+      try {
+        const briefResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 256,
+            messages: [{
+              role: "user",
+              content: `Je bent een inwerkcoach voor een zorgmedewerker. Week: ${wk}. Functiegroep: ${fg.replace(/_/g, " ")}. Gebruik de onderstaande documenten om concrete focuspunten te benoemen voor deze week. Wees kort, warm en praktisch. Maximaal 4 zinnen. Begin met: 'Goedemorgen, je bent nu in week ${wk} van je inwerktraject.'\n\n${docContext || "Geen documenten beschikbaar."}`
+            }],
+          }),
+        });
+
+        const briefResult = await briefResp.json();
+        const briefText = briefResult.content?.[0]?.text || "Welkom in week " + wk + "!";
+
+        await supabaseAdmin.from("weekstart_briefings").insert({
+          user_id: user.id,
+          week_nummer: wk,
+          briefing_tekst: briefText,
+        });
+
+        return new Response(
+          JSON.stringify({ briefing: briefText, cached: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Briefing] Fout:", err);
+        return new Response(
+          JSON.stringify({ briefing: "Welkom in week " + wk + "! Succes deze week.", cached: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // ---- Vertrouwenscheck tips genereren ----
+    if (body.generate_tips && body.week_nummer) {
+      const fg = profile.functiegroep || "medewerker";
+      try {
+        const tipResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 256,
+            messages: [{
+              role: "user",
+              content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.`
+            }],
+          }),
+        });
+        const tipResult = await tipResp.json();
+        return new Response(
+          JSON.stringify({ tips: tipResult.content?.[0]?.text || "" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch { /* skip */ }
+    }
+
+    // ---- Document aanvraag concept genereren ----
+    if (body.generate_document_concept && body.vraag_tekst) {
+      try {
+        const docResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 512,
+            messages: [{
+              role: "user",
+              content: `Schrijf een beknopt informatiedocument voor zorgmedewerkers over: ${body.vraag_tekst}. Gebruik een professionele maar toegankelijke toon. Structuur: titel, inleiding, kern (max 3 punten), afsluiting. Maximaal 300 woorden. Nederlands.`
+            }],
+          }),
+        });
+        const docResult = await docResp.json();
+        const concept = docResult.content?.[0]?.text || "";
+
+        await supabaseAdmin.from("document_aanvragen").insert({
+          user_id: user.id,
+          vraag: body.vraag_tekst,
+          concept_document: concept,
+        });
+
+        return new Response(
+          JSON.stringify({ concept: concept, saved: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[DocConcept] Fout:", err);
+        return new Response(
+          JSON.stringify({ error: "Concept genereren mislukt" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // ---- Rol-wissel vergelijking genereren ----
+    if (body.generate_rolwissel && body.oude_functie && body.nieuwe_functie) {
+      try {
+        const rwResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 512,
+            messages: [{
+              role: "user",
+              content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.`
+            }],
+          }),
+        });
+        const rwResult = await rwResp.json();
+        return new Response(
+          JSON.stringify({ vergelijking: rwResult.content?.[0]?.text || "" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch { /* skip */ }
+    }
+
     // ---- Auth user metadata bijwerken ----
     if (body.update_user_meta && body.update_user_id) {
       if (profile.role !== "admin") {

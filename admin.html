@@ -34,6 +34,8 @@
       <button class="tab-btn" data-tab="statistieken">Statistieken</button>
       <button class="tab-btn" data-tab="rapporten">Rapporten</button>
       <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
+      <button class="tab-btn" data-tab="doc-aanvragen">Doc. aanvragen</button>
+      <button class="tab-btn" data-tab="vertrouwen">Vertrouwen</button>
       <button class="tab-btn" data-tab="teamleiders">Leidinggevende/HR</button>
       <button class="tab-btn" data-tab="privacy">Privacy verzoeken</button>
       <button class="tab-btn" data-tab="instellingen">Instellingen</button>
@@ -343,6 +345,44 @@
       </section>
 
       <!-- ========== TAB: TEAMLEIDERS ========== -->
+      <!-- ========== TAB: DOCUMENT AANVRAGEN ========== -->
+      <section class="tab-content" id="tab-doc-aanvragen">
+        <h2 class="section-title">Document aanvragen</h2>
+        <p class="section-subtitle">Aanvragen van medewerkers voor nieuwe kennisbank documenten.</p>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Datum</th><th>Vraag</th><th>Concept</th><th>Status</th><th>Actie</th></tr></thead>
+            <tbody id="doc-aanvragen-body">
+              <tr><td colspan="5" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: VERTROUWEN ========== -->
+      <section class="tab-content" id="tab-vertrouwen">
+        <h2 class="section-title">Vertrouwenscheck</h2>
+        <p class="section-subtitle">Anonieme gemiddelde scores per week van het team.</p>
+        <div class="stats-grid" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-value" id="vc-gem-score">-</div>
+            <div class="stat-label">Gem. score</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="vc-signalen">0</div>
+            <div class="stat-label">Signalen</div>
+          </div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Week</th><th>Gem. score</th><th>Aantal</th><th>Signalen</th></tr></thead>
+            <tbody id="vertrouwen-body">
+              <tr><td colspan="4" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="tab-content" id="tab-teamleiders">
         <h2 class="section-title">Leidinggevende/HR beheren</h2>
 

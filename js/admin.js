@@ -52,6 +52,8 @@
     initRapportBtn();
     loadPrivacyVerzoeken();
     initFunctiegroepFormToggle();
+    loadDocumentAanvragen();
+    loadVertrouwensData();
   });
 
   // =============================================
@@ -1849,14 +1851,18 @@
       // Check of functiegroep is gewijzigd — log in functie_historie
       var huidigProfiel = allProfiles.find(function (pr) { return pr.id === profileId; });
       if (huidigProfiel && huidigProfiel.functiegroep && huidigProfiel.functiegroep !== functiegroep) {
-        await supabaseClient
-          .from('functie_historie')
-          .insert({
+        // Log functiewijziging
+        try {
+          await supabaseClient.from('functie_historie').insert({
             profile_id: profileId,
             vorige_functie: huidigProfiel.functiegroep,
             nieuwe_functie: functiegroep,
             gewijzigd_op: new Date().toISOString()
           });
+        } catch (e) { /* functie_historie tabel bestaat mogelijk niet */ }
+        // Rol-wissel: sla oude functie op en reset gezien-status
+        updateData.vorige_functiegroep = huidigProfiel.functiegroep;
+        updateData.rolwissel_gezien = false;
       }
 
       // Bouw update object — sla alleen niet-lege velden op
@@ -3330,7 +3336,6 @@
   };
 
   window.handlePrivacyCorrectie = function (email) {
-    // Open medewerker profiel via zoeken
     var profiel = allProfiles.find(function (p) { return p.email === email; });
     if (profiel) {
       window.editMedewerker(profiel.id);
@@ -3338,5 +3343,112 @@
       alert('Profiel niet gevonden.');
     }
   };
+
+  // =============================================
+  // DOCUMENT AANVRAGEN
+  // =============================================
+  async function loadDocumentAanvragen() {
+    var tbody = document.getElementById('doc-aanvragen-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('document_aanvragen')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen document aanvragen.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = result.data.map(function (da) {
+      var datum = new Date(da.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var statusBadge = da.status === 'nieuw' ? '<span class="badge badge-open">Nieuw</span>'
+        : da.status === 'gepubliceerd' ? '<span class="badge badge-goed">Gepubliceerd</span>'
+        : '<span class="badge badge-niet-goed">Afgewezen</span>';
+      var acties = da.status === 'nieuw'
+        ? '<button class="btn-icon" onclick="window.publiceerDocAanvraag(\'' + da.id + '\')" title="Publiceer" style="color:var(--success)">✅</button>' +
+          '<button class="btn-icon btn-icon-danger" onclick="window.afwijsDocAanvraag(\'' + da.id + '\')" title="Afwijzen">❌</button>'
+        : '';
+      return '<tr>' +
+        '<td>' + datum + '</td>' +
+        '<td><div class="answer-preview">' + escapeHtml(da.vraag) + '</div></td>' +
+        '<td><div class="answer-preview">' + escapeHtml(da.concept_document || '-') + '</div></td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + acties + '</td></tr>';
+    }).join('');
+  }
+
+  window.publiceerDocAanvraag = async function (id) {
+    var result = await supabaseClient.from('document_aanvragen').select('*').eq('id', id).single();
+    if (!result.data) return;
+    var da = result.data;
+
+    // Voeg toe als document
+    await supabaseClient.from('documents').insert({
+      tenant_id: tenantId,
+      naam: 'Aanvraag: ' + da.vraag.substring(0, 60),
+      bestandspad: '',
+      content: da.concept_document,
+      documenttype: 'overig'
+    });
+
+    await supabaseClient.from('document_aanvragen').update({ status: 'gepubliceerd' }).eq('id', id);
+    loadDocumentAanvragen();
+    loadDocuments();
+  };
+
+  window.afwijsDocAanvraag = async function (id) {
+    await supabaseClient.from('document_aanvragen').update({ status: 'afgewezen' }).eq('id', id);
+    loadDocumentAanvragen();
+  };
+
+  // =============================================
+  // VERTROUWENSCHECK DATA
+  // =============================================
+  async function loadVertrouwensData() {
+    var tbody = document.getElementById('vertrouwen-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('vertrouwens_scores')
+      .select('week_nummer, score, signaal_verstuurd')
+      .order('week_nummer');
+
+    if (!result.data || result.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Nog geen vertrouwenscheck data.</td></tr>';
+      return;
+    }
+
+    // Groepeer per week
+    var perWeek = {};
+    var totaalScore = 0;
+    var totaalSignalen = 0;
+    result.data.forEach(function (s) {
+      if (!perWeek[s.week_nummer]) perWeek[s.week_nummer] = { scores: [], signalen: 0 };
+      perWeek[s.week_nummer].scores.push(s.score);
+      if (s.signaal_verstuurd) { perWeek[s.week_nummer].signalen++; totaalSignalen++; }
+      totaalScore += s.score;
+    });
+
+    var gemScore = result.data.length > 0 ? (totaalScore / result.data.length).toFixed(1) : '-';
+    var gemEl = document.getElementById('vc-gem-score');
+    var sigEl = document.getElementById('vc-signalen');
+    if (gemEl) gemEl.textContent = gemScore;
+    if (sigEl) sigEl.textContent = totaalSignalen;
+
+    var weeks = Object.keys(perWeek).sort(function (a, b) { return parseInt(a) - parseInt(b); });
+    tbody.innerHTML = weeks.map(function (w) {
+      var data = perWeek[w];
+      var gem = (data.scores.reduce(function (a, b) { return a + b; }, 0) / data.scores.length).toFixed(1);
+      var barWidth = Math.round((parseFloat(gem) / 5) * 100);
+      return '<tr>' +
+        '<td>Week ' + w + '</td>' +
+        '<td><div style="display:flex;align-items:center;gap:8px"><div style="background:var(--primary);height:8px;border-radius:4px;width:' + barWidth + '%;min-width:4px"></div>' + gem + '</div></td>' +
+        '<td>' + data.scores.length + '</td>' +
+        '<td>' + (data.signalen > 0 ? data.signalen + ' signaal(en)' : '-') + '</td>' +
+        '</tr>';
+    }).join('');
+  }
 
 })();

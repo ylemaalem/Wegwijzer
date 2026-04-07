@@ -68,6 +68,12 @@
     initLogout();
     initSearch();
     laadTenantInstellingen();
+    // Nieuwe features
+    if (weekNummer <= 6) {
+      checkWeekstartBriefing();
+      checkVertrouwenscheck();
+    }
+    checkRolwissel();
   });
 
   // =============================================
@@ -522,6 +528,17 @@
     info.textContent = 'Aanpasbaar tot ' + verloopt.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
     feedbackRow.appendChild(info);
 
+    // Bij negatieve feedback: toon document aanvraag knop
+    if (waarde === 'niet_goed') {
+      // Zoek de vraag uit het gesprek
+      var msgRow = feedbackRow.closest('.message-row');
+      var prevRow = msgRow ? msgRow.previousElementSibling : null;
+      var vraagTekst = prevRow ? (prevRow.querySelector('.chat-bubble') || {}).textContent || '' : '';
+      if (vraagTekst) {
+        addDocumentAanvraagKnop(vraagTekst, feedbackRow);
+      }
+    }
+
     // Na 10 minuten: definitief vergrendelen
     setTimeout(function () {
       activeBtn.disabled = true;
@@ -715,6 +732,210 @@
   }
 
   // =============================================
+  // =============================================
+  // WEEKSTART BRIEFING
+  // =============================================
+  async function checkWeekstartBriefing() {
+    // Alleen op maandag of als nog geen briefing gezien
+    var dag = new Date().getDay(); // 0=zo, 1=ma
+    if (dag !== 1 && dag !== 0) return; // Alleen ma (en zo voor test)
+
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ generate_briefing: true, week_nummer: weekNummer })
+      });
+      var data = await resp.json();
+
+      if (data.briefing) {
+        var container = document.getElementById('weekstart-briefing');
+        var header = document.getElementById('briefing-header');
+        var tekst = document.getElementById('briefing-tekst');
+        var sluitBtn = document.getElementById('briefing-sluit');
+
+        if (container && header && tekst) {
+          header.textContent = 'Week ' + weekNummer + ' van 6';
+          tekst.textContent = data.briefing;
+          container.style.display = '';
+
+          sluitBtn.addEventListener('click', function () {
+            container.style.display = 'none';
+            // Markeer als gelezen
+            supabaseClient.from('weekstart_briefings')
+              .update({ gelezen: true })
+              .eq('user_id', user.id)
+              .eq('week_nummer', weekNummer);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[Briefing] Fout:', err);
+    }
+  }
+
+  // =============================================
+  // VERTROUWENSCHECK
+  // =============================================
+  async function checkVertrouwenscheck() {
+    var dag = new Date().getDay();
+    if (dag !== 5) return; // Alleen op vrijdag
+
+    // Check of al ingevuld deze week
+    var bestaand = await supabaseClient
+      .from('vertrouwens_scores')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('week_nummer', weekNummer)
+      .limit(1);
+
+    if (bestaand.data && bestaand.data.length > 0) return; // Al ingevuld
+
+    var modal = document.getElementById('vertrouwenscheck-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    var gekozenScore = 0;
+    var sterren = document.querySelectorAll('#vc-sterren span');
+    var opslaanBtn = document.getElementById('vc-opslaan');
+    var gekozenEl = document.getElementById('vc-gekozen');
+
+    sterren.forEach(function (s) {
+      s.addEventListener('click', function () {
+        gekozenScore = parseInt(s.getAttribute('data-score'));
+        sterren.forEach(function (st, idx) {
+          st.style.opacity = idx < gekozenScore ? '1' : '0.3';
+        });
+        gekozenEl.textContent = gekozenScore + ' van 5';
+        opslaanBtn.disabled = false;
+      });
+    });
+
+    opslaanBtn.addEventListener('click', async function () {
+      await supabaseClient.from('vertrouwens_scores').insert({
+        user_id: user.id,
+        week_nummer: weekNummer,
+        score: gekozenScore
+      });
+
+      if (gekozenScore >= 4) {
+        modal.querySelector('div > div').innerHTML = '<h3 style="margin-bottom:12px">Goed bezig! 🎉</h3><p style="font-size:0.9rem">Fijn dat je je zeker voelt. Ga zo door!</p><button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
+      } else if (gekozenScore === 3) {
+        modal.querySelector('div > div').innerHTML = '<h3 style="margin-bottom:12px">Oké week 👍</h3><p style="font-size:0.9rem">Heb je ergens hulp bij nodig? Je kunt altijd een vraag stellen aan Wegwijzer.</p><button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
+      } else {
+        // Score 1-2: toon vervolgopties
+        var vervolg = document.getElementById('vc-vervolg');
+        var vervolgTekst = document.getElementById('vc-vervolg-tekst');
+        opslaanBtn.style.display = 'none';
+        gekozenEl.style.display = 'none';
+        document.getElementById('vc-sterren').style.display = 'none';
+        if (vervolgTekst) vervolgTekst.textContent = 'We merken dat het een lastige week was. Wat wil je doen?';
+        if (vervolg) vervolg.style.display = '';
+
+        document.getElementById('vc-signaal').addEventListener('click', async function () {
+          await supabaseClient.from('vertrouwens_scores').update({ signaal_verstuurd: true }).eq('user_id', user.id).eq('week_nummer', weekNummer);
+          await supabaseClient.from('meldingen').insert({
+            tenant_id: profile.tenant_id,
+            type: 'vertrouwenscheck',
+            bericht: 'Een medewerker in jouw team geeft aan dat een check-in welkom is deze week.'
+          });
+          modal.style.display = 'none';
+          alert('Signaal verstuurd. Je teamleider ontvangt een anonieme melding.');
+        });
+
+        document.getElementById('vc-tips').addEventListener('click', async function () {
+          var tipsEl = document.getElementById('vc-tips-result');
+          tipsEl.style.display = '';
+          tipsEl.textContent = 'Tips laden...';
+          try {
+            var session2 = await supabaseClient.auth.getSession();
+            var tipResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session2.data.session.access_token },
+              body: JSON.stringify({ generate_tips: true, week_nummer: weekNummer })
+            });
+            var tipData = await tipResp.json();
+            tipsEl.textContent = tipData.tips || 'Geen tips beschikbaar.';
+          } catch (e) { tipsEl.textContent = 'Kon tips niet laden.'; }
+        });
+
+        document.getElementById('vc-zelf').addEventListener('click', function () {
+          modal.style.display = 'none';
+        });
+      }
+    });
+  }
+
+  // =============================================
+  // ROL-WISSEL CHECK
+  // =============================================
+  async function checkRolwissel() {
+    if (!profile.vorige_functiegroep || profile.rolwissel_gezien !== false) return;
+
+    var modal = document.getElementById('rolwissel-modal');
+    if (!modal) return;
+
+    var titel = document.getElementById('rw-titel');
+    var inhoud = document.getElementById('rw-inhoud');
+    var begrepBtn = document.getElementById('rw-begrepen');
+
+    titel.textContent = 'Je hebt een nieuwe rol: ' + (profile.functiegroep || '').replace(/_/g, ' ') + ' 🎉';
+    inhoud.textContent = 'Vergelijking laden...';
+    modal.style.display = 'flex';
+
+    try {
+      var session3 = await supabaseClient.auth.getSession();
+      var rwResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session3.data.session.access_token },
+        body: JSON.stringify({
+          generate_rolwissel: true,
+          oude_functie: profile.vorige_functiegroep,
+          nieuwe_functie: profile.functiegroep
+        })
+      });
+      var rwData = await rwResp.json();
+      inhoud.innerHTML = '<p style="margin-bottom:8px"><strong>Verschillen met je vorige rol:</strong></p>' + (rwData.vergelijking || '').replace(/\n/g, '<br>');
+    } catch (e) {
+      inhoud.textContent = 'Kon vergelijking niet laden.';
+    }
+
+    begrepBtn.addEventListener('click', async function () {
+      await supabaseClient.from('profiles').update({ rolwissel_gezien: true }).eq('user_id', user.id);
+      modal.style.display = 'none';
+    });
+  }
+
+  // =============================================
+  // DOCUMENT AANVRAAG KNOP (bij duim omlaag)
+  // =============================================
+  function addDocumentAanvraagKnop(vraagTekst, container) {
+    var btn = document.createElement('button');
+    btn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:0.7rem;cursor:pointer;color:var(--text-muted);margin-top:4px;font-family:var(--font)';
+    btn.textContent = '📄 Vraag document aan over dit onderwerp';
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      btn.textContent = 'Aanvraag versturen...';
+      try {
+        var session4 = await supabaseClient.auth.getSession();
+        await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session4.data.session.access_token },
+          body: JSON.stringify({ generate_document_concept: true, vraag_tekst: vraagTekst })
+        });
+        btn.textContent = '✓ Aanvraag ontvangen';
+        btn.style.color = 'var(--success)';
+      } catch (e) {
+        btn.textContent = 'Aanvraag mislukt';
+        btn.style.color = 'var(--error)';
+      }
+    });
+    container.appendChild(btn);
+  }
+
   // RATE LIMIT POPUP
   // =============================================
   function toonRateLimitPopup(token) {
