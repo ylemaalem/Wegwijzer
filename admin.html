@@ -72,12 +72,6 @@
           </div>
         </div>
 
-        <!-- Mappen beheer -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end">
-          <input class="form-input" type="text" id="nieuwe-map-naam" placeholder="Nieuwe map aanmaken..." style="flex:1;padding:8px 12px;font-size:0.85rem">
-          <button class="btn btn-primary" id="add-map-btn" style="width:auto;padding:8px 16px;font-size:0.85rem">+ Map</button>
-        </div>
-
         <!-- Upload zone -->
         <div class="upload-zone" id="upload-zone">
           <div class="upload-zone-icon">📄</div>
@@ -136,6 +130,26 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Bulk verplaats -->
+        <div id="bulk-move-bar" style="display:none;margin-bottom:16px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:0.85rem;font-weight:600">Verplaats naar:</span>
+            <select class="form-input" id="bulk-move-map" style="flex:1;padding:8px 12px;font-size:0.85rem">
+              <option value="">Overig (geen map)</option>
+            </select>
+            <button class="btn btn-primary" id="bulk-move-btn" style="width:auto;padding:8px 16px;font-size:0.85rem">Verplaatsen</button>
+          </div>
+        </div>
+
+        <!-- Mappenbeheer -->
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
+        <h3 class="section-title" style="font-size:1rem">Mappen beheren</h3>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:end">
+          <input class="form-input" type="text" id="nieuwe-map-naam" placeholder="Nieuwe map aanmaken..." style="flex:1;padding:8px 12px;font-size:0.85rem">
+          <button class="btn btn-primary" id="add-map-btn" style="width:auto;padding:8px 16px;font-size:0.85rem">+ Map</button>
+        </div>
+        <div id="mappen-lijst"></div>
       </section>
 
       <!-- ========== TAB: MEDEWERKERS ========== -->

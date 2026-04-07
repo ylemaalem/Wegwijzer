@@ -511,28 +511,28 @@
   var allMappen = [];
 
   async function loadMappen() {
-    // Haal unieke mappen op uit documenten
+    // Haal mappen op uit document_mappen tabel
     var result = await supabaseClient
-      .from('documents')
-      .select('map')
+      .from('document_mappen')
+      .select('id, naam')
       .eq('tenant_id', tenantId)
-      .is('user_id', null)
-      .not('map', 'is', null);
+      .order('naam');
 
-    var mapSet = {};
-    if (result.data) {
-      result.data.forEach(function (d) {
-        if (d.map && d.map.trim()) mapSet[d.map.trim()] = true;
-      });
-    }
-    allMappen = Object.keys(mapSet).sort();
+    allMappen = result.data ? result.data.map(function (m) { return m.naam; }) : [];
 
-    // Vul map dropdowns
-    ['doc-map', 'edit-doc-map'].forEach(function (id) {
+    // Vul alle map dropdowns
+    populateMapDropdowns();
+
+    // Render mappen lijst
+    renderMappenLijst(result.data || []);
+  }
+
+  function populateMapDropdowns() {
+    ['doc-map', 'edit-doc-map', 'bulk-move-map'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       var current = el.value;
-      el.innerHTML = '<option value="">Geen map (Overig)</option>';
+      el.innerHTML = '<option value="">Overig (geen map)</option>';
       allMappen.forEach(function (m) {
         var opt = document.createElement('option');
         opt.value = m;
@@ -543,6 +543,49 @@
     });
   }
 
+  function renderMappenLijst(mappen) {
+    var container = document.getElementById('mappen-lijst');
+    if (!container) return;
+    if (mappen.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen mappen aangemaakt.</p>';
+      return;
+    }
+    container.innerHTML = mappen.map(function (m) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<span style="font-size:1rem">📁</span>' +
+        '<span style="font-weight:600;font-size:0.85rem;flex:1">' + escapeHtml(m.naam) + '</span>' +
+        '<button class="btn-icon" onclick="window.renameMap(\'' + m.id + '\', \'' + escapeHtml(m.naam) + '\')" title="Hernoemen">✏️</button>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteMap(\'' + m.id + '\', \'' + escapeHtml(m.naam) + '\')" title="Verwijderen">🗑️</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  window.renameMap = async function (id, oudeNaam) {
+    var nieuweNaam = prompt('Nieuwe mapnaam:', oudeNaam);
+    if (!nieuweNaam || nieuweNaam.trim() === oudeNaam) return;
+    nieuweNaam = nieuweNaam.trim();
+
+    // Update de mapnaam in de mappen tabel
+    await supabaseClient.from('document_mappen').update({ naam: nieuweNaam }).eq('id', id);
+    // Update alle documenten met de oude mapnaam
+    await supabaseClient.from('documents').update({ map: nieuweNaam }).eq('tenant_id', tenantId).eq('map', oudeNaam);
+
+    await loadMappen();
+    await loadDocuments();
+  };
+
+  window.deleteMap = async function (id, mapNaam) {
+    if (!confirm('Map "' + mapNaam + '" verwijderen? Documenten worden verplaatst naar Overig.')) return;
+
+    // Zet documenten in deze map op null
+    await supabaseClient.from('documents').update({ map: null }).eq('tenant_id', tenantId).eq('map', mapNaam);
+    // Verwijder de map
+    await supabaseClient.from('document_mappen').delete().eq('id', id);
+
+    await loadMappen();
+    await loadDocuments();
+  };
+
   (function initMapBtn() {
     var btn = document.getElementById('add-map-btn');
     if (!btn) return;
@@ -550,25 +593,40 @@
       var input = document.getElementById('nieuwe-map-naam');
       var naam = input ? input.value.trim() : '';
       if (!naam) { alert('Vul een mapnaam in.'); return; }
-      // Maak een dummy document aan om de map te registreren, of voeg gewoon toe aan de dropdown
-      allMappen.push(naam);
-      allMappen.sort();
-      // Vul dropdowns opnieuw
-      ['doc-map', 'edit-doc-map'].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        el.innerHTML = '<option value="">Geen map (Overig)</option>';
-        allMappen.forEach(function (m) {
-          var opt = document.createElement('option');
-          opt.value = m;
-          opt.textContent = m;
-          el.appendChild(opt);
-        });
+
+      var result = await supabaseClient.from('document_mappen').insert({
+        tenant_id: tenantId,
+        naam: naam
       });
-      // Selecteer de nieuwe map
-      var docMap = document.getElementById('doc-map');
-      if (docMap) docMap.value = naam;
+
+      if (result.error) {
+        alert('Map aanmaken mislukt: ' + result.error.message);
+        return;
+      }
+
       if (input) input.value = '';
+      await loadMappen();
+    });
+  })();
+
+  // Bulk verplaatsen
+  (function initBulkMove() {
+    var moveBtn = document.getElementById('bulk-move-btn');
+    if (!moveBtn) return;
+    moveBtn.addEventListener('click', async function () {
+      var checked = document.querySelectorAll('.doc-select-cb:checked');
+      if (checked.length === 0) return;
+      var mapSelect = document.getElementById('bulk-move-map');
+      var mapValue = mapSelect ? mapSelect.value || null : null;
+
+      for (var i = 0; i < checked.length; i++) {
+        await supabaseClient.from('documents').update({ map: mapValue }).eq('id', checked[i].value);
+      }
+
+      await loadDocuments();
+      document.getElementById('bulk-move-bar').style.display = 'none';
+      var selectAll = document.getElementById('doc-select-all');
+      if (selectAll) selectAll.checked = false;
     });
   })();
 
@@ -968,13 +1026,14 @@
     var checked = document.querySelectorAll('.doc-select-cb:checked');
     var bar = document.getElementById('bulk-delete-bar');
     var btn = document.getElementById('bulk-delete-btn');
+    var moveBar = document.getElementById('bulk-move-bar');
     if (checked.length > 0) {
-      bar.style.display = '';
-      btn.textContent = 'Verwijder geselecteerde (' + checked.length + ')';
+      if (bar) { bar.style.display = ''; btn.textContent = 'Verwijder geselecteerde (' + checked.length + ')'; }
+      if (moveBar) moveBar.style.display = '';
     } else {
-      bar.style.display = 'none';
+      if (bar) bar.style.display = 'none';
+      if (moveBar) moveBar.style.display = 'none';
     }
-    // Sync select-all checkbox
     var allCbs = document.querySelectorAll('.doc-select-cb');
     var selectAll = document.getElementById('doc-select-all');
     if (selectAll) selectAll.checked = allCbs.length > 0 && checked.length === allCbs.length;
