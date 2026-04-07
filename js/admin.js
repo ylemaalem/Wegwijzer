@@ -2079,10 +2079,10 @@
   }
 
   function initVerbeterModal() {
-    var modal = document.getElementById('modal-verbeter');
+    var modal = document.getElementById('modal-verbeter-antwoord');
     if (!modal) return;
 
-    var form = document.getElementById('verbeter-form');
+    var form = document.getElementById('verbeter-antwoord-form');
     var cancelBtn = document.getElementById('verbeter-cancel-btn');
     var submitBtn = document.getElementById('verbeter-submit-btn');
 
@@ -2102,8 +2102,8 @@
       form.addEventListener('submit', async function (e) {
         e.preventDefault();
 
-        var vraag = document.getElementById('verbeter-vraag').value;
-        var antwoord = document.getElementById('verbeter-antwoord').value.trim();
+        var vraag = document.getElementById('verbeter-vraag-id').value;
+        var antwoord = document.getElementById('verbeter-antwoord-tekst').value.trim();
 
         if (!antwoord) return;
 
@@ -2136,15 +2136,15 @@
   }
 
   window.openVerbeterModal = function (vraag) {
-    var modal = document.getElementById('modal-verbeter');
-    if (!modal) return;
+    var modal = document.getElementById('modal-verbeter-antwoord');
+    if (!modal) { console.error('[Verbeter] Modal niet gevonden'); return; }
 
-    var vraagEl = document.getElementById('verbeter-vraag');
-    var vraagDisplayEl = document.getElementById('verbeter-vraag-display');
-    var antwoordEl = document.getElementById('verbeter-antwoord');
+    var vraagIdEl = document.getElementById('verbeter-vraag-id');
+    var vraagTekstEl = document.getElementById('verbeter-vraag-tekst');
+    var antwoordEl = document.getElementById('verbeter-antwoord-tekst');
 
-    if (vraagEl) vraagEl.value = vraag;
-    if (vraagDisplayEl) vraagDisplayEl.textContent = vraag;
+    if (vraagIdEl) vraagIdEl.value = vraag;
+    if (vraagTekstEl) vraagTekstEl.textContent = vraag;
     if (antwoordEl) antwoordEl.value = '';
 
     modal.classList.add('show');
