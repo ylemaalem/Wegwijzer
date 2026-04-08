@@ -516,18 +516,46 @@ Deno.serve(async (req: Request) => {
         const negatief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "niet_goed").length : 0;
         const pct = (positief + negatief) > 0 ? Math.round((positief / (positief + negatief)) * 100) : 0;
 
+        const actiefMedewerkers = profs ? profs.filter((p: {id:string}) => convs?.some((c: {user_id:string}) => c.user_id === p.id)).length : 0;
+        const tijdBespaard = Math.round(totaalVragen * 8 / 60);
+        const kostenBespaard = tijdBespaard * 35;
+
         console.log("[Terugblik] Data: vragen=" + totaalVragen + " positief=" + positief + " negatief=" + negatief);
 
-        // Stap 3: Log opslaan
+        // Stap 3: Inhoud samenstellen
+        const ontvangerNamen = metEmail.map((t: {naam:string; email:string}) => t.naam + " (" + t.email + ")");
+        const teamNaam = body.team_filter || "Alle teams";
+
+        const inhoud = JSON.stringify({
+          maand: maand,
+          team: teamNaam,
+          statistieken: {
+            totaal_vragen: totaalVragen,
+            positief_feedback: positief,
+            negatief_feedback: negatief,
+            positief_percentage: pct,
+            actieve_medewerkers: actiefMedewerkers,
+            totaal_medewerkers: profs ? profs.length : 0,
+          },
+          tijdwinst: {
+            uren: tijdBespaard,
+            kosten_euro: kostenBespaard,
+          },
+          ontvangers: ontvangerNamen,
+        });
+
+        // Stap 4: Log opslaan met inhoud
         const status = body.is_test ? "test" : "verstuurd";
         await supabaseAdmin.from("terugblik_log").insert({
           tenant_id: profile.tenant_id,
           maand: maand,
           aantal_ontvangers: metEmail.length,
           status: status,
+          inhoud: inhoud,
+          ontvangers: ontvangerNamen,
+          team: teamNaam,
         });
 
-        const ontvangerNamen = metEmail.map((t: {naam:string; email:string}) => t.naam + " (" + t.email + ")");
         console.log("[Terugblik] Klaar, ontvangers:", ontvangerNamen.join(", "));
 
         return new Response(
@@ -536,7 +564,7 @@ Deno.serve(async (req: Request) => {
             aantal_ontvangers: metEmail.length,
             ontvangers: ontvangerNamen,
             maand: maand,
-            data: { totaalVragen, positief, negatief, pct }
+            data: { totaalVragen, positief, negatief, pct, actiefMedewerkers, tijdBespaard, kostenBespaard }
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

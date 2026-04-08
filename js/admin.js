@@ -3459,14 +3459,59 @@
       container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen terugblikken verstuurd.</p>';
       return;
     }
-    container.innerHTML = result.data.map(function (t) {
-      var datum = new Date(t.verstuurd_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
-      var statusBadge = t.status === 'verstuurd' ? '<span class="badge badge-goed">Verstuurd</span>' : '<span class="badge badge-niet-goed">Mislukt</span>';
-      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
-        '<span>' + escapeHtml(t.maand) + ' — ' + datum + '</span>' +
-        '<span>' + t.aantal_ontvangers + ' ontvanger(s) ' + statusBadge + '</span></div>';
+    container.innerHTML = result.data.map(function (t, idx) {
+      var datum = new Date(t.verstuurd_op || t.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      var statusBadge = t.status === 'verstuurd' ? '<span class="badge badge-goed">Verstuurd</span>'
+        : t.status === 'test' ? '<span class="badge badge-admin">Test</span>'
+        : '<span class="badge badge-niet-goed">Mislukt</span>';
+
+      var ontvangersTekst = '-';
+      if (t.ontvangers && Array.isArray(t.ontvangers) && t.ontvangers.length > 0) {
+        ontvangersTekst = t.ontvangers.map(function (o) { return escapeHtml(o); }).join('<br>');
+      }
+
+      var teamTekst = t.team ? escapeHtml(t.team) : 'Alle teams';
+      var foutTekst = t.foutmelding ? '<div style="color:var(--error);font-size:0.78rem;margin-top:4px">' + escapeHtml(t.foutmelding) + '</div>' : '';
+
+      var detailId = 'terugblik-detail-' + idx;
+      var bekijkBtn = t.inhoud ? '<button class="btn-icon" onclick="window.toggleTerugblikDetail(\'' + detailId + '\')" title="Bekijk rapport">📊</button>' : '';
+
+      var detailHtml = '';
+      if (t.inhoud) {
+        try {
+          var data = JSON.parse(t.inhoud);
+          var s = data.statistieken || {};
+          var tw = data.tijdwinst || {};
+          detailHtml = '<div id="' + detailId + '" style="display:none;background:var(--bg);padding:12px;border-radius:8px;margin-top:8px;font-size:0.82rem">' +
+            '<strong>Statistieken</strong>' +
+            '<div style="margin:4px 0">Totaal vragen: ' + (s.totaal_vragen || 0) + '</div>' +
+            '<div>Positieve feedback: ' + (s.positief_feedback || 0) + ' (' + (s.positief_percentage || 0) + '%)</div>' +
+            '<div>Negatieve feedback: ' + (s.negatief_feedback || 0) + '</div>' +
+            '<div>Actieve medewerkers: ' + (s.actieve_medewerkers || 0) + ' van ' + (s.totaal_medewerkers || 0) + '</div>' +
+            '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">' +
+            '<strong>Tijdwinst (schatting)</strong>' +
+            '<div>' + (s.totaal_vragen || 0) + ' vragen × 8 min = ' + (tw.uren || 0) + ' uur</div>' +
+            '<div>Equivalent: €' + (tw.kosten_euro || 0) + '</div>' +
+            '</div>';
+        } catch (e) { detailHtml = ''; }
+      }
+
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.85rem">' +
+          '<div><strong>' + escapeHtml(t.maand || '') + '</strong><br><span style="color:var(--text-muted);font-size:0.78rem">' + datum + ' · ' + teamTekst + '</span></div>' +
+          '<div style="text-align:right">' + statusBadge + ' ' + bekijkBtn + '<br><span style="font-size:0.78rem;color:var(--text-muted)">' + (t.aantal_ontvangers || 0) + ' ontvanger(s)</span></div>' +
+        '</div>' +
+        '<div style="font-size:0.78rem;color:var(--text-light);margin-top:4px">' + ontvangersTekst + '</div>' +
+        foutTekst +
+        detailHtml +
+        '</div>';
     }).join('');
   }
+
+  window.toggleTerugblikDetail = function (id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+  };
 
   // =============================================
   // PRIVACY VERZOEKEN
