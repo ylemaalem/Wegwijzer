@@ -3,7 +3,7 @@
 // Caching strategie: network-first met cache fallback
 // =============================================
 
-var CACHE_NAME = 'wegwijzer-v6';
+var CACHE_NAME = 'wegwijzer-v7';
 
 // Installatie: skip caching static assets (ze worden on-demand gecached)
 self.addEventListener('install', function (event) {

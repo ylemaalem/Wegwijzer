@@ -126,12 +126,18 @@
     });
 
     console.log('[TL] Na filter:', teamProfiles.length, 'medewerkers (van', result.data.length, ')');
+    if (result.data) {
+      result.data.forEach(function (p) {
+        console.log('[TL]   ' + (p.naam || '?') + ' teams:', JSON.stringify(p.teams), 'teamleider_naam:', p.teamleider_naam);
+      });
+    }
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
       return;
     }
 
+    console.log('[TL] Rendering', teamProfiles.length, 'medewerkers:', teamProfiles.map(function(p){return p.naam;}).join(', '));
     tbody.innerHTML = teamProfiles.map(function (p) {
       var fg = formatFunctiegroep(p.functiegroep);
       var sd = p.startdatum ? new Date(p.startdatum).toLocaleDateString('nl-NL', {
