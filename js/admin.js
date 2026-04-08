@@ -54,6 +54,7 @@
     initFunctiegroepFormToggle();
     loadDocumentAanvragen();
     loadVertrouwensData();
+    loadTerugblikLog();
   });
 
   // =============================================
@@ -2255,8 +2256,9 @@
         ? '<span class="badge badge-goed">Beantwoord</span>'
         : '<span class="badge badge-niet-goed">Open</span>';
       var actieBtn = !isBeantwoord
-        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">Beantwoord</button>'
-        : '';
+        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">Beantwoord</button> ' +
+          '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" onclick="window.openKennisnotitie(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">+ Notitie</button>'
+        : '<span class="badge badge-goed" style="font-size:0.7rem">✓</span>';
 
       return '<tr>' +
         '<td title="' + escapeHtml(item.vraag) + '">' + escapeHtml(truncated) + '</td>' +
@@ -2268,7 +2270,86 @@
     }).join('');
 
     loadKennisbankItems(kennisbankItems);
+    loadKennisnotities();
   }
+
+  // Kennisnotitie toevoegen
+  window.openKennisnotitie = function (vraag) {
+    var bestaandForm = document.getElementById('kennisnotitie-form-inline');
+    if (bestaandForm) bestaandForm.remove();
+
+    var form = document.createElement('tr');
+    form.id = 'kennisnotitie-form-inline';
+    form.innerHTML = '<td colspan="5" style="padding:12px;background:#F0FFF4">' +
+      '<textarea id="kn-tekst" placeholder="Schrijf een korte notitie over dit onderwerp (max 500 tekens)..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:0.85rem;resize:vertical;min-height:60px" maxlength="500"></textarea>' +
+      '<div style="display:flex;gap:8px;margin-top:8px">' +
+      '<button class="btn btn-primary" id="kn-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan als kennisnotitie</button>' +
+      '<button class="btn btn-secondary" id="kn-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>' +
+      '</div></td>';
+
+    // Zoek de rij met deze vraag en voeg form eronder toe
+    var rijen = document.querySelectorAll('#verbeterpunten-body tr');
+    var doelRij = null;
+    rijen.forEach(function (r) {
+      if (r.getAttribute('title') === vraag || (r.querySelector('td') && r.querySelector('td').getAttribute('title') === vraag)) {
+        doelRij = r;
+      }
+    });
+    if (doelRij) {
+      doelRij.parentNode.insertBefore(form, doelRij.nextSibling);
+    } else {
+      document.getElementById('verbeterpunten-body').appendChild(form);
+    }
+
+    document.getElementById('kn-annuleer').addEventListener('click', function () { form.remove(); });
+    document.getElementById('kn-opslaan').addEventListener('click', async function () {
+      var tekst = document.getElementById('kn-tekst').value.trim();
+      if (!tekst) { alert('Vul een notitie in.'); return; }
+
+      await supabaseClient.from('kennisnotities').insert({
+        tenant_id: tenantId,
+        originele_vraag: vraag,
+        notitie: tekst.substring(0, 500)
+      });
+
+      form.remove();
+      loadVerbeterpunten();
+    });
+  };
+
+  async function loadKennisnotities() {
+    var container = document.getElementById('kennisnotities-lijst');
+    if (!container) return;
+
+    var result = await supabaseClient
+      .from('kennisnotities')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('actief', true)
+      .order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen kennisnotities.</p>';
+      return;
+    }
+
+    container.innerHTML = result.data.map(function (kn) {
+      var datum = new Date(kn.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      return '<div class="kennisbank-item" style="margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start">' +
+        '<div><div class="kennisbank-item-vraag">📝 ' + escapeHtml(kn.originele_vraag) + '</div>' +
+        '<div class="kennisbank-item-antwoord">' + escapeHtml(kn.notitie) + '</div>' +
+        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + '</span></div>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteKennisnotitie(\'' + kn.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  window.deleteKennisnotitie = async function (id) {
+    if (!confirm('Kennisnotitie verwijderen?')) return;
+    await supabaseClient.from('kennisnotities').update({ actief: false }).eq('id', id);
+    loadKennisnotities();
+  };
 
   function loadKennisbankItems(items) {
     var container = document.getElementById('kennisbank-lijst');
@@ -3262,6 +3343,57 @@
       container.innerHTML += html;
     });
   };
+
+  // =============================================
+  // TERUGBLIK EMAIL
+  // =============================================
+  (function initTerugblikBtn() {
+    var btn = document.getElementById('test-terugblik-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!confirm('Test terugblik email versturen naar alle teamleiders van deze organisatie?')) return;
+      btn.disabled = true;
+      btn.textContent = 'Versturen...';
+
+      try {
+        var session = await supabaseClient.auth.getSession();
+        var token = session.data.session.access_token;
+        var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ generate_terugblik: true })
+        });
+        var data = await resp.json();
+        if (data.error) {
+          alert('Terugblik mislukt: ' + data.error);
+        } else {
+          alert('Terugblik verstuurd naar ' + (data.aantal_ontvangers || 0) + ' ontvanger(s).');
+          loadTerugblikLog();
+        }
+      } catch (err) {
+        alert('Terugblik versturen mislukt.');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Test terugblik email';
+    });
+  })();
+
+  async function loadTerugblikLog() {
+    var container = document.getElementById('terugblik-log-list');
+    if (!container) return;
+    var result = await supabaseClient.from('terugblik_log').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(10);
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen terugblikken verstuurd.</p>';
+      return;
+    }
+    container.innerHTML = result.data.map(function (t) {
+      var datum = new Date(t.verstuurd_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var statusBadge = t.status === 'verstuurd' ? '<span class="badge badge-goed">Verstuurd</span>' : '<span class="badge badge-niet-goed">Mislukt</span>';
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
+        '<span>' + escapeHtml(t.maand) + ' — ' + datum + '</span>' +
+        '<span>' + t.aantal_ontvangers + ' ontvanger(s) ' + statusBadge + '</span></div>';
+    }).join('');
+  }
 
   // =============================================
   // PRIVACY VERZOEKEN

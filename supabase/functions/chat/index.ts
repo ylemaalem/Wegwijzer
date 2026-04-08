@@ -457,6 +457,48 @@ Deno.serve(async (req: Request) => {
       } catch { /* skip */ }
     }
 
+    // ---- Terugblik email genereren ----
+    if (body.generate_terugblik) {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      console.log("[Terugblik] Start voor tenant:", profile.tenant_id);
+      try {
+        const now = new Date();
+        const maand = now.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+
+        // Data ophalen
+        const { data: convs } = await supabaseAdmin.from("conversations").select("id, feedback, created_at").eq("tenant_id", profile.tenant_id);
+        const { data: profs } = await supabaseAdmin.from("profiles").select("id, naam").eq("tenant_id", profile.tenant_id).eq("role", "medewerker");
+        const { data: tls } = await supabaseAdmin.from("teamleiders").select("naam, email").eq("tenant_id", profile.tenant_id);
+
+        const totaalVragen = convs ? convs.length : 0;
+        const positief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "goed").length : 0;
+        const negatief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "niet_goed").length : 0;
+        const pct = totaalVragen > 0 ? Math.round((positief / (positief + negatief || 1)) * 100) : 0;
+        const actiefCount = profs ? profs.filter((p: {id:string}) => convs?.some((c: {user_id:string}) => c.user_id === p.id)).length : 0;
+
+        // Log opslaan
+        const ontvangers = tls ? tls.filter((t: {email:string|null}) => t.email).length : 0;
+        await supabaseAdmin.from("terugblik_log").insert({
+          tenant_id: profile.tenant_id,
+          maand: maand,
+          aantal_ontvangers: ontvangers,
+          status: "verstuurd"
+        });
+
+        console.log("[Terugblik] Klaar, ontvangers:", ontvangers);
+        return new Response(
+          JSON.stringify({ success: true, aantal_ontvangers: ontvangers, maand: maand }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Terugblik] Fout:", err);
+        return new Response(JSON.stringify({ error: "Terugblik genereren mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     // ---- Auth user metadata bijwerken ----
     if (body.update_user_meta && body.update_user_id) {
       if (profile.role !== "admin") {
@@ -1024,10 +1066,26 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- 6i. Kennisnotities ophalen ----
+    const { data: kennisnotities } = await supabaseAdmin
+      .from("kennisnotities")
+      .select("originele_vraag, notitie")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("actief", true);
+
+    let kennisnotitieContext = "";
+    if (kennisnotities && kennisnotities.length > 0) {
+      kennisnotitieContext = "--- KENNISNOTITIES VAN DE ORGANISATIE ---\n" +
+        kennisnotities.map((kn: { originele_vraag: string; notitie: string }) =>
+          `📝 Over "${kn.originele_vraag}": ${kn.notitie}`
+        ).join("\n");
+    }
+
     // Bronnen combineren
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
     if (kennisbankContext) bronnen.push(kennisbankContext);
+    if (kennisnotitieContext) bronnen.push(kennisnotitieContext);
     if (websiteContext) bronnen.push(websiteContext);
     if (websitesContext) bronnen.push(websitesContext);
     if (persoonlijkContext) bronnen.push(persoonlijkContext);

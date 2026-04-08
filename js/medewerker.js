@@ -72,6 +72,7 @@
     if (weekNummer <= 6) {
       checkWeekstartBriefing();
       checkVertrouwenscheck();
+      checkKennisquiz();
     }
     checkRolwissel();
   });
@@ -736,9 +737,9 @@
   // WEEKSTART BRIEFING
   // =============================================
   async function checkWeekstartBriefing() {
-    // Alleen op maandag of als nog geen briefing gezien
-    var dag = new Date().getDay(); // 0=zo, 1=ma
-    if (dag !== 1 && dag !== 0) return; // Alleen ma (en zo voor test)
+    // Zichtbaar hele week (ma 00:00 - zo 23:59)
+    var briefingKey = 'wegwijzer_briefing_week_' + weekNummer;
+    if (localStorage.getItem(briefingKey)) return; // Al gezien deze week
 
     try {
       var session = await supabaseClient.auth.getSession();
@@ -764,7 +765,7 @@
 
           sluitBtn.addEventListener('click', function () {
             container.style.display = 'none';
-            // Markeer als gelezen
+            localStorage.setItem(briefingKey, 'true');
             supabaseClient.from('weekstart_briefings')
               .update({ gelezen: true })
               .eq('user_id', user.id)
@@ -778,13 +779,10 @@
   }
 
   // =============================================
-  // VERTROUWENSCHECK
+  // VERTROUWENSCHECK (nieuw model: delen ja/nee)
   // =============================================
   async function checkVertrouwenscheck() {
-    var dag = new Date().getDay();
-    if (dag !== 5) return; // Alleen op vrijdag
-
-    // Check of al ingevuld deze week
+    // Check of al ingevuld deze week (via DB)
     var bestaand = await supabaseClient
       .from('vertrouwens_scores')
       .select('id')
@@ -792,7 +790,15 @@
       .eq('week_nummer', weekNummer)
       .limit(1);
 
-    if (bestaand.data && bestaand.data.length > 0) return; // Al ingevuld
+    if (bestaand.data && bestaand.data.length > 0) return;
+
+    // Zichtbaar van vrijdag t/m donderdag (7 dagen venster)
+    // Bepaal of we in het juiste venster zitten
+    var dag = new Date().getDay(); // 0=zo,1=ma..6=za
+    if (dag < 5 && dag > 0) return; // Ma-do: niet tonen (alleen vr,za,zo)
+    // Aanvullende check via localStorage
+    var vcKey = 'wegwijzer_vc_week_' + weekNummer;
+    if (localStorage.getItem(vcKey)) return;
 
     var modal = document.getElementById('vertrouwenscheck-modal');
     if (!modal) return;
@@ -815,35 +821,216 @@
     });
 
     opslaanBtn.addEventListener('click', async function () {
-      await supabaseClient.from('vertrouwens_scores').insert({
-        user_id: user.id,
-        week_nummer: weekNummer,
-        score: gekozenScore
-      });
-
       if (gekozenScore >= 4) {
-        modal.querySelector('div > div').innerHTML = '<h3 style="margin-bottom:12px">Goed bezig! 🎉</h3><p style="font-size:0.9rem">Fijn dat je je zeker voelt. Ga zo door!</p><button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
-      } else if (gekozenScore === 3) {
-        modal.querySelector('div > div').innerHTML = '<h3 style="margin-bottom:12px">Oké week 👍</h3><p style="font-size:0.9rem">Heb je ergens hulp bij nodig? Je kunt altijd een vraag stellen aan Wegwijzer.</p><button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
+        // Score 4-5: opslaan, niet delen, positief bericht
+        await supabaseClient.from('vertrouwens_scores').insert({
+          user_id: user.id, week_nummer: weekNummer, score: gekozenScore,
+          signaal_verstuurd: false, tenant_id: profile.tenant_id
+        });
+        localStorage.setItem(vcKey, 'true');
+        modal.querySelector('div > div').innerHTML =
+          '<h3 style="margin-bottom:12px">Fijn om te horen! 🌟</h3>' +
+          '<p style="font-size:0.9rem">Succes de komende week.</p>' +
+          '<button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
       } else {
-        // Score 1-2: vraag of medewerker wil delen met leidinggevende
-        var vervolg = document.getElementById('vc-vervolg');
-        var vervolgTekst = document.getElementById('vc-vervolg-tekst');
+        // Score 1-3: vraag of medewerker wil delen
+        await supabaseClient.from('vertrouwens_scores').insert({
+          user_id: user.id, week_nummer: weekNummer, score: gekozenScore,
+          signaal_verstuurd: false, tenant_id: profile.tenant_id
+        });
+
         opslaanBtn.style.display = 'none';
         gekozenEl.style.display = 'none';
         document.getElementById('vc-sterren').style.display = 'none';
-        if (vervolgTekst) vervolgTekst.textContent = 'Wil je dit delen met je leidinggevende?';
+        var vervolg = document.getElementById('vc-vervolg');
+        var vervolgTekst = document.getElementById('vc-vervolg-tekst');
+        if (vervolgTekst) vervolgTekst.textContent = 'Wil je je score delen met je leidinggevende?';
         if (vervolg) vervolg.style.display = '';
 
         document.getElementById('vc-signaal').addEventListener('click', async function () {
-          await supabaseClient.from('vertrouwens_scores').update({ signaal_verstuurd: true }).eq('user_id', user.id).eq('week_nummer', weekNummer);
+          await supabaseClient.from('vertrouwens_scores')
+            .update({ signaal_verstuurd: true })
+            .eq('user_id', user.id)
+            .eq('week_nummer', weekNummer);
+          localStorage.setItem(vcKey, 'true');
           modal.style.display = 'none';
           alert('Je score is gedeeld met je leidinggevende.');
         });
 
         document.getElementById('vc-zelf').addEventListener('click', function () {
-          modal.style.display = 'none';
+          localStorage.setItem(vcKey, 'true');
+          modal.querySelector('div > div').innerHTML =
+            '<h3 style="margin-bottom:12px">Oké, geen probleem 👍</h3>' +
+            '<p style="font-size:0.9rem">Je score is alleen voor jou.</p>' +
+            '<button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
         });
+      }
+    });
+  }
+
+  // =============================================
+  // KENNISQUIZ (week 2-5)
+  // =============================================
+  async function checkKennisquiz() {
+    if (weekNummer < 2 || weekNummer > 5) return;
+
+    // Check of al gedaan of overgeslagen
+    var quizKey = 'wegwijzer_quiz_week_' + weekNummer;
+    if (localStorage.getItem(quizKey)) return;
+
+    var bestaand = await supabaseClient
+      .from('quiz_resultaten')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('week_nummer', weekNummer)
+      .limit(1);
+    if (bestaand.data && bestaand.data.length > 0) { localStorage.setItem(quizKey, 'true'); return; }
+
+    // Zichtbaar wo t/m di (7 dagen venster)
+    var dag = new Date().getDay();
+    if (dag >= 1 && dag <= 2) { /* ma-di: laatste dagen, OK */ }
+    else if (dag >= 3) { /* wo-za: eerste dagen, OK */ }
+    else { /* zo: OK */ }
+
+    // Toon quiz kaartje boven chat
+    var quizCard = document.createElement('div');
+    quizCard.id = 'quiz-card';
+    quizCard.style.cssText = 'background:#E3F2FD;border-bottom:1px solid #90CAF9;padding:12px 16px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center';
+
+    var niveaus = { 2: '🟢 Basis', 3: '🟡 Gemiddeld', 4: '🟠 Gevorderd', 5: '🔴 Integratie' };
+    quizCard.innerHTML =
+      '<div><span style="font-size:1rem">📝</span> <strong style="font-size:0.85rem">Kennischeck week ' + weekNummer + '</strong> <span style="font-size:0.75rem;color:var(--text-muted)">' + (niveaus[weekNummer] || '') + ' · 3 vragen · 2 min</span></div>' +
+      '<div style="display:flex;gap:8px"><button id="quiz-start" class="btn btn-primary" style="width:auto;padding:6px 14px;font-size:0.8rem">Quiz starten</button><button id="quiz-skip" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-family:var(--font);color:var(--text-muted)">Overslaan</button></div>';
+
+    var chatScreen = document.getElementById('chat-screen');
+    var disclaimer = document.getElementById('disclaimer-banner');
+    if (chatScreen && disclaimer) {
+      chatScreen.insertBefore(quizCard, disclaimer);
+    }
+
+    document.getElementById('quiz-skip').addEventListener('click', function () {
+      quizCard.remove();
+      localStorage.setItem(quizKey, 'true');
+    });
+
+    document.getElementById('quiz-start').addEventListener('click', async function () {
+      quizCard.innerHTML = '<div style="width:100%;text-align:center;padding:8px"><span style="font-size:0.85rem">Vragen genereren...</span></div>';
+
+      try {
+        var session = await supabaseClient.auth.getSession();
+        var token = session.data.session.access_token;
+
+        var niveauTekst = { 2: 'Herkenningsvragen met 3 antwoordopties', 3: 'Situatievragen — wat doe jij?', 4: 'Toepassingsvragen over procedures', 5: 'Combinatievragen over meerdere onderwerpen' };
+
+        var quizResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            vraag: 'Genereer 3 quizvragen voor een nieuwe zorgmedewerker in inwerkweek ' + weekNummer + '. Moeilijkheidsgraad: ' + (niveauTekst[weekNummer] || 'gemiddeld') + '. Geef per vraag 3 antwoordopties waarvan 1 correct. Formaat: JSON array [{vraag, opties: [string], correct_antwoord: string, uitleg: string}]. Alleen de JSON, geen tekst eromheen.',
+            functiegroep: profile.functiegroep,
+            weeknummer: weekNummer
+          })
+        });
+
+        var quizData = await quizResp.json();
+        var antwoordTekst = quizData.antwoord || '';
+
+        // Parse JSON uit antwoord
+        var jsonMatch = antwoordTekst.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) { quizCard.innerHTML = '<p style="padding:8px;font-size:0.85rem">Quiz kon niet geladen worden.</p>'; return; }
+
+        var vragen = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(vragen) || vragen.length === 0) { quizCard.innerHTML = '<p style="padding:8px;font-size:0.85rem">Geen vragen ontvangen.</p>'; return; }
+
+        var huidigeVraag = 0;
+        var correcteAntwoorden = 0;
+
+        function toonVraag() {
+          var v = vragen[huidigeVraag];
+          quizCard.innerHTML =
+            '<div style="width:100%;padding:4px 0">' +
+            '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong style="font-size:0.85rem">Vraag ' + (huidigeVraag + 1) + '/3</strong><div style="background:var(--border);height:4px;flex:1;margin:0 12px;border-radius:2px"><div style="background:var(--primary);height:100%;border-radius:2px;width:' + ((huidigeVraag) / 3 * 100) + '%"></div></div></div>' +
+            '<p style="font-size:0.85rem;margin-bottom:10px">' + escapeHtml(v.vraag) + '</p>' +
+            '<div style="display:flex;flex-direction:column;gap:6px">' +
+            v.opties.map(function (o) {
+              return '<button class="quiz-optie" data-antwoord="' + escapeHtml(o) + '" style="text-align:left;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:white;cursor:pointer;font-size:0.82rem;font-family:var(--font)">' + escapeHtml(o) + '</button>';
+            }).join('') +
+            '</div></div>';
+
+          quizCard.querySelectorAll('.quiz-optie').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var gekozen = btn.getAttribute('data-antwoord');
+              var correct = gekozen === v.correct_antwoord;
+              if (correct) correcteAntwoorden++;
+
+              // Disable alle knoppen en toon feedback
+              quizCard.querySelectorAll('.quiz-optie').forEach(function (b) {
+                b.disabled = true;
+                b.style.cursor = 'default';
+                if (b.getAttribute('data-antwoord') === v.correct_antwoord) {
+                  b.style.border = '2px solid var(--success)';
+                  b.style.background = '#F0FFF4';
+                }
+                if (b === btn && !correct) {
+                  b.style.border = '2px solid var(--error)';
+                  b.style.background = '#FFF0F0';
+                }
+              });
+
+              var feedbackEl = document.createElement('p');
+              feedbackEl.style.cssText = 'font-size:0.8rem;margin-top:8px;padding:8px;border-radius:6px;' + (correct ? 'background:#F0FFF4;color:var(--success)' : 'background:#FFF0F0;color:var(--error)');
+              feedbackEl.textContent = correct ? '✅ Goed! ' + (v.uitleg || '') : '❌ ' + (v.uitleg || 'Het correcte antwoord was: ' + v.correct_antwoord);
+              quizCard.querySelector('div').appendChild(feedbackEl);
+
+              var volgendeBtn = document.createElement('button');
+              volgendeBtn.className = 'btn btn-primary';
+              volgendeBtn.style.cssText = 'width:auto;padding:6px 14px;font-size:0.8rem;margin-top:8px';
+              volgendeBtn.textContent = huidigeVraag < 2 ? 'Volgende vraag →' : 'Resultaat bekijken';
+              quizCard.querySelector('div').appendChild(volgendeBtn);
+
+              volgendeBtn.addEventListener('click', function () {
+                huidigeVraag++;
+                if (huidigeVraag < 3) { toonVraag(); } else { toonResultaat(); }
+              });
+            });
+          });
+        }
+
+        function toonResultaat() {
+          quizCard.innerHTML =
+            '<div style="width:100%;text-align:center;padding:8px 0">' +
+            '<h3 style="font-size:1rem;margin-bottom:8px">' + correcteAntwoorden + ' van 3 goed!</h3>' +
+            '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px">Wil je je resultaat delen met je leidinggevende?</p>' +
+            '<div style="display:flex;gap:8px;justify-content:center">' +
+            '<button id="quiz-deel" class="btn btn-primary" style="width:auto;padding:8px 16px;font-size:0.85rem">Ja, deel mijn score</button>' +
+            '<button id="quiz-niet-delen" class="btn btn-secondary" style="width:auto;padding:8px 16px;font-size:0.85rem">Nee, voor mezelf</button>' +
+            '</div></div>';
+
+          document.getElementById('quiz-deel').addEventListener('click', async function () {
+            await supabaseClient.from('quiz_resultaten').insert({
+              user_id: user.id, tenant_id: profile.tenant_id,
+              week_nummer: weekNummer, score: correcteAntwoorden, gedeeld: true
+            });
+            localStorage.setItem(quizKey, 'true');
+            quizCard.innerHTML = '<p style="padding:12px;font-size:0.85rem;text-align:center">✅ Score gedeeld. Goed gedaan!</p>';
+            setTimeout(function () { quizCard.remove(); }, 2000);
+          });
+
+          document.getElementById('quiz-niet-delen').addEventListener('click', async function () {
+            await supabaseClient.from('quiz_resultaten').insert({
+              user_id: user.id, tenant_id: profile.tenant_id,
+              week_nummer: weekNummer, score: correcteAntwoorden, gedeeld: false
+            });
+            localStorage.setItem(quizKey, 'true');
+            quizCard.innerHTML = '<p style="padding:12px;font-size:0.85rem;text-align:center">👍 Score opgeslagen voor jezelf.</p>';
+            setTimeout(function () { quizCard.remove(); }, 2000);
+          });
+        }
+
+        toonVraag();
+      } catch (err) {
+        console.error('[Quiz] Fout:', err);
+        quizCard.innerHTML = '<p style="padding:8px;font-size:0.85rem">Quiz kon niet geladen worden.</p>';
       }
     });
   }

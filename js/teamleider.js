@@ -21,6 +21,8 @@
     loadTeamStatistieken();
     loadMijnAanvragen();
     loadTeamMeldingen();
+    loadTeamVertrouwen();
+    loadTeamQuiz();
     initAanvraagModal();
   });
 
@@ -480,6 +482,54 @@
   }
 
   // =============================================
+  // =============================================
+  // VERTROUWENSCHECK VOOR TEAMLEIDER
+  // =============================================
+  async function loadTeamVertrouwen() {
+    var container = document.getElementById('tl-vertrouwen-lijst');
+    if (!container) return;
+
+    var teamIds = teamProfiles.map(function (p) { return p.user_id; });
+    if (teamIds.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen teamleden.</p>'; return; }
+
+    var result = await supabaseClient.from('vertrouwens_scores').select('user_id, week_nummer, score, signaal_verstuurd').in('user_id', teamIds).eq('signaal_verstuurd', true).order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen gedeelde scores.</p>';
+      return;
+    }
+
+    container.innerHTML = result.data.map(function (s) {
+      var p = teamProfiles.find(function (pr) { return pr.user_id === s.user_id; });
+      var naam = p ? p.naam : 'Onbekend';
+      var sterren = ''; for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
+        '<span>' + escapeHtml(naam) + '</span><span>Week ' + s.week_nummer + '</span><span>' + sterren + '</span></div>';
+    }).join('');
+  }
+
+  async function loadTeamQuiz() {
+    var container = document.getElementById('tl-quiz-lijst');
+    if (!container) return;
+
+    var teamIds = teamProfiles.map(function (p) { return p.user_id; });
+    if (teamIds.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen teamleden.</p>'; return; }
+
+    var result = await supabaseClient.from('quiz_resultaten').select('user_id, week_nummer, score, totaal, gedeeld').in('user_id', teamIds).eq('gedeeld', true).order('created_at', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen gedeelde quiz resultaten.</p>';
+      return;
+    }
+
+    container.innerHTML = result.data.map(function (q) {
+      var p = teamProfiles.find(function (pr) { return pr.user_id === q.user_id; });
+      var naam = p ? p.naam : 'Onbekend';
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
+        '<span>' + escapeHtml(naam) + '</span><span>Week ' + q.week_nummer + '</span><span>' + q.score + '/' + q.totaal + ' goed</span></div>';
+    }).join('');
+  }
+
   // HULPFUNCTIES
   // =============================================
   function escapeHtml(text) {

@@ -306,8 +306,16 @@
       <section class="tab-content" id="tab-rapporten">
         <h2 class="section-title">Rapporten</h2>
         <p class="section-subtitle">Maandelijkse rapportages over gebruik en kwaliteit.</p>
-        <button class="btn btn-primary" id="generate-rapport-btn" style="max-width:280px;margin-bottom:20px">Rapport genereren</button>
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="generate-rapport-btn" style="max-width:280px">Rapport genereren</button>
+          <button class="btn btn-secondary" id="test-terugblik-btn" style="max-width:280px">Test terugblik email</button>
+        </div>
         <div id="rapporten-list"></div>
+
+        <div style="margin-top:24px">
+          <h3 class="section-title" style="font-size:1rem">Verstuurde terugblikken</h3>
+          <div id="terugblik-log-list"></div>
+        </div>
       </section>
 
       <!-- ========== TAB: VERBETERPUNTEN ========== -->
@@ -341,6 +349,12 @@
           <h3 class="section-title" style="font-size:1rem">Kennisbank items</h3>
           <p class="section-subtitle">Handmatig toegevoegde antwoorden en correcties</p>
           <div id="kennisbank-items-list"></div>
+        </div>
+
+        <div style="margin-top:24px">
+          <h3 class="section-title" style="font-size:1rem">Kennisnotities</h3>
+          <p class="section-subtitle">Korte notities over ontbrekende onderwerpen — worden meegestuurd aan de AI</p>
+          <div id="kennisnotities-lijst"></div>
         </div>
       </section>
 
