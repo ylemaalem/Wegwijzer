@@ -103,8 +103,6 @@ Deno.serve(async (req: Request) => {
 
     // ---- Teamleider: team medewerkers ophalen (via service role, omzeilt RLS) ----
     if (body.get_team_medewerkers) {
-      console.log("[Edge] get_team_medewerkers voor:", profile.naam);
-
       if (profile.role !== "teamleider" && profile.role !== "admin") {
         return new Response(
           JSON.stringify({ error: "Geen toegang" }),
@@ -112,40 +110,24 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const myTeams: string[] = (profile as Record<string, unknown>).teams as string[] || [];
-      const myNaam: string = profile.naam || "";
-
-      // Exact dezelfde query als admin: select(*) met tenant_id filter via service role
-      const { data: allMedewerkers, error: teamError } = await supabaseAdmin
+      // Alle medewerkers in tenant ophalen — frontend filtert op team/naam
+      const { data: medewerkers, error: teamError } = await supabaseAdmin
         .from("profiles")
         .select("*")
         .eq("tenant_id", profile.tenant_id)
         .eq("role", "medewerker");
 
+      console.log("[Edge] get_team_medewerkers: tenant=", profile.tenant_id, "totaal=", medewerkers?.length, "error=", teamError?.message || "geen");
+
       if (teamError) {
-        console.error("[Edge] get_team_medewerkers fout:", teamError.message);
         return new Response(
           JSON.stringify({ error: teamError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      console.log("[Edge] get_team_medewerkers: totaal medewerkers in tenant=", allMedewerkers?.length);
-
-      // Filter: teamleider_naam match OF team overlap
-      const filtered = (allMedewerkers || []).filter((p: Record<string, unknown>) => {
-        if (myNaam && p.teamleider_naam === myNaam) return true;
-        if (myTeams.length > 0 && Array.isArray(p.teams)) {
-          return (p.teams as string[]).some((t: string) => myTeams.includes(t));
-        }
-        if (myTeams.length === 0 && !myNaam) return true;
-        return false;
-      });
-
-      console.log("[Edge] get_team_medewerkers: gefilterd=", filtered.length);
-
       return new Response(
-        JSON.stringify({ medewerkers: filtered }),
+        JSON.stringify({ medewerkers: medewerkers || [] }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

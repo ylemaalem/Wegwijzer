@@ -67,7 +67,7 @@
     var tbody = document.getElementById('tl-medewerkers-body');
 
     try {
-      // Medewerkers ophalen via Edge Function (omzeilt RLS)
+      // Medewerkers ophalen via Edge Function (service role, omzeilt RLS)
       var session = (await supabaseClient.auth.getSession()).data.session;
       var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
         method: 'POST',
@@ -79,14 +79,38 @@
       });
 
       var data = await response.json();
-      console.log('[TL] Edge Function medewerkers:', data.medewerkers ? data.medewerkers.length : 0, data.error || '');
+      console.log('[TL] Edge Function response status:', response.status);
+      console.log('[TL] Edge Function response data:', JSON.stringify(data).substring(0, 500));
 
       if (data.error || !data.medewerkers) {
+        console.error('[TL] Edge Function fout:', data.error || 'geen medewerkers array');
         tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
         return;
       }
 
-      teamProfiles = data.medewerkers;
+      // Log alle ontvangen medewerkers vóór filtering
+      console.log('[TL] Ontvangen van Edge Function:', data.medewerkers.map(function (m) {
+        return m.naam + ' tl=' + m.teamleider_naam + ' teams=' + JSON.stringify(m.teams);
+      }));
+
+      // Filter op teamleider_naam OF team overlap
+      var myNaam = profile.naam || '';
+      var myTeams = profile.teams || [];
+      console.log('[TL] Mijn naam:', myNaam, 'Mijn teams:', JSON.stringify(myTeams));
+
+      teamProfiles = data.medewerkers.filter(function (m) {
+        // Match op teamleider_naam
+        if (myNaam && m.teamleider_naam === myNaam) return true;
+        // Match op team overlap
+        if (myTeams.length > 0 && m.teams && m.teams.length > 0) {
+          return m.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
+        }
+        // Geen filter ingesteld = toon alles
+        if (!myNaam && myTeams.length === 0) return true;
+        return false;
+      });
+
+      console.log('[TL] Na filtering:', teamProfiles.length, 'medewerkers');
     } catch (err) {
       console.error('[TL] Fout bij laden medewerkers:', err);
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Fout bij laden.</td></tr>';
