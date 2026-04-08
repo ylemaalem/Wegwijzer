@@ -65,53 +65,57 @@
   // =============================================
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
-    var myTeams = profile.teams || [];
-    console.log('[TL] Mijn teams:', JSON.stringify(myTeams));
 
-    var result = await supabaseClient
-      .from('profiles')
-      .select('id, naam, email, functiegroep, startdatum, user_id, teams')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'medewerker');
+    try {
+      var myTeams = profile.teams || [];
 
-    console.log('[TL] Alle medewerkers in tenant:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
-    if (result.data) {
-      result.data.forEach(function (p) {
-        console.log('[TL]   ' + p.naam + ' teams:', JSON.stringify(p.teams));
-      });
-    }
-
-    if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
-      return;
-    }
-
-    // Client-side filteren op overlappende teams
-    teamProfiles = result.data.filter(function (p) {
-      if (myTeams.length === 0) return true;
-      if (!p.teams || p.teams.length === 0) return false;
-      return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
-    });
-
-    // Extra: haal medewerkers op die via teamleider_naam gekoppeld zijn
-    var mijnNaam = profile.naam || '';
-    if (mijnNaam) {
-      var extraResult = await supabaseClient
+      // Query 1: medewerkers ophalen
+      var result = await supabaseClient
         .from('profiles')
         .select('id, naam, email, functiegroep, startdatum, user_id, teams')
         .eq('tenant_id', tenantId)
-        .eq('teamleider_naam', mijnNaam);
+        .eq('role', 'medewerker');
 
-      if (extraResult.data) {
-        extraResult.data.forEach(function (m) {
-          // Voeg toe als niet al in de lijst (check op id)
-          var alErin = teamProfiles.some(function (tp) { return tp.id === m.id; });
-          if (!alErin) teamProfiles.push(m);
-        });
+      if (result.error || !result.data) {
+        tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
+        return;
       }
-    }
 
-    console.log('[TL] Na filter + teamleider_naam:', teamProfiles.length, 'medewerkers');
+      // Filter op team overlap
+      teamProfiles = result.data.filter(function (p) {
+        if (myTeams.length === 0) return true;
+        if (!p.teams || p.teams.length === 0) return false;
+        return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
+      });
+
+      // Query 2: medewerkers gekoppeld via teamleider_naam
+      var mijnNaam = profile.naam || '';
+      if (mijnNaam) {
+        try {
+          var extraResult = await supabaseClient
+            .from('profiles')
+            .select('id, naam, email, functiegroep, startdatum, user_id, teams')
+            .eq('tenant_id', tenantId)
+            .eq('teamleider_naam', mijnNaam);
+
+          if (extraResult.data) {
+            extraResult.data.forEach(function (m) {
+              if (!teamProfiles.some(function (tp) { return tp.id === m.id; })) {
+                teamProfiles.push(m);
+              }
+            });
+          }
+        } catch (e) {
+          console.log('[TL] teamleider_naam query overgeslagen:', e.message || e);
+        }
+      }
+
+      console.log('[TL] Medewerkers:', teamProfiles.length);
+    } catch (err) {
+      console.error('[TL] Fout bij laden medewerkers:', err);
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Fout bij laden.</td></tr>';
+      return;
+    }
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
