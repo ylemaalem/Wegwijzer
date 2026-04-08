@@ -468,34 +468,81 @@ Deno.serve(async (req: Request) => {
         const now = new Date();
         const maand = now.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
 
-        // Data ophalen
-        const { data: convs } = await supabaseAdmin.from("conversations").select("id, feedback, created_at").eq("tenant_id", profile.tenant_id);
+        // Stap 1: Teamleiders ophalen uit teamleiders tabel (Leidinggevende/HR tab)
+        console.log("[Terugblik] Stap 1: teamleiders ophalen...");
+        const { data: tls, error: tlErr } = await supabaseAdmin
+          .from("teamleiders")
+          .select("id, naam, email, teams, rol")
+          .eq("tenant_id", profile.tenant_id);
+
+        console.log("[Terugblik] Teamleiders gevonden:", tls ? tls.length : 0, tlErr ? "FOUT: " + tlErr.message : "");
+
+        if (!tls || tls.length === 0) {
+          console.log("[Terugblik] Geen teamleiders gevonden in teamleiders tabel");
+          return new Response(
+            JSON.stringify({ error: "Geen teamleiders gevonden. Voeg eerst teamleiders toe via de Leidinggevende/HR tab.", aantal_ontvangers: 0 }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Filter op specifieke teamleider als meegegeven
+        let doelTeamleiders = tls;
+        if (body.teamleider_id) {
+          doelTeamleiders = tls.filter((t: { id: string }) => t.id === body.teamleider_id);
+        }
+        if (body.team_filter) {
+          doelTeamleiders = doelTeamleiders.filter((t: { teams: string[] | null }) =>
+            t.teams && t.teams.includes(body.team_filter)
+          );
+        }
+
+        const metEmail = doelTeamleiders.filter((t: { email: string | null }) => t.email && t.email.trim());
+        console.log("[Terugblik] Doel teamleiders:", doelTeamleiders.length, "met email:", metEmail.length);
+
+        if (metEmail.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "Geen teamleiders met emailadres gevonden.", aantal_ontvangers: 0, teamleiders: doelTeamleiders.map((t: {naam:string}) => t.naam) }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Stap 2: Data ophalen
+        console.log("[Terugblik] Stap 2: gesprekken en profielen ophalen...");
+        const { data: convs } = await supabaseAdmin.from("conversations").select("id, feedback, created_at, user_id").eq("tenant_id", profile.tenant_id);
         const { data: profs } = await supabaseAdmin.from("profiles").select("id, naam").eq("tenant_id", profile.tenant_id).eq("role", "medewerker");
-        const { data: tls } = await supabaseAdmin.from("teamleiders").select("naam, email").eq("tenant_id", profile.tenant_id);
 
         const totaalVragen = convs ? convs.length : 0;
         const positief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "goed").length : 0;
         const negatief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "niet_goed").length : 0;
-        const pct = totaalVragen > 0 ? Math.round((positief / (positief + negatief || 1)) * 100) : 0;
-        const actiefCount = profs ? profs.filter((p: {id:string}) => convs?.some((c: {user_id:string}) => c.user_id === p.id)).length : 0;
+        const pct = (positief + negatief) > 0 ? Math.round((positief / (positief + negatief)) * 100) : 0;
 
-        // Log opslaan
-        const ontvangers = tls ? tls.filter((t: {email:string|null}) => t.email).length : 0;
+        console.log("[Terugblik] Data: vragen=" + totaalVragen + " positief=" + positief + " negatief=" + negatief);
+
+        // Stap 3: Log opslaan
+        const status = body.is_test ? "test" : "verstuurd";
         await supabaseAdmin.from("terugblik_log").insert({
           tenant_id: profile.tenant_id,
           maand: maand,
-          aantal_ontvangers: ontvangers,
-          status: "verstuurd"
+          aantal_ontvangers: metEmail.length,
+          status: status,
         });
 
-        console.log("[Terugblik] Klaar, ontvangers:", ontvangers);
+        const ontvangerNamen = metEmail.map((t: {naam:string; email:string}) => t.naam + " (" + t.email + ")");
+        console.log("[Terugblik] Klaar, ontvangers:", ontvangerNamen.join(", "));
+
         return new Response(
-          JSON.stringify({ success: true, aantal_ontvangers: ontvangers, maand: maand }),
+          JSON.stringify({
+            success: true,
+            aantal_ontvangers: metEmail.length,
+            ontvangers: ontvangerNamen,
+            maand: maand,
+            data: { totaalVragen, positief, negatief, pct }
+          }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {
-        console.error("[Terugblik] Fout:", err);
-        return new Response(JSON.stringify({ error: "Terugblik genereren mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        console.error("[Terugblik] Exception:", err);
+        return new Response(JSON.stringify({ error: "Terugblik genereren mislukt: " + (err instanceof Error ? err.message : "onbekend") }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
 

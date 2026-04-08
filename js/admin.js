@@ -3349,33 +3349,106 @@
   // =============================================
   (function initTerugblikBtn() {
     var btn = document.getElementById('test-terugblik-btn');
-    if (!btn) return;
-    btn.addEventListener('click', async function () {
-      if (!confirm('Test terugblik email versturen naar alle teamleiders van deze organisatie?')) return;
-      btn.disabled = true;
-      btn.textContent = 'Versturen...';
+    var modal = document.getElementById('modal-terugblik');
+    var cancelBtn = document.getElementById('tb-cancel');
+    var verstuurBtn = document.getElementById('tb-verstuur');
+    var teamSelect = document.getElementById('tb-team-select');
+    var tlSelect = document.getElementById('tb-tl-select');
+    var resultEl = document.getElementById('tb-result');
 
-      try {
-        var session = await supabaseClient.auth.getSession();
-        var token = session.data.session.access_token;
-        var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-          body: JSON.stringify({ generate_terugblik: true })
+    if (!btn || !modal) return;
+
+    btn.addEventListener('click', function () {
+      // Vul team dropdown
+      if (teamSelect) {
+        teamSelect.innerHTML = '<option value="">Alle teams</option>';
+        var teamSet = {};
+        allTeamleiders.forEach(function (tl) {
+          if (tl.teams) tl.teams.forEach(function (t) { teamSet[t] = true; });
         });
-        var data = await resp.json();
-        if (data.error) {
-          alert('Terugblik mislukt: ' + data.error);
-        } else {
-          alert('Terugblik verstuurd naar ' + (data.aantal_ontvangers || 0) + ' ontvanger(s).');
-          loadTerugblikLog();
-        }
-      } catch (err) {
-        alert('Terugblik versturen mislukt.');
+        Object.keys(teamSet).sort().forEach(function (t) {
+          var opt = document.createElement('option');
+          opt.value = t; opt.textContent = t;
+          teamSelect.appendChild(opt);
+        });
       }
-      btn.disabled = false;
-      btn.textContent = 'Test terugblik email';
+      // Vul teamleider dropdown
+      vulTlDropdown('');
+      if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+      modal.classList.add('show');
     });
+
+    function vulTlDropdown(teamFilter) {
+      if (!tlSelect) return;
+      tlSelect.innerHTML = '<option value="">Alle teamleiders</option>';
+      var filtered = allTeamleiders;
+      if (teamFilter) {
+        filtered = allTeamleiders.filter(function (tl) {
+          return tl.teams && tl.teams.indexOf(teamFilter) !== -1;
+        });
+      }
+      filtered.forEach(function (tl) {
+        var opt = document.createElement('option');
+        opt.value = tl.id;
+        opt.textContent = tl.naam + (tl.email ? ' (' + tl.email + ')' : ' (geen email)');
+        tlSelect.appendChild(opt);
+      });
+    }
+
+    if (teamSelect) {
+      teamSelect.addEventListener('change', function () {
+        vulTlDropdown(teamSelect.value);
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () { modal.classList.remove('show'); });
+    }
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+
+    if (verstuurBtn) {
+      verstuurBtn.addEventListener('click', async function () {
+        verstuurBtn.disabled = true;
+        verstuurBtn.textContent = 'Versturen...';
+
+        try {
+          var session = await supabaseClient.auth.getSession();
+          var token = session.data.session.access_token;
+          var bodyData = { generate_terugblik: true, is_test: true };
+          if (tlSelect && tlSelect.value) bodyData.teamleider_id = tlSelect.value;
+          if (teamSelect && teamSelect.value) bodyData.team_filter = teamSelect.value;
+
+          var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify(bodyData)
+          });
+          var data = await resp.json();
+
+          if (resultEl) {
+            resultEl.style.display = '';
+            if (data.error) {
+              resultEl.innerHTML = '<div class="alert alert-error show">' + escapeHtml(data.error) + '</div>';
+            } else {
+              var namen = data.ontvangers ? data.ontvangers.join('<br>') : (data.aantal_ontvangers + ' ontvanger(s)');
+              resultEl.innerHTML = '<div class="alert alert-success show">Terugblik verstuurd naar:<br><strong>' + namen + '</strong></div>';
+              loadTerugblikLog();
+              setTimeout(function () { modal.classList.remove('show'); }, 3000);
+            }
+          }
+        } catch (err) {
+          if (resultEl) {
+            resultEl.style.display = '';
+            resultEl.innerHTML = '<div class="alert alert-error show">Versturen mislukt.</div>';
+          }
+        }
+        verstuurBtn.disabled = false;
+        verstuurBtn.textContent = 'Terugblik versturen';
+      });
+    }
   })();
 
   async function loadTerugblikLog() {

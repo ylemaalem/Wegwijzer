@@ -318,6 +318,30 @@
         </div>
       </section>
 
+      <!-- Modal: Terugblik versturen -->
+      <div class="modal-overlay" id="modal-terugblik">
+        <div class="modal" style="max-width:440px">
+          <h3 class="modal-title">Test terugblik email</h3>
+          <div class="form-group">
+            <label class="form-label">Team</label>
+            <select class="form-input" id="tb-team-select">
+              <option value="">Alle teams</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Teamleider</label>
+            <select class="form-input" id="tb-tl-select">
+              <option value="">Alle teamleiders</option>
+            </select>
+          </div>
+          <div id="tb-result" style="display:none;margin-bottom:12px"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="tb-cancel">Annuleren</button>
+            <button type="button" class="btn btn-primary" id="tb-verstuur">Terugblik versturen</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ========== TAB: VERBETERPUNTEN ========== -->
       <section class="tab-content" id="tab-verbeterpunten">
         <h2 class="section-title">Verbeterpunten</h2>
