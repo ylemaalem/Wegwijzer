@@ -2628,7 +2628,7 @@
                   invite_user: true,
                   invite_email: email,
                   invite_naam: naam,
-                  invite_role: 'teamleider',
+                  invite_role: 'teamleider',  // Alle leidinggevenden krijgen role=teamleider in profiles
                   redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
                 })
               });
@@ -2666,6 +2666,16 @@
         if (result.error) {
           alert('Opslaan mislukt: ' + result.error.message);
         } else {
+          // Sync profiles.role naar 'teamleider' voor deze email
+          if (email) {
+            await supabaseClient
+              .from('profiles')
+              .update({ role: 'teamleider' })
+              .eq('email', email)
+              .eq('tenant_id', tenantId)
+              .neq('role', 'admin');
+            console.log('[Leidinggevende] profiles.role gesynced naar teamleider voor:', email);
+          }
           modal.classList.remove('show');
           loadTeamleiders();
         }
