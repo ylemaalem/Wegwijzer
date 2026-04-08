@@ -100,36 +100,54 @@
 
     console.log('[TL] Teams uit teamleiders tabel:', JSON.stringify(myTeams));
 
-    // Haal alle medewerkers op
+    // Debug: haal ALLE profiles op zonder filter om te zien wat RLS toelaat
+    var debugResult = await supabaseClient
+      .from('profiles')
+      .select('naam, email, role, teams, teamleider_naam')
+      .eq('tenant_id', tenantId);
+    console.log('[TL Debug] Alle profiles in tenant (RLS gefilterd):', debugResult.data ? debugResult.data.length : 0, debugResult.error ? 'FOUT: ' + debugResult.error.message : '');
+    if (debugResult.data) {
+      debugResult.data.forEach(function (p) {
+        console.log('[TL Debug]   ' + (p.naam || '?') + ' role=' + p.role + ' teams=' + JSON.stringify(p.teams) + ' tl_naam=' + p.teamleider_naam);
+      });
+    }
+
+    // Haal medewerkers op (geen role filter — filter client-side)
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'medewerker');
+      .select('id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam, role')
+      .eq('tenant_id', tenantId);
 
-    console.log('[TL] Alle medewerkers in tenant:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
+    console.log('[TL] Profiles opgehaald:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden. ' + (result.error ? result.error.message : '') + '</td></tr>';
       return;
     }
 
-    // Filter medewerkers: team overlap OF direct gekoppeld via teamleider_naam
+    // Filter: alleen medewerkers (niet admin/teamleider) die bij dit team horen
     var myName = profile.naam || '';
+    // Gebruik ook de naam uit het teamleider record als die anders is
+    var tlNaam = '';
+    try {
+      var tlNaamResult = await supabaseClient.from('teamleiders').select('naam').eq('tenant_id', tenantId).eq('email', myEmail).limit(1);
+      if (tlNaamResult.data && tlNaamResult.data.length > 0) tlNaam = tlNaamResult.data[0].naam;
+    } catch (e) {}
+
+    console.log('[TL Debug] Filter op myName:', myName, 'tlNaam:', tlNaam, 'myTeams:', JSON.stringify(myTeams));
+
     teamProfiles = result.data.filter(function (p) {
-      // Direct gekoppeld via teamleider_naam
-      if (p.teamleider_naam && p.teamleider_naam === myName) return true;
+      if (p.role === 'admin') return false; // Skip admins
+      if (p.user_id === (sessionResult.data.user ? sessionResult.data.user.id : '')) return false; // Skip mezelf
+      // Direct gekoppeld via teamleider_naam (check beide namen)
+      if (p.teamleider_naam && (p.teamleider_naam === myName || p.teamleider_naam === tlNaam)) return true;
       // Team overlap
       if (myTeams.length === 0) return false;
       if (!p.teams || p.teams.length === 0) return false;
       return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
     });
 
-    console.log('[TL] Na filter:', teamProfiles.length, 'medewerkers (van', result.data.length, ')');
-    if (result.data) {
-      result.data.forEach(function (p) {
-        console.log('[TL]   ' + (p.naam || '?') + ' teams:', JSON.stringify(p.teams), 'teamleider_naam:', p.teamleider_naam);
-      });
+    console.log('[TL] Na filter:', teamProfiles.length, 'medewerkers');
     }
 
     if (teamProfiles.length === 0) {
