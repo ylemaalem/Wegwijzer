@@ -21,8 +21,6 @@
     loadTeamStatistieken();
     loadMijnAanvragen();
     loadTeamMeldingen();
-    loadTeamVertrouwen();
-    loadTeamQuiz();
     initAanvraagModal();
   });
 
@@ -67,49 +65,53 @@
   // =============================================
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
+    var myTeams = profile.teams || [];
+    console.log('[TL] Mijn teams:', JSON.stringify(myTeams));
 
-    // Stap 1: Email en teams ophalen
-    var userResult = await supabaseClient.auth.getUser();
-    var myEmail = userResult.data.user ? userResult.data.user.email : '';
-    var myUserId = userResult.data.user ? userResult.data.user.id : '';
+    var result = await supabaseClient
+      .from('profiles')
+      .select('id, naam, email, functiegroep, startdatum, user_id, teams')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'medewerker');
 
-    // Stap 2: Teams uit teamleiders tabel op basis van email
-    var myTeams = [];
-    var tlNaam = '';
-    var tlResult = await supabaseClient.from('teamleiders').select('naam, teams').eq('tenant_id', tenantId).eq('email', myEmail).limit(1);
-    if (tlResult.data && tlResult.data.length > 0) {
-      tlNaam = tlResult.data[0].naam || '';
-      myTeams = tlResult.data[0].teams || [];
+    console.log('[TL] Alle medewerkers in tenant:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
+    if (result.data) {
+      result.data.forEach(function (p) {
+        console.log('[TL]   ' + p.naam + ' teams:', JSON.stringify(p.teams));
+      });
     }
-    // Voeg ook teams uit eigen profiel toe
-    if (profile.teams) {
-      profile.teams.forEach(function (t) { if (myTeams.indexOf(t) === -1) myTeams.push(t); });
-    }
-    var myName = profile.naam || '';
-
-    console.log('[TL] Email:', myEmail, 'TL naam:', tlNaam, 'Profiel naam:', myName, 'Teams:', JSON.stringify(myTeams));
-
-    // Stap 3: Alle medewerkers ophalen — één simpele query
-    var result = await supabaseClient.from('profiles').select('*').eq('tenant_id', tenantId).eq('role', 'medewerker');
-    console.log('[TL] Medewerkers direct:', result.data ? result.data.length : 0, result.error ? result.error.message : '');
 
     if (result.error || !result.data) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
-    // Stap 4: Filter in JavaScript
-    teamProfiles = result.data.filter(function (m) {
-      // Match op teamleider_naam
-      if (m.teamleider_naam && (m.teamleider_naam === myName || m.teamleider_naam === tlNaam)) return true;
-      // Match op team overlap
-      if (myTeams.length > 0 && m.teams && m.teams.length > 0) {
-        return m.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
-      }
-      return false;
+    // Client-side filteren op overlappende teams
+    teamProfiles = result.data.filter(function (p) {
+      if (myTeams.length === 0) return true;
+      if (!p.teams || p.teams.length === 0) return false;
+      return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
     });
 
-    console.log('[TL] Na filter:', teamProfiles.length);
+    // Extra: haal medewerkers op die via teamleider_naam gekoppeld zijn
+    var mijnNaam = profile.naam || '';
+    if (mijnNaam) {
+      var extraResult = await supabaseClient
+        .from('profiles')
+        .select('id, naam, email, functiegroep, startdatum, user_id, teams')
+        .eq('tenant_id', tenantId)
+        .eq('teamleider_naam', mijnNaam);
+
+      if (extraResult.data) {
+        extraResult.data.forEach(function (m) {
+          // Voeg toe als niet al in de lijst (check op id)
+          var alErin = teamProfiles.some(function (tp) { return tp.id === m.id; });
+          if (!alErin) teamProfiles.push(m);
+        });
+      }
+    }
+
+    console.log('[TL] Na filter + teamleider_naam:', teamProfiles.length, 'medewerkers');
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
@@ -496,54 +498,6 @@
   }
 
   // =============================================
-  // =============================================
-  // VERTROUWENSCHECK VOOR TEAMLEIDER
-  // =============================================
-  async function loadTeamVertrouwen() {
-    var container = document.getElementById('tl-vertrouwen-lijst');
-    if (!container) return;
-
-    var teamIds = teamProfiles.map(function (p) { return p.user_id; });
-    if (teamIds.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen teamleden.</p>'; return; }
-
-    var result = await supabaseClient.from('vertrouwens_scores').select('user_id, week_nummer, score, signaal_verstuurd').in('user_id', teamIds).eq('signaal_verstuurd', true).order('created_at', { ascending: false });
-
-    if (!result.data || result.data.length === 0) {
-      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen gedeelde scores.</p>';
-      return;
-    }
-
-    container.innerHTML = result.data.map(function (s) {
-      var p = teamProfiles.find(function (pr) { return pr.user_id === s.user_id; });
-      var naam = p ? p.naam : 'Onbekend';
-      var sterren = ''; for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
-      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
-        '<span>' + escapeHtml(naam) + '</span><span>Week ' + s.week_nummer + '</span><span>' + sterren + '</span></div>';
-    }).join('');
-  }
-
-  async function loadTeamQuiz() {
-    var container = document.getElementById('tl-quiz-lijst');
-    if (!container) return;
-
-    var teamIds = teamProfiles.map(function (p) { return p.user_id; });
-    if (teamIds.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen teamleden.</p>'; return; }
-
-    var result = await supabaseClient.from('quiz_resultaten').select('user_id, week_nummer, score, totaal, gedeeld').in('user_id', teamIds).eq('gedeeld', true).order('created_at', { ascending: false });
-
-    if (!result.data || result.data.length === 0) {
-      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Geen gedeelde quiz resultaten.</p>';
-      return;
-    }
-
-    container.innerHTML = result.data.map(function (q) {
-      var p = teamProfiles.find(function (pr) { return pr.user_id === q.user_id; });
-      var naam = p ? p.naam : 'Onbekend';
-      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
-        '<span>' + escapeHtml(naam) + '</span><span>Week ' + q.week_nummer + '</span><span>' + q.score + '/' + q.totaal + ' goed</span></div>';
-    }).join('');
-  }
-
   // HULPFUNCTIES
   // =============================================
   function escapeHtml(text) {
