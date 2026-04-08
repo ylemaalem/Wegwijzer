@@ -97,7 +97,60 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ---- 4. Rate limiting per rol (configureerbaar per profiel) ----
+    // ---- 4. Request body ----
+    const body = await req.json();
+    const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
+
+    // ---- Teamleider: team medewerkers ophalen (via service role, omzeilt RLS) ----
+    if (body.get_team_medewerkers) {
+      console.log("[Edge] get_team_medewerkers voor:", profile.naam);
+
+      if (profile.role !== "teamleider" && profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Geen toegang" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const myTeams: string[] = (profile as Record<string, unknown>).teams as string[] || [];
+      const myNaam: string = profile.naam || "";
+
+      // Exact dezelfde query als admin: select(*) met tenant_id filter via service role
+      const { data: allMedewerkers, error: teamError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("role", "medewerker");
+
+      if (teamError) {
+        console.error("[Edge] get_team_medewerkers fout:", teamError.message);
+        return new Response(
+          JSON.stringify({ error: teamError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log("[Edge] get_team_medewerkers: totaal medewerkers in tenant=", allMedewerkers?.length);
+
+      // Filter: teamleider_naam match OF team overlap
+      const filtered = (allMedewerkers || []).filter((p: Record<string, unknown>) => {
+        if (myNaam && p.teamleider_naam === myNaam) return true;
+        if (myTeams.length > 0 && Array.isArray(p.teams)) {
+          return (p.teams as string[]).some((t: string) => myTeams.includes(t));
+        }
+        if (myTeams.length === 0 && !myNaam) return true;
+        return false;
+      });
+
+      console.log("[Edge] get_team_medewerkers: gefilterd=", filtered.length);
+
+      return new Response(
+        JSON.stringify({ medewerkers: filtered }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ---- 5. Rate limiting per rol (configureerbaar per profiel) ----
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStr = todayStart.toISOString().split("T")[0];
@@ -135,10 +188,6 @@ Deno.serve(async (req: Request) => {
         );
       }
     }
-
-    // ---- 5. Request body ----
-    const body = await req.json();
-    const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
 
     // ---- Gebruiker uitnodigen via admin API (service role) ----
     if (body.invite_user && body.invite_email) {
@@ -652,56 +701,6 @@ Deno.serve(async (req: Request) => {
         .upsert({ profile_id: profile.id, datum: todayStr }, { onConflict: "profile_id,datum" });
       return new Response(
         JSON.stringify({ extended: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ---- Teamleider: team medewerkers ophalen (via service role) ----
-    if (body.get_team_medewerkers) {
-      console.log("[Edge] get_team_medewerkers voor:", profile.naam);
-
-      if (profile.role !== "teamleider" && profile.role !== "admin") {
-        return new Response(
-          JSON.stringify({ error: "Geen toegang" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const myTeams: string[] = (profile as Record<string, unknown>).teams as string[] || [];
-      const myNaam: string = profile.naam || "";
-
-      // Alle medewerkers in dezelfde tenant ophalen via service role (omzeilt RLS)
-      const { data: allProfiles, error: teamError } = await supabaseAdmin
-        .from("profiles")
-        .select("id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam, role")
-        .eq("tenant_id", profile.tenant_id)
-        .eq("role", "medewerker");
-
-      if (teamError) {
-        console.error("[Edge] get_team_medewerkers fout:", teamError.message);
-        return new Response(
-          JSON.stringify({ error: teamError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Filter: teamleider_naam match OF team overlap
-      const filtered = (allProfiles || []).filter((p: Record<string, unknown>) => {
-        // Match op teamleider_naam
-        if (myNaam && p.teamleider_naam === myNaam) return true;
-        // Match op team overlap
-        if (myTeams.length > 0 && Array.isArray(p.teams)) {
-          return (p.teams as string[]).some((t: string) => myTeams.includes(t));
-        }
-        // Geen teams ingesteld bij teamleider = toon alles
-        if (myTeams.length === 0 && !myNaam) return true;
-        return false;
-      });
-
-      console.log("[Edge] get_team_medewerkers: totaal=", allProfiles?.length, "gefilterd=", filtered.length);
-
-      return new Response(
-        JSON.stringify({ medewerkers: filtered }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
