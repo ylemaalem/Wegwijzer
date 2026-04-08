@@ -656,6 +656,56 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ---- Teamleider: team medewerkers ophalen (via service role) ----
+    if (body.get_team_medewerkers) {
+      console.log("[Edge] get_team_medewerkers voor:", profile.naam);
+
+      if (profile.role !== "teamleider" && profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Geen toegang" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const myTeams: string[] = (profile as Record<string, unknown>).teams as string[] || [];
+      const myNaam: string = profile.naam || "";
+
+      // Alle medewerkers in dezelfde tenant ophalen via service role (omzeilt RLS)
+      const { data: allProfiles, error: teamError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam, role")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("role", "medewerker");
+
+      if (teamError) {
+        console.error("[Edge] get_team_medewerkers fout:", teamError.message);
+        return new Response(
+          JSON.stringify({ error: teamError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Filter: teamleider_naam match OF team overlap
+      const filtered = (allProfiles || []).filter((p: Record<string, unknown>) => {
+        // Match op teamleider_naam
+        if (myNaam && p.teamleider_naam === myNaam) return true;
+        // Match op team overlap
+        if (myTeams.length > 0 && Array.isArray(p.teams)) {
+          return (p.teams as string[]).some((t: string) => myTeams.includes(t));
+        }
+        // Geen teams ingesteld bij teamleider = toon alles
+        if (myTeams.length === 0 && !myNaam) return true;
+        return false;
+      });
+
+      console.log("[Edge] get_team_medewerkers: totaal=", allProfiles?.length, "gefilterd=", filtered.length);
+
+      return new Response(
+        JSON.stringify({ medewerkers: filtered }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ---- PDF extractie via Claude ----
     if (body.extract_pdf && body.pdf_base64) {
       console.log("[PDF Extract] Start extractie, grootte:", body.pdf_base64.length);
