@@ -68,35 +68,37 @@
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
 
-    // Haal teams op uit profiles EN uit teamleiders tabel
-    var myTeams = profile.teams || [];
+    // Stap 1: Haal email van ingelogde gebruiker op
+    var sessionResult = await supabaseClient.auth.getUser();
+    var myEmail = sessionResult.data.user ? sessionResult.data.user.email : '';
+    console.log('[TL] Email ingelogde gebruiker:', myEmail);
 
-    // Check ook teamleiders tabel op basis van email of naam
+    // Stap 2: Zoek teamleider record op basis van email
+    var myTeams = profile.teams || [];
     try {
       var tlResult = await supabaseClient
         .from('teamleiders')
-        .select('teams')
-        .eq('tenant_id', tenantId);
-      if (tlResult.data) {
-        // Zoek teamleider record dat bij deze gebruiker hoort (op naam of email)
-        var userEmail = profile.email || '';
-        var userName = profile.naam || '';
-        tlResult.data.forEach(function (tl) {
-          // We kunnen niet op user_id matchen want teamleiders tabel heeft dat niet
-          // Match op naam (beste optie beschikbaar)
-        });
-        // Voeg alle teams van alle matching teamleider records toe
-        tlResult.data.forEach(function (tl) {
-          if (tl.teams && Array.isArray(tl.teams)) {
-            tl.teams.forEach(function (t) {
-              if (myTeams.indexOf(t) === -1) myTeams.push(t);
-            });
-          }
-        });
-      }
-    } catch (e) { /* teamleiders tabel bestaat mogelijk niet */ }
+        .select('naam, email, teams')
+        .eq('tenant_id', tenantId)
+        .eq('email', myEmail)
+        .limit(1);
 
-    console.log('[TL] Mijn teams (profiles + teamleiders):', JSON.stringify(myTeams));
+      if (tlResult.data && tlResult.data.length > 0) {
+        var mijnTlRecord = tlResult.data[0];
+        console.log('[TL] Teamleider record gevonden: ja, naam:', mijnTlRecord.naam);
+        if (mijnTlRecord.teams && Array.isArray(mijnTlRecord.teams)) {
+          mijnTlRecord.teams.forEach(function (t) {
+            if (myTeams.indexOf(t) === -1) myTeams.push(t);
+          });
+        }
+      } else {
+        console.log('[TL] Teamleider record gevonden: nee (email:', myEmail, ')');
+      }
+    } catch (e) {
+      console.error('[TL] Fout bij ophalen teamleider record:', e);
+    }
+
+    console.log('[TL] Teams uit teamleiders tabel:', JSON.stringify(myTeams));
 
     // Haal alle medewerkers op
     var result = await supabaseClient
