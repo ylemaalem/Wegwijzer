@@ -69,12 +69,14 @@
     try {
       var myTeams = profile.teams || [];
 
-      // Query 1: medewerkers ophalen
+      // Medewerkers ophalen
       var result = await supabaseClient
         .from('profiles')
         .select('id, naam, email, functiegroep, startdatum, user_id, teams')
         .eq('tenant_id', tenantId)
         .eq('role', 'medewerker');
+
+      console.log('[TL] Query met tenant_id=' + tenantId + ' role=medewerker:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
 
       if (result.error || !result.data) {
         tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
