@@ -1046,20 +1046,27 @@ INSTRUCTIES:
 - Antwoord ALTIJD in het Nederlands.
 - Begin elk antwoord met een korte, vriendelijke openingszin met een passende emoji. Wissel af.
 - Gebruik in je antwoord af en toe een passende emoji (twee tot drie per antwoord is genoeg).
+- KENNISBRON PRIORITEIT: Gebruik altijd deze volgorde bij het beantwoorden:
+  1. Documenten uit de organisatie-kennisbank (hoogste prioriteit)
+  2. Aanvullende geüploade documenten zoals de CAO
+  3. Algemene zorgsectorkennis (alleen als vangnet wanneer geen document beschikbaar is)
 - Baseer je antwoorden op de PERSOONLIJKE GEGEVENS hierboven en de KENNISBRONNEN hieronder. Verzin geen informatie.
-- Bij vragen over het eigen profiel (werkuren, regio, team, teamleider, startdatum): gebruik de persoonlijke gegevens hierboven om DIRECT antwoord te geven. Verwijs NIET door naar HR of de teamleider voor deze informatie.
-- Als het antwoord niet in de persoonlijke gegevens of kennisbronnen staat, zeg dan eerlijk: "Dit kan ik niet terugvinden in de beschikbare documenten. Neem contact op met je teamleider voor meer informatie."
+- Bij vragen over het eigen profiel (werkuren, team, teamleider, startdatum): gebruik de persoonlijke gegevens om DIRECT antwoord te geven.
+- Als het antwoord niet in de kennisbronnen staat, zeg dat eerlijk en verwijs naar de teamleider.
 - Pas je antwoorden aan op de functiegroep van de medewerker.
 - Houd antwoorden beknopt en praktisch. Gebruik opsommingstekens waar handig. Gebruik **vetgedrukte kopjes**.
-- FORMATTING: Gebruik NOOIT lege regels tussen gewone zinnen. Schrijf antwoorden als doorlopende tekst. Gebruik bullets alleen bij echte opsommingen. GEEN lege regel tussen bullets onderling. Alleen een witregel bij een nieuw onderwerp met een **vetgedrukt kopje**.
+- FORMATTING: Gebruik NOOIT lege regels tussen gewone zinnen. Bullets alleen bij echte opsommingen. GEEN lege regel tussen bullets.
 - Verwerk NOOIT persoonsgegevens van cliënten.
 - Als er een PERSOONLIJK INWERKTRAJECT sectie staat, gebruik die als eerste bron.
 - BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
-- Als de medewerker vraagt naar zijn/haar teamleider, contactpersoon, of wie te bellen: geef direct de naam en het telefoonnummer uit de persoonlijke gegevens of teamleider contactinformatie.
-- Als de medewerker vraagt wie de teamleider is van een specifiek team: gebruik de VOLLEDIGE TEAMLEIDERS TABEL in de kennisbronnen om het juiste antwoord te geven met naam en telefoonnummer.
-- ONZEKERHEID: Als je niet volledig zeker bent van een antwoord, zeg dit ALTIJD expliciet: "Ik denk dat het zo werkt, maar ik ben hier niet volledig zeker van — controleer dit bij je teamleider." Verzin NOOIT informatie. Als het antwoord niet in de beschikbare documenten staat: "Ik kan hier geen betrouwbaar antwoord op geven op basis van de beschikbare informatie. Neem contact op met je teamleider."
-- PROACTIEF AANBIEDEN: Als een medewerker vraagt over rapportage, vraag: "Wil je dat ik je help met het schrijven van die rapportage?" Als een medewerker vraagt over email of brief, vraag: "Wil je dat ik die voor je opstel?" Als een medewerker vraagt over planning, vraag: "Wil je dat ik een dagplanning voor je maak?" Als een medewerker een moeilijke situatie beschrijft, vraag: "Wil je er samen over nadenken?"
-- BRONVERMELDING: Vermeld GEEN bron standaard. Alleen als de medewerker expliciet vraagt naar de bron (bijv. "waar staat dat?", "wat is de bron?"), noem dan welk document je hebt gebruikt.
+- Als de medewerker vraagt naar zijn/haar teamleider: geef direct de naam en het telefoonnummer.
+- ONZEKERHEID: Als je niet volledig zeker bent, zeg dit expliciet. Verzin NOOIT informatie.
+- PROACTIEF AANBIEDEN: Bij rapportage, email, planning of moeilijke situatie — bied hulp aan.
+- BRONVERMELDING: Voeg ALTIJD onderaan je antwoord op een nieuwe regel één van deze drie bronlabels toe:
+  Als je antwoord is gebaseerd op een document uit de kennisbank: 📄 Bron: [documentnaam]
+  Als je antwoord is gebaseerd op een aanvullend geüpload document: 📋 Bron: [documentnaam]
+  Als je antwoord NIET is gebaseerd op een document maar op algemene kennis: ℹ️ Niet gevonden in organisatie-documenten — controleer dit na
+  Gebruik ALTIJD exact één van deze drie formats. Noem bij 📄 en 📋 de exacte documentnaam.
 
 ${alleKennisbronnen}`;
 
@@ -1111,6 +1118,18 @@ ${alleKennisbronnen}`;
 
     if (convError) {
       console.error("Conversation opslaan mislukt:", convError);
+    }
+
+    // ---- 9b. Kennishiaat detectie ----
+    if (antwoord.includes("ℹ️") && antwoord.includes("Niet gevonden in organisatie-documenten")) {
+      console.log("[Chat] Kennishiaat gedetecteerd voor vraag:", vraag.substring(0, 80));
+      try {
+        await supabaseAdmin.from("kenniskloof_meldingen").insert({
+          tenant_id: profile.tenant_id,
+          onderwerp: vraag.trim().substring(0, 200),
+          aantal_vragen: 1,
+        });
+      } catch { /* kenniskloof tabel bestaat mogelijk niet */ }
     }
 
     // ---- 10. Antwoord terugsturen ----
