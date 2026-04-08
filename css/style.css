@@ -88,7 +88,7 @@ body {
 
 /* ---- Header ---- */
 .app-header {
-  background-color: #E8720C;
+  background-color: var(--primary);
   background-image: none;
   color: white;
   padding: 16px 20px;

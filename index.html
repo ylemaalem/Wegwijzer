@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#E8720C">
+  <meta name="theme-color" content="#0D5C6B">
   <meta name="description" content="Wegwijzer — Jouw kennisassistent">
   <title>Wegwijzer — Inloggen</title>
   <link rel="manifest" href="manifest.json">
@@ -12,98 +12,191 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="css/style.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Sora', 'Segoe UI', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0D5C6B 0%, #0a4a57 100%);
+      padding: 20px;
+    }
+    .login-container {
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-card {
+      background: white;
+      border-radius: 20px;
+      padding: 40px 32px 32px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+    .login-logo {
+      width: 100px;
+      height: 100px;
+      border-radius: 20px;
+      margin: 0 auto 20px;
+      display: block;
+      object-fit: cover;
+    }
+    .login-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #0D5C6B;
+      margin-bottom: 4px;
+    }
+    .login-subtitle {
+      font-size: 0.9rem;
+      color: #6B8A91;
+      margin-bottom: 28px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .form-label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 0.85rem;
+      color: #333;
+    }
+    .form-input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #E0E0E0;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-family: 'Sora', sans-serif;
+      transition: border-color 0.2s;
+      background: #FAFAFA;
+      color: #333;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: #0D5C6B;
+      background: white;
+    }
+    .form-input::placeholder { color: #999; }
+    .btn-login {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: 'Sora', sans-serif;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      background: #0D5C6B;
+      color: white;
+      margin-top: 8px;
+    }
+    .btn-login:hover { background: #0a4a57; }
+    .btn-login:active { transform: scale(0.98); }
+    .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-text {
+      background: none;
+      border: none;
+      color: #0D5C6B;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 8px 0;
+      font-size: 0.85rem;
+      font-family: 'Sora', sans-serif;
+    }
+    .btn-text:hover { text-decoration: underline; }
+    .login-footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.5;
+    }
+    .login-footer a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .login-footer a:hover { text-decoration: underline; }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+      display: none;
+      text-align: left;
+    }
+    .alert-error { background: #FFF0F0; color: #DC3545; border: 1px solid #DC3545; }
+    .alert-success { background: #F0FFF4; color: #28A745; border: 1px solid #28A745; }
+    .alert.show { display: block; }
+    .hidden { display: none !important; }
+    .mt-16 { margin-top: 16px; }
+    .text-center { text-align: center; }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <div class="page-container">
+  <div class="login-container">
+    <div class="login-card">
+      <img src="icons/icon-512.png?v=3" alt="Wegwijzer" class="login-logo">
+      <h1 class="login-title">Wegwijzer</h1>
+      <p class="login-subtitle">Jouw kennisassistent</p>
 
-    <!-- Header -->
-    <header class="app-header">
-      <h1>Wegwijzer</h1>
-    </header>
-
-    <!-- Content -->
-    <main class="page-content">
-
-      <div id="alert" class="alert" role="alert" style="max-width:420px;width:100%">
+      <div id="alert" class="alert" role="alert">
         <span id="alert-message"></span>
       </div>
 
       <!-- Login formulier -->
-      <div id="login-view" class="card">
-        <h2 class="card-title">Welkom terug</h2>
-        <p class="card-subtitle">Log in met je werkmail</p>
-
+      <div id="login-view">
         <form id="login-form" novalidate>
           <div class="form-group">
             <label class="form-label" for="email">E-mailadres</label>
-            <input
-              class="form-input"
-              type="email"
-              id="email"
-              name="email"
-              placeholder="naam@werkmail.nl"
-              autocomplete="email"
-              required
-            >
+            <input class="form-input" type="email" id="email" name="email" placeholder="naam@werkmail.nl" autocomplete="email" required>
           </div>
-
           <div class="form-group">
             <label class="form-label" for="password">Wachtwoord</label>
-            <input
-              class="form-input"
-              type="password"
-              id="password"
-              name="password"
-              placeholder="Je wachtwoord"
-              autocomplete="current-password"
-              required
-            >
+            <input class="form-input" type="password" id="password" name="password" placeholder="Je wachtwoord" autocomplete="current-password" required>
           </div>
-
-          <button type="submit" class="btn btn-primary" id="login-btn">
-            Inloggen
-          </button>
+          <button type="submit" class="btn-login" id="login-btn">Inloggen</button>
         </form>
-
         <div class="text-center mt-16">
           <button class="btn-text" id="show-reset">Wachtwoord vergeten?</button>
         </div>
       </div>
 
-      <!-- Wachtwoord vergeten formulier -->
-      <div id="reset-view" class="card hidden">
-        <h2 class="card-title">Wachtwoord vergeten</h2>
-        <p class="card-subtitle">Vul je werkmail in om een herstel-link te ontvangen</p>
-
+      <!-- Wachtwoord vergeten -->
+      <div id="reset-view" class="hidden">
         <form id="reset-form" novalidate>
           <div class="form-group">
             <label class="form-label" for="reset-email">E-mailadres</label>
-            <input
-              class="form-input"
-              type="email"
-              id="reset-email"
-              name="email"
-              placeholder="naam@werkmail.nl"
-              autocomplete="email"
-              required
-            >
+            <input class="form-input" type="email" id="reset-email" name="email" placeholder="naam@werkmail.nl" autocomplete="email" required>
           </div>
-
-          <button type="submit" class="btn btn-primary" id="reset-btn">
-            Verstuur herstel-link
-          </button>
+          <button type="submit" class="btn-login" id="reset-btn">Verstuur herstel-link</button>
         </form>
-
         <div class="text-center mt-16">
           <button class="btn-text" id="show-login">Terug naar inloggen</button>
         </div>
       </div>
+    </div>
 
-    </main>
+    <div class="login-footer">
+      Nog geen account? Neem contact op via<br>
+      <a href="https://mijnwegwijzer.com">mijnwegwijzer.com</a>
+    </div>
   </div>
 
-  <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
