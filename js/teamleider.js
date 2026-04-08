@@ -68,94 +68,54 @@
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
 
-    // Stap 1: Haal email van ingelogde gebruiker op
-    var sessionResult = await supabaseClient.auth.getUser();
-    var myEmail = sessionResult.data.user ? sessionResult.data.user.email : '';
-    console.log('[TL] Email ingelogde gebruiker:', myEmail);
+    // Stap 1: Email en teams ophalen
+    var userResult = await supabaseClient.auth.getUser();
+    var myEmail = userResult.data.user ? userResult.data.user.email : '';
+    var myUserId = userResult.data.user ? userResult.data.user.id : '';
 
-    // Stap 2: Zoek teamleider record op basis van email
-    var myTeams = profile.teams || [];
-    try {
-      var tlResult = await supabaseClient
-        .from('teamleiders')
-        .select('naam, email, teams')
-        .eq('tenant_id', tenantId)
-        .eq('email', myEmail)
-        .limit(1);
-
-      if (tlResult.data && tlResult.data.length > 0) {
-        var mijnTlRecord = tlResult.data[0];
-        console.log('[TL] Teamleider record gevonden: ja, naam:', mijnTlRecord.naam);
-        if (mijnTlRecord.teams && Array.isArray(mijnTlRecord.teams)) {
-          mijnTlRecord.teams.forEach(function (t) {
-            if (myTeams.indexOf(t) === -1) myTeams.push(t);
-          });
-        }
-      } else {
-        console.log('[TL] Teamleider record gevonden: nee (email:', myEmail, ')');
-      }
-    } catch (e) {
-      console.error('[TL] Fout bij ophalen teamleider record:', e);
+    // Stap 2: Teams uit teamleiders tabel op basis van email
+    var myTeams = [];
+    var tlNaam = '';
+    var tlResult = await supabaseClient.from('teamleiders').select('naam, teams').eq('tenant_id', tenantId).eq('email', myEmail).limit(1);
+    if (tlResult.data && tlResult.data.length > 0) {
+      tlNaam = tlResult.data[0].naam || '';
+      myTeams = tlResult.data[0].teams || [];
     }
-
-    console.log('[TL] Teams uit teamleiders tabel:', JSON.stringify(myTeams));
-
-    // Debug: haal ALLE profiles op zonder filter om te zien wat RLS toelaat
-    var debugResult = await supabaseClient
-      .from('profiles')
-      .select('naam, email, role, teams, teamleider_naam')
-      .eq('tenant_id', tenantId);
-    console.log('[TL Debug] Alle profiles in tenant (RLS gefilterd):', debugResult.data ? debugResult.data.length : 0, debugResult.error ? 'FOUT: ' + debugResult.error.message : '');
-    if (debugResult.data) {
-      debugResult.data.forEach(function (p) {
-        console.log('[TL Debug]   ' + (p.naam || '?') + ' role=' + p.role + ' teams=' + JSON.stringify(p.teams) + ' tl_naam=' + p.teamleider_naam);
-      });
+    // Voeg ook teams uit eigen profiel toe
+    if (profile.teams) {
+      profile.teams.forEach(function (t) { if (myTeams.indexOf(t) === -1) myTeams.push(t); });
     }
+    var myName = profile.naam || '';
 
-    // Haal medewerkers op (geen role filter — filter client-side)
-    var result = await supabaseClient
-      .from('profiles')
-      .select('id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam, role')
-      .eq('tenant_id', tenantId);
+    console.log('[TL] Email:', myEmail, 'TL naam:', tlNaam, 'Profiel naam:', myName, 'Teams:', JSON.stringify(myTeams));
 
-    console.log('[TL] Profiles opgehaald:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
+    // Stap 3: Alle medewerkers ophalen — één simpele query
+    var result = await supabaseClient.from('profiles').select('*').eq('tenant_id', tenantId).eq('role', 'medewerker');
+    console.log('[TL] Medewerkers direct:', result.data ? result.data.length : 0, result.error ? result.error.message : '');
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden. ' + (result.error ? result.error.message : '') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
-    // Filter: alleen medewerkers (niet admin/teamleider) die bij dit team horen
-    var myName = profile.naam || '';
-    // Gebruik ook de naam uit het teamleider record als die anders is
-    var tlNaam = '';
-    try {
-      var tlNaamResult = await supabaseClient.from('teamleiders').select('naam').eq('tenant_id', tenantId).eq('email', myEmail).limit(1);
-      if (tlNaamResult.data && tlNaamResult.data.length > 0) tlNaam = tlNaamResult.data[0].naam;
-    } catch (e) {}
-
-    console.log('[TL Debug] Filter op myName:', myName, 'tlNaam:', tlNaam, 'myTeams:', JSON.stringify(myTeams));
-
-    teamProfiles = result.data.filter(function (p) {
-      if (p.role === 'admin') return false; // Skip admins
-      if (p.user_id === (sessionResult.data.user ? sessionResult.data.user.id : '')) return false; // Skip mezelf
-      // Direct gekoppeld via teamleider_naam (check beide namen)
-      if (p.teamleider_naam && (p.teamleider_naam === myName || p.teamleider_naam === tlNaam)) return true;
-      // Team overlap
-      if (myTeams.length === 0) return false;
-      if (!p.teams || p.teams.length === 0) return false;
-      return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
+    // Stap 4: Filter in JavaScript
+    teamProfiles = result.data.filter(function (m) {
+      // Match op teamleider_naam
+      if (m.teamleider_naam && (m.teamleider_naam === myName || m.teamleider_naam === tlNaam)) return true;
+      // Match op team overlap
+      if (myTeams.length > 0 && m.teams && m.teams.length > 0) {
+        return m.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
+      }
+      return false;
     });
 
-    console.log('[TL] Na filter:', teamProfiles.length, 'medewerkers');
-    }
+    console.log('[TL] Na filter:', teamProfiles.length);
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
       return;
     }
 
-    console.log('[TL] Rendering', teamProfiles.length, 'medewerkers:', teamProfiles.map(function(p){return p.naam;}).join(', '));
     tbody.innerHTML = teamProfiles.map(function (p) {
       var fg = formatFunctiegroep(p.functiegroep);
       var sd = p.startdatum ? new Date(p.startdatum).toLocaleDateString('nl-NL', {
