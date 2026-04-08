@@ -67,35 +67,63 @@
   // =============================================
   async function loadTeamMedewerkers() {
     var tbody = document.getElementById('tl-medewerkers-body');
-    var myTeams = profile.teams || [];
-    console.log('[TL] Mijn teams:', JSON.stringify(myTeams));
 
+    // Haal teams op uit profiles EN uit teamleiders tabel
+    var myTeams = profile.teams || [];
+
+    // Check ook teamleiders tabel op basis van email of naam
+    try {
+      var tlResult = await supabaseClient
+        .from('teamleiders')
+        .select('teams')
+        .eq('tenant_id', tenantId);
+      if (tlResult.data) {
+        // Zoek teamleider record dat bij deze gebruiker hoort (op naam of email)
+        var userEmail = profile.email || '';
+        var userName = profile.naam || '';
+        tlResult.data.forEach(function (tl) {
+          // We kunnen niet op user_id matchen want teamleiders tabel heeft dat niet
+          // Match op naam (beste optie beschikbaar)
+        });
+        // Voeg alle teams van alle matching teamleider records toe
+        tlResult.data.forEach(function (tl) {
+          if (tl.teams && Array.isArray(tl.teams)) {
+            tl.teams.forEach(function (t) {
+              if (myTeams.indexOf(t) === -1) myTeams.push(t);
+            });
+          }
+        });
+      }
+    } catch (e) { /* teamleiders tabel bestaat mogelijk niet */ }
+
+    console.log('[TL] Mijn teams (profiles + teamleiders):', JSON.stringify(myTeams));
+
+    // Haal alle medewerkers op
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, functiegroep, startdatum, user_id, teams')
+      .select('id, naam, email, functiegroep, startdatum, user_id, teams, teamleider_naam')
       .eq('tenant_id', tenantId)
       .eq('role', 'medewerker');
 
     console.log('[TL] Alle medewerkers in tenant:', result.data ? result.data.length : 0, result.error ? 'FOUT: ' + result.error.message : '');
-    if (result.data) {
-      result.data.forEach(function (p) {
-        console.log('[TL]   ' + p.naam + ' teams:', JSON.stringify(p.teams));
-      });
-    }
 
     if (result.error || !result.data) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
-    // Client-side filteren op overlappende teams
+    // Filter medewerkers: team overlap OF direct gekoppeld via teamleider_naam
+    var myName = profile.naam || '';
     teamProfiles = result.data.filter(function (p) {
-      if (myTeams.length === 0) return true;
+      // Direct gekoppeld via teamleider_naam
+      if (p.teamleider_naam && p.teamleider_naam === myName) return true;
+      // Team overlap
+      if (myTeams.length === 0) return false;
       if (!p.teams || p.teams.length === 0) return false;
       return p.teams.some(function (t) { return myTeams.indexOf(t) !== -1; });
     });
 
-    console.log('[TL] Na team-filter:', teamProfiles.length, 'medewerkers');
+    console.log('[TL] Na filter:', teamProfiles.length, 'medewerkers (van', result.data.length, ')');
 
     if (teamProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
