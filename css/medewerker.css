@@ -853,7 +853,8 @@
 #modal-app-feedback {
   position: fixed;
   right: 20px;
-  bottom: 76px; /* boven de zwevende feedback-knop */
+  /* Knop staat op bottom 80px (+safe area), is ~40px hoog. Modal 12px daarboven. */
+  bottom: calc(140px + env(safe-area-inset-bottom, 0px));
   width: calc(100vw - 40px);
   max-width: 380px;
   max-height: 500px;
@@ -917,7 +918,8 @@
 @media (max-width: 480px) {
   #modal-app-feedback {
     right: 12px;
-    bottom: 64px;
+    /* Knop staat op bottom 72px (+safe area), is ~36px hoog. Modal 12px daarboven. */
+    bottom: calc(124px + env(safe-area-inset-bottom, 0px));
     width: calc(100vw - 24px);
     max-height: 70vh;
   }

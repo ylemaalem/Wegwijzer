@@ -269,10 +269,11 @@ body {
 .mt-8 { margin-top: 8px; }
 .hidden { display: none !important; }
 
-/* ---- App feedback knop (zwevend) ---- */
+/* ---- App feedback knop (zwevend, BOVEN de chat input bar) ---- */
 .app-feedback-btn {
   position: fixed;
-  bottom: 16px;
+  /* Chat input bar is ~64px hoog (10+44+10) + 1px border. Knop zit met 12px gap erboven. */
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   right: 16px;
   z-index: 100;
   background: var(--primary);
@@ -296,7 +297,13 @@ body {
 }
 .app-feedback-icon { font-size: 1.05rem; }
 @media (max-width: 480px) {
-  .app-feedback-btn { padding: 8px 12px; font-size: 0.78rem; bottom: 12px; right: 12px; }
+  .app-feedback-btn {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    /* Mobiele chat input bar is ~56px (8+40+8). Knop met 12px gap erboven. */
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    right: 12px;
+  }
 }
 
 /* ---- Responsive ---- */
