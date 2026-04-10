@@ -3933,6 +3933,39 @@
     return { van: van, tot: tot, label: label };
   }
 
+  // Haal alle unieke teams op uit de teamleiders.teams[] kolom voor de huidige tenant.
+  // Werkt onafhankelijk van de globale allTeamleiders cache (die wordt async gevuld).
+  async function fetchTeamsVoorTenant() {
+    var result = await supabaseClient
+      .from('teamleiders')
+      .select('teams')
+      .eq('tenant_id', tenantId);
+    if (result.error || !result.data) {
+      console.error('[fetchTeamsVoorTenant] fout:', result.error);
+      return [];
+    }
+    var set = {};
+    result.data.forEach(function (tl) {
+      if (Array.isArray(tl.teams)) tl.teams.forEach(function (t) { if (t) set[t] = true; });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function vulTeamSelect(selectEl, teams) {
+    if (!selectEl) return;
+    // Bewaar bestaande "Alle teams" optie en eventuele huidige selectie
+    var huidig = selectEl.value;
+    var bestaand = {};
+    Array.prototype.forEach.call(selectEl.options, function (o) { bestaand[o.value] = true; });
+    teams.forEach(function (t) {
+      if (bestaand[t]) return;
+      var opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      selectEl.appendChild(opt);
+    });
+    if (huidig) selectEl.value = huidig;
+  }
+
   function initRapportBtn() {
     var btn = document.getElementById('generate-rapport-btn');
     if (!btn) return;
@@ -3946,19 +3979,14 @@
       });
     }
 
-    // Vul team filter
+    // Vul team filter dropdowns ASYNC uit teamleiders.teams[] (huidige tenant)
+    // Dit moet async omdat loadTeamleiders mogelijk nog niet klaar is.
+    fetchTeamsVoorTenant().then(function (teams) {
+      console.log('[Rapport teams] gevonden:', teams.length, teams);
+      vulTeamSelect(document.getElementById('rap-team'), teams);
+      vulTeamSelect(document.getElementById('tb-team-select'), teams);
+    });
     var teamSelect = document.getElementById('rap-team');
-    if (teamSelect && allTeamleiders) {
-      var teamSet = {};
-      allTeamleiders.forEach(function (tl) {
-        if (tl.teams) tl.teams.forEach(function (t) { teamSet[t] = true; });
-      });
-      Object.keys(teamSet).sort().forEach(function (t) {
-        var opt = document.createElement('option');
-        opt.value = t; opt.textContent = t;
-        teamSelect.appendChild(opt);
-      });
-    }
 
     btn.addEventListener('click', async function () {
       btn.disabled = true;
