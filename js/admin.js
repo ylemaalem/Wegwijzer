@@ -1440,6 +1440,23 @@
     // Cache vullen voor lookup vanuit notitieSuggestie etc.
     suggestiesCache = {};
     data.forEach(function (s) { suggestiesCache[s.id] = s; });
+
+    // Haal actieve kennisnotities op zodat we ze persistent kunnen tonen
+    // onder de matchende suggestie-cards (op basis van originele_vraag === titel).
+    var notitiesPerTitel = {};
+    var notitiesResult = await supabaseClient
+      .from('kennisnotities')
+      .select('id, originele_vraag, notitie, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('actief', true)
+      .order('created_at', { ascending: false });
+    if (notitiesResult.data) {
+      notitiesResult.data.forEach(function (kn) {
+        var key = (kn.originele_vraag || '').trim();
+        if (!notitiesPerTitel[key]) notitiesPerTitel[key] = [];
+        notitiesPerTitel[key].push(kn);
+      });
+    }
     console.log('[Kennissuggesties] geladen:', data.length, 'items',
       'conflicten:', data.filter(function (s) { return s.type === 'conflict'; }).length,
       'hiaten:', data.filter(function (s) { return s.type === 'hiaat'; }).length,
@@ -1474,6 +1491,20 @@
         var opacity = s.status === 'opgepakt' ? 'opacity:0.6;' : '';
         var notitieHtml = s.notitie ? '<div style="font-size:0.75rem;font-style:italic;margin-top:6px;color:var(--text-muted)">💬 ' + escapeHtml(s.notitie) + '</div>' : '';
 
+        // Persistente kennisnotities die bij deze suggestie horen (match op titel === originele_vraag).
+        // Zorgt dat een opgeslagen notitie zichtbaar blijft in de card, niet alleen onder Verbeterpunten.
+        var ownNotities = notitiesPerTitel[parsed.titel.trim()] || [];
+        var ownNotitiesHtml = '';
+        if (ownNotities.length > 0) {
+          ownNotitiesHtml = ownNotities.map(function (kn) {
+            var knDatum = new Date(kn.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            return '<div style="font-size:0.78rem;background:#F0FFF4;border-left:3px solid var(--success);padding:8px 10px;margin-top:8px;border-radius:4px;line-height:1.5">' +
+              '<div style="font-weight:600;color:var(--success);margin-bottom:2px">📝 Notitie opgeslagen <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem">' + knDatum + '</span></div>' +
+              '<div style="color:var(--text);white-space:pre-wrap">' + escapeHtml(kn.notitie) + '</div>' +
+              '</div>';
+          }).join('');
+        }
+
         return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '" data-suggestie-id="' + s.id + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
           '<div style="flex:1;min-width:0">' +
@@ -1481,6 +1512,7 @@
           docsHtml +
           uitlegHtml +
           aanbevelingHtml +
+          ownNotitiesHtml +
           '<div style="margin-top:8px">' +
             '<span class="badge ' + statusClass + '" style="font-size:0.7rem">' + (s.status === 'opgepakt' ? 'Opgepakt' : 'Nieuw') + '</span>' +
             '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px">' + datum + ' • ' + (s.scan_type === 'grondig' ? 'grondige' : 'snelle') + ' scan</span>' +
@@ -1590,14 +1622,12 @@
         return;
       }
 
-      // Bevestiging tonen, veld leegmaken, na 1.5s form sluiten
-      textarea.value = '';
-      form.querySelector('#sug-kn-bevestiging').style.display = '';
-      opslaanBtn.disabled = false;
-      opslaanBtn.textContent = 'Opslaan als kennisnotitie';
-      setTimeout(function () { form.remove(); }, 1500);
-
-      // Vernieuw de kennisnotities lijst (in verbeterpunten tab) als die zichtbaar is
+      // Form sluiten en kennissuggesties + verbeterpunten opnieuw renderen.
+      // Door loadKennissuggesties() opnieuw uit te voeren, leest renderGroep
+      // de zojuist toegevoegde kennisnotitie en toont hem persistent als
+      // groen "📝 Notitie opgeslagen" blok onder de matchende suggestie-card.
+      form.remove();
+      await loadKennissuggesties();
       if (typeof loadKennisnotities === 'function') loadKennisnotities();
     });
   };
