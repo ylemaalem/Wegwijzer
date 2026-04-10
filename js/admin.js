@@ -2552,7 +2552,7 @@
   }
 
   function loadKennisbankItems(items) {
-    var container = document.getElementById('kennisbank-lijst');
+    var container = document.getElementById('kennisbank-items-list');
     if (!container) return;
 
     if (!items || items.length === 0) {
@@ -2564,13 +2564,74 @@
       var datum = new Date(kb.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       });
-      return '<div class="kb-item" style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">' +
-        '<div style="font-weight:600;margin-bottom:4px">' + escapeHtml(kb.vraag) + '</div>' +
-        '<div style="color:var(--text-muted);font-size:0.9rem">' + escapeHtml(kb.antwoord) + '</div>' +
-        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">' + datum + '</div>' +
-        '</div>';
+      return '<div class="kennisbank-item" style="margin-bottom:8px" data-kb-id="' + kb.id + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
+        '<div style="flex:1">' +
+        '<div class="kennisbank-item-vraag kb-vraag" style="font-weight:600;margin-bottom:4px">✏️ ' + escapeHtml(kb.vraag) + '</div>' +
+        '<div class="kennisbank-item-antwoord kb-antwoord" style="white-space:pre-wrap">' + escapeHtml(kb.antwoord) + '</div>' +
+        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + '</span>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        '<button class="btn-icon" onclick="window.editKennisbankItemInline(\'' + kb.id + '\')" title="Bewerken">✏️</button>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteKennisbankItem(\'' + kb.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div></div></div>';
     }).join('');
   }
+
+  window.deleteKennisbankItem = async function (id) {
+    if (!confirm('Weet je zeker dat je dit kennisbank item wilt verwijderen?')) return;
+    var result = await supabaseClient.from('kennisbank_items').delete().eq('id', id);
+    if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    loadVerbeterpunten();
+  };
+
+  window.editKennisbankItemInline = function (id) {
+    var card = document.querySelector('[data-kb-id="' + id + '"]');
+    if (!card) return;
+    var vraagEl = card.querySelector('.kb-vraag');
+    var antwoordEl = card.querySelector('.kb-antwoord');
+    var huidigeVraag = vraagEl.textContent.replace(/^✏️\s*/, '');
+    var huidigAntwoord = antwoordEl.textContent;
+
+    var vraagInput = document.createElement('input');
+    vraagInput.type = 'text';
+    vraagInput.value = huidigeVraag;
+    vraagInput.style.cssText = 'width:100%;padding:6px;border:1px solid var(--primary);border-radius:4px;font-family:inherit;font-weight:600;margin-bottom:6px';
+
+    var antwoordTa = document.createElement('textarea');
+    antwoordTa.value = huidigAntwoord;
+    antwoordTa.style.cssText = 'width:100%;padding:6px;border:1px solid var(--primary);border-radius:4px;font-family:inherit;font-size:0.9rem;min-height:80px;resize:vertical';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary';
+    saveBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;width:auto;margin-right:6px;margin-top:6px';
+    saveBtn.textContent = 'Opslaan';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;width:auto;margin-top:6px';
+    cancelBtn.textContent = 'Annuleren';
+
+    vraagEl.replaceWith(vraagInput);
+    antwoordEl.replaceWith(antwoordTa);
+    var actions = document.createElement('div');
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    antwoordTa.parentNode.appendChild(actions);
+
+    cancelBtn.addEventListener('click', function () { loadVerbeterpunten(); });
+    saveBtn.addEventListener('click', async function () {
+      var nieuweVraag = vraagInput.value.trim();
+      var nieuwAntwoord = antwoordTa.value.trim();
+      if (!nieuweVraag || !nieuwAntwoord) return;
+      var result = await supabaseClient.from('kennisbank_items')
+        .update({ vraag: nieuweVraag, antwoord: nieuwAntwoord })
+        .eq('id', id);
+      if (result.error) { alert('Opslaan mislukt: ' + result.error.message); return; }
+      loadVerbeterpunten();
+    });
+    vraagInput.focus();
+  };
 
   function initVerbeterModal() {
     var modal = document.getElementById('modal-verbeter-antwoord');
