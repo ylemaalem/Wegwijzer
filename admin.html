@@ -378,6 +378,21 @@
         <div style="margin-top:24px">
           <h3 class="section-title" style="font-size:1rem">Kennisnotities</h3>
           <p class="section-subtitle">Korte notities over ontbrekende onderwerpen — worden meegestuurd aan de AI</p>
+          <button type="button" class="btn btn-secondary" id="kn-toevoegen-btn" style="max-width:240px;margin-bottom:12px;padding:6px 12px;font-size:0.85rem">+ Kennisnotitie toevoegen</button>
+          <div id="kn-toevoegen-form" style="display:none;background:#F0FFF4;padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid #C6F6D5">
+            <div class="form-group">
+              <label class="form-label" for="kn-onderwerp">Onderwerp</label>
+              <input type="text" id="kn-onderwerp" class="form-input" maxlength="100" placeholder="Bijv. Reiskostenvergoeding">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="kn-notitie-tekst">Notitie</label>
+              <textarea id="kn-notitie-tekst" class="form-input" rows="4" maxlength="1000" placeholder="Korte notitie die meegestuurd wordt aan de AI..."></textarea>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-primary" id="kn-toevoegen-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan</button>
+              <button type="button" class="btn btn-secondary" id="kn-toevoegen-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>
+            </div>
+          </div>
           <div id="kennisnotities-lijst"></div>
         </div>
 

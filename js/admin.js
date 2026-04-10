@@ -48,6 +48,7 @@
     initEditDocModal();
     initTeamleiderModal();
     initVerbeterModal();
+    initKnToevoegen();
     loadRapporten();
     initRapportBtn();
     loadPrivacyVerzoeken();
@@ -881,7 +882,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -995,15 +996,20 @@
         });
         revisieLabel = '<span style="color:' + color + ';font-weight:600">' + revisieFormatted + '</span>';
       }
+      var synCount = (doc.synoniemen && doc.synoniemen.length) || 0;
+      var zoekCount = (doc.zoektermen && doc.zoektermen.length) || 0;
+      var synTitle = 'Synoniemen & afkortingen' + (synCount ? ' (' + synCount + ')' : '');
+      var zoekIndicator = zoekCount > 0 ? '<span style="color:var(--success);font-size:0.7rem;margin-left:4px" title="' + zoekCount + ' zoektermen geïndexeerd">🔍' + zoekCount + '</span>' : '';
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
         '<td>' +
           '<button class="btn-icon" onclick="window.previewDocument(\'' + escapeHtml(doc.bestandspad) + '\')" title="Bekijken">👁️</button>' +
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
+          '<button class="btn-icon" onclick="window.editSynoniemen(\'' + doc.id + '\')" title="' + synTitle + '">🏷️' + (synCount ? '<sup style="font-size:0.6rem">' + synCount + '</sup>' : '') + '</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
@@ -1178,6 +1184,23 @@
     await supabaseClient.storage.from('documents').remove([bestandspad]);
     await supabaseClient.from('documents').delete().eq('id', id);
 
+    loadDocuments();
+  };
+
+  // ---- Synoniemen & afkortingen per document ----
+  window.editSynoniemen = async function (docId) {
+    var doc = allDocuments.find(function (d) { return d.id === docId; });
+    if (!doc) return;
+    var huidige = (doc.synoniemen || []).join(', ');
+    var nieuwe = prompt('Synoniemen & afkortingen voor "' + doc.naam + '"\n\nVoeg synoniemen toe, gescheiden door komma\'s.\nVoorbeeld: O&O, Ontwikkelingstraject, OenO', huidige);
+    if (nieuwe === null) return;
+
+    var arr = nieuwe.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+    var result = await supabaseClient.from('documents').update({ synoniemen: arr }).eq('id', docId);
+    if (result.error) {
+      alert('Opslaan mislukt: ' + result.error.message);
+      return;
+    }
     loadDocuments();
   };
 
@@ -2426,6 +2449,50 @@
     await supabaseClient.from('kennisnotities').update({ actief: false }).eq('id', id);
     loadKennisnotities();
   };
+
+  window.editKennisnotitie = async function (id) {
+    var nieuweTekst = prompt('Bewerk kennisnotitie (max 1000 tekens):');
+    if (nieuweTekst === null) return;
+    nieuweTekst = nieuweTekst.trim();
+    if (!nieuweTekst) return;
+    await supabaseClient.from('kennisnotities').update({ notitie: nieuweTekst.substring(0, 1000) }).eq('id', id);
+    loadKennisnotities();
+  };
+
+  // ---- Proactief kennisnotitie toevoegen (zonder gekoppelde vraag) ----
+  function initKnToevoegen() {
+    var btn = document.getElementById('kn-toevoegen-btn');
+    var form = document.getElementById('kn-toevoegen-form');
+    var opslaan = document.getElementById('kn-toevoegen-opslaan');
+    var annuleer = document.getElementById('kn-toevoegen-annuleer');
+    if (!btn || !form) return;
+
+    btn.addEventListener('click', function () {
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+    annuleer.addEventListener('click', function () {
+      form.style.display = 'none';
+      document.getElementById('kn-onderwerp').value = '';
+      document.getElementById('kn-notitie-tekst').value = '';
+    });
+    opslaan.addEventListener('click', async function () {
+      var onderwerp = document.getElementById('kn-onderwerp').value.trim();
+      var tekst = document.getElementById('kn-notitie-tekst').value.trim();
+      if (!onderwerp || !tekst) { alert('Vul beide velden in.'); return; }
+
+      var result = await supabaseClient.from('kennisnotities').insert({
+        tenant_id: tenantId,
+        originele_vraag: onderwerp.substring(0, 100),
+        notitie: tekst.substring(0, 1000)
+      });
+      if (result.error) { alert('Opslaan mislukt: ' + result.error.message); return; }
+
+      document.getElementById('kn-onderwerp').value = '';
+      document.getElementById('kn-notitie-tekst').value = '';
+      form.style.display = 'none';
+      loadKennisnotities();
+    });
+  }
 
   function loadKennisbankItems(items) {
     var container = document.getElementById('kennisbank-lijst');

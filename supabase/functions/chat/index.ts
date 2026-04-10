@@ -901,7 +901,7 @@ Deno.serve(async (req: Request) => {
     // ---- 6d. Organisatie documenten (content kolom) ----
     const { data: orgDocs } = await supabaseAdmin
       .from("documents")
-      .select("naam, content")
+      .select("naam, content, synoniemen, zoektermen")
       .eq("tenant_id", profile.tenant_id)
       .is("user_id", null)
       .not("content", "is", null);
@@ -909,7 +909,7 @@ Deno.serve(async (req: Request) => {
     // ---- 6e. Persoonlijke documenten van deze medewerker ----
     const { data: persDocs } = await supabaseAdmin
       .from("documents")
-      .select("naam, content")
+      .select("naam, content, synoniemen, zoektermen")
       .eq("tenant_id", profile.tenant_id)
       .eq("user_id", profile.id)
       .not("content", "is", null);
@@ -971,20 +971,32 @@ Deno.serve(async (req: Request) => {
 
       const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
-        .map((d: { naam: string; content: string }) => {
+        .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[] }) => {
           const lowerContent = d.content.toLowerCase();
           const lowerNaam = d.naam.toLowerCase();
+          // Combineer auto-zoektermen + handmatige synoniemen (alles lowercase)
+          const indexTerms: string[] = [
+            ...((d.zoektermen || []) as string[]),
+            ...((d.synoniemen || []) as string[]),
+          ].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
           let score = 0;
 
           for (const kw of keywords) {
-            // Zoek in documentinhoud
+            // 1. Zoek in zoektermen/synoniemen (zwaarste bonus)
+            for (const term of indexTerms) {
+              if (term === kw || term.includes(kw) || kw.includes(term)) {
+                score += 10;
+              }
+            }
+
+            // 2. Zoek in documentinhoud
             let pos = 0;
             while ((pos = lowerContent.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
 
-            // Bonus: zoek in documentnaam (zwaarder gewogen)
+            // 3. Bonus: zoek in documentnaam (zwaarder gewogen)
             if (lowerNaam.indexOf(kw) !== -1) { score += 5; }
 
-            // Stam-matching: als keyword > 4 tekens, zoek ook op de eerste 4+ letters
+            // 4. Stam-matching: als keyword > 4 tekens, zoek ook op de eerste 4+ letters
             if (kw.length >= 5) {
               const stam = kw.substring(0, Math.max(5, Math.floor(kw.length * 0.7)));
               if (stam !== kw) {

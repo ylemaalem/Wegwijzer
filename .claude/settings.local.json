@@ -38,7 +38,10 @@
       "Bash(rm wegwijzer-logo-512.png wegwijzer-logo-192.png)",
       "Bash(cp:*)",
       "Bash(grep -l \"base-path.js\" *.html)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(bash deploy.sh)",
+      "Bash(where supabase:*)",
+      "Read(//c/Users/youne/AppData/Local/npm-cache/_npx/**)"
     ]
   }
 }
