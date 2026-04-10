@@ -312,7 +312,48 @@
       <!-- ========== TAB: RAPPORTEN ========== -->
       <section class="tab-content" id="tab-rapporten">
         <h2 class="section-title">Rapporten</h2>
-        <p class="section-subtitle">Maandelijkse rapportages over gebruik en kwaliteit.</p>
+        <p class="section-subtitle">Rapportages over gebruik, kwaliteit en tijdwinst.</p>
+
+        <!-- Filters -->
+        <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
+              <label class="form-label" for="rap-tijdsbestek" style="font-size:0.78rem">Tijdsbestek</label>
+              <select class="form-input" id="rap-tijdsbestek">
+                <option value="deze_week">Deze week</option>
+                <option value="vorige_week">Vorige week</option>
+                <option value="deze_maand" selected>Deze maand</option>
+                <option value="vorige_maand">Vorige maand</option>
+                <option value="dit_kwartaal">Dit kwartaal</option>
+                <option value="aangepast">Aangepaste periode</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0">
+              <label class="form-label" for="rap-team" style="font-size:0.78rem">Team</label>
+              <select class="form-input" id="rap-team">
+                <option value="">Alle teams</option>
+              </select>
+            </div>
+          </div>
+          <div id="rap-aangepast-velden" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0">
+              <label class="form-label" for="rap-van" style="font-size:0.78rem">Van</label>
+              <input class="form-input" type="date" id="rap-van">
+            </div>
+            <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0">
+              <label class="form-label" for="rap-tot" style="font-size:0.78rem">Tot</label>
+              <input class="form-input" type="date" id="rap-tot">
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:0.8rem">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rap-incl-gebruik" checked> Gebruik</label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rap-incl-kwaliteit" checked> Kwaliteit</label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rap-incl-tijdwinst" checked> Tijdwinst</label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rap-incl-vertrouwen"> Vertrouwenscheck</label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rap-incl-quiz"> Quiz</label>
+          </div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
           <button class="btn btn-primary" id="generate-rapport-btn" style="max-width:280px">Rapport genereren</button>
           <button class="btn btn-secondary" id="test-terugblik-btn" style="max-width:280px">Test terugblik email</button>
@@ -329,6 +370,16 @@
       <div class="modal-overlay" id="modal-terugblik">
         <div class="modal" style="max-width:440px">
           <h3 class="modal-title">Test terugblik email</h3>
+          <div class="form-group">
+            <label class="form-label">Tijdsbestek</label>
+            <select class="form-input" id="tb-tijdsbestek">
+              <option value="deze_week">Deze week</option>
+              <option value="vorige_week">Vorige week</option>
+              <option value="deze_maand" selected>Deze maand</option>
+              <option value="vorige_maand">Vorige maand</option>
+              <option value="dit_kwartaal">Dit kwartaal</option>
+            </select>
+          </div>
           <div class="form-group">
             <label class="form-label">Team</label>
             <select class="form-input" id="tb-team-select">

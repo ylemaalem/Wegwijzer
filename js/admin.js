@@ -3645,23 +3645,116 @@
     }).join('');
   }
 
+  // ---- Helper: bereken datum range op basis van filter ----
+  function berekenDatumRange(tijdsbestek) {
+    var nu = new Date();
+    var van, tot, label;
+    function startVanWeek(d) {
+      var dag = d.getDay();
+      var diff = (dag === 0 ? -6 : 1 - dag);
+      var ma = new Date(d);
+      ma.setDate(d.getDate() + diff);
+      ma.setHours(0, 0, 0, 0);
+      return ma;
+    }
+    if (tijdsbestek === 'deze_week') {
+      van = startVanWeek(nu);
+      tot = new Date(); tot.setHours(23, 59, 59, 999);
+      label = 'Deze week';
+    } else if (tijdsbestek === 'vorige_week') {
+      var deze = startVanWeek(nu);
+      van = new Date(deze); van.setDate(deze.getDate() - 7);
+      tot = new Date(deze); tot.setMilliseconds(-1);
+      label = 'Vorige week';
+    } else if (tijdsbestek === 'deze_maand') {
+      van = new Date(nu.getFullYear(), nu.getMonth(), 1);
+      tot = new Date(); tot.setHours(23, 59, 59, 999);
+      label = nu.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+    } else if (tijdsbestek === 'vorige_maand') {
+      van = new Date(nu.getFullYear(), nu.getMonth() - 1, 1);
+      tot = new Date(nu.getFullYear(), nu.getMonth(), 0); tot.setHours(23, 59, 59, 999);
+      label = van.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+    } else if (tijdsbestek === 'dit_kwartaal') {
+      var qStart = Math.floor(nu.getMonth() / 3) * 3;
+      van = new Date(nu.getFullYear(), qStart, 1);
+      tot = new Date(); tot.setHours(23, 59, 59, 999);
+      label = 'Q' + (Math.floor(nu.getMonth() / 3) + 1) + ' ' + nu.getFullYear();
+    } else {
+      // aangepast — wordt meegegeven
+      var vanInput = document.getElementById('rap-van').value;
+      var totInput = document.getElementById('rap-tot').value;
+      van = vanInput ? new Date(vanInput) : new Date(nu.getFullYear(), nu.getMonth(), 1);
+      tot = totInput ? new Date(totInput) : new Date();
+      tot.setHours(23, 59, 59, 999);
+      label = van.toLocaleDateString('nl-NL') + ' – ' + tot.toLocaleDateString('nl-NL');
+    }
+    return { van: van, tot: tot, label: label };
+  }
+
   function initRapportBtn() {
     var btn = document.getElementById('generate-rapport-btn');
     if (!btn) return;
+
+    // Filter: aangepaste periode tonen/verbergen
+    var tijdSelect = document.getElementById('rap-tijdsbestek');
+    var aangepastVelden = document.getElementById('rap-aangepast-velden');
+    if (tijdSelect && aangepastVelden) {
+      tijdSelect.addEventListener('change', function () {
+        aangepastVelden.style.display = tijdSelect.value === 'aangepast' ? 'flex' : 'none';
+      });
+    }
+
+    // Vul team filter
+    var teamSelect = document.getElementById('rap-team');
+    if (teamSelect && allTeamleiders) {
+      var teamSet = {};
+      allTeamleiders.forEach(function (tl) {
+        if (tl.teams) tl.teams.forEach(function (t) { teamSet[t] = true; });
+      });
+      Object.keys(teamSet).sort().forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t; opt.textContent = t;
+        teamSelect.appendChild(opt);
+      });
+    }
+
     btn.addEventListener('click', async function () {
       btn.disabled = true;
       btn.textContent = 'Genereren...';
 
-      var now = new Date();
-      var maand = now.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+      var tijdsbestek = tijdSelect ? tijdSelect.value : 'deze_maand';
+      var range = berekenDatumRange(tijdsbestek);
+      var teamFilter = teamSelect ? teamSelect.value : '';
 
-      // Gather data
-      var convResult = await supabaseClient.from('conversations').select('*').eq('tenant_id', tenantId);
+      var inclGebruik = document.getElementById('rap-incl-gebruik').checked;
+      var inclKwaliteit = document.getElementById('rap-incl-kwaliteit').checked;
+      var inclTijdwinst = document.getElementById('rap-incl-tijdwinst').checked;
+      var inclVertrouwen = document.getElementById('rap-incl-vertrouwen').checked;
+      var inclQuiz = document.getElementById('rap-incl-quiz').checked;
+
+      // Gather data binnen tijdsbestek
+      var convResult = await supabaseClient.from('conversations').select('*')
+        .eq('tenant_id', tenantId)
+        .gte('created_at', range.van.toISOString())
+        .lte('created_at', range.tot.toISOString());
       var profResult = await supabaseClient.from('profiles').select('*').eq('tenant_id', tenantId);
       var convs = convResult.data || [];
       var profs = profResult.data || [];
 
+      // Team filter: filter conversations op user_id van profiles in dat team
+      if (teamFilter) {
+        var teamProfileIds = profs.filter(function (p) {
+          return p.teams && p.teams.indexOf(teamFilter) !== -1;
+        }).map(function (p) { return p.id; });
+        convs = convs.filter(function (c) { return teamProfileIds.indexOf(c.user_id) !== -1; });
+      }
+
       var medewerkers = profs.filter(function(p) { return p.role === 'medewerker'; });
+      if (teamFilter) {
+        medewerkers = medewerkers.filter(function (p) {
+          return p.teams && p.teams.indexOf(teamFilter) !== -1;
+        });
+      }
       var actief = medewerkers.filter(function(p) {
         return convs.some(function(c) { return c.user_id === p.id; });
       });
@@ -3673,19 +3766,59 @@
       var positief = metFeedback.filter(function(c) { return c.feedback === 'goed'; });
       var pct = metFeedback.length > 0 ? Math.round((positief.length / metFeedback.length) * 100) : 0;
 
+      // Eerlijke tijdwinst
+      var aantalVragen = convs.length;
+      var medewerkerMinutenBespaard = aantalVragen * 6; // 8 min - 2 min wegwijzer
+      var teamleiderMinutenVrij = aantalVragen * 8;
+
       var rapport = {
-        gebruik: { actief: actief.length, inactief: inactief.length, totaal_vragen: convs.length },
+        periode: range.label,
+        team_filter: teamFilter || 'alle teams',
+        secties: {
+          gebruik: inclGebruik,
+          kwaliteit: inclKwaliteit,
+          tijdwinst: inclTijdwinst,
+          vertrouwen: inclVertrouwen,
+          quiz: inclQuiz
+        },
+        gebruik: { actief: actief.length, inactief: inactief.length, totaal_vragen: aantalVragen },
         kwaliteit: { positief_percentage: pct, totaal_met_feedback: metFeedback.length },
-        tijdwinst: { vragen: convs.length, geschatte_minuten: convs.length * 10 },
+        tijdwinst: {
+          vragen: aantalVragen,
+          medewerker_minuten_bespaard: medewerkerMinutenBespaard,
+          teamleider_minuten_vrij: teamleiderMinutenVrij,
+          medewerker_uren: Math.round(medewerkerMinutenBespaard / 60 * 10) / 10,
+          teamleider_uren: Math.round(teamleiderMinutenVrij / 60 * 10) / 10
+        },
         aanbevelingen: []
       };
 
+      // Vertrouwenscheck data
+      if (inclVertrouwen) {
+        var vcResult = await supabaseClient.from('vertrouwens_scores').select('score, week_nummer');
+        var vcData = vcResult.data || [];
+        if (vcData.length > 0) {
+          var som = vcData.reduce(function (s, v) { return s + v.score; }, 0);
+          rapport.vertrouwen = { aantal: vcData.length, gemiddelde: Math.round(som / vcData.length * 10) / 10 };
+        }
+      }
+
+      // Quiz data
+      if (inclQuiz) {
+        var quizResult = await supabaseClient.from('quiz_resultaten').select('score');
+        var quizData = quizResult.data || [];
+        if (quizData.length > 0) {
+          var quizSom = quizData.reduce(function (s, q) { return s + (q.score || 0); }, 0);
+          rapport.quiz = { aantal: quizData.length, gemiddelde: Math.round(quizSom / quizData.length * 10) / 10 };
+        }
+      }
+
       if (pct < 70 && metFeedback.length > 10) rapport.aanbevelingen.push('Positief percentage is onder 70% — overweeg de kennisbank aan te vullen.');
       if (inactief.length > actief.length) rapport.aanbevelingen.push('Meer inactieve dan actieve accounts — controleer of alle medewerkers op de hoogte zijn.');
-      if (convs.length > 500) rapport.aanbevelingen.push('Hoog gebruik — overweeg extra documenten toe te voegen voor veelgestelde onderwerpen.');
+      if (aantalVragen > 500) rapport.aanbevelingen.push('Hoog gebruik — overweeg extra documenten toe te voegen voor veelgestelde onderwerpen.');
 
       await supabaseClient.from('rapporten').insert({
-        tenant_id: tenantId, maand: maand, inhoud: rapport
+        tenant_id: tenantId, maand: range.label, inhoud: rapport
       });
 
       btn.disabled = false;
@@ -3701,23 +3834,48 @@
   };
 
   window.showRapport = function (id) {
-    // Simple: find and display
     var container = document.getElementById('rapporten-list');
     supabaseClient.from('rapporten').select('*').eq('id', id).single().then(function (result) {
       if (!result.data) return;
       var r = result.data.inhoud;
-      var html = '<div style="background:var(--bg-white);padding:24px;border-radius:var(--radius);margin-top:16px">' +
+      var secties = r.secties || { gebruik: true, kwaliteit: true, tijdwinst: true };
+      var html = '<div style="background:var(--bg-white);padding:24px;border-radius:var(--radius);margin-top:16px;border:1px solid var(--border)">' +
         '<h3>Rapport ' + escapeHtml(result.data.maand) + '</h3>' +
-        '<h4 style="margin-top:16px;color:var(--primary)">Gebruik</h4>' +
-        '<p>Actieve medewerkers: ' + r.gebruik.actief + ' | Inactief: ' + r.gebruik.inactief + ' | Totaal vragen: ' + r.gebruik.totaal_vragen + '</p>' +
-        '<h4 style="margin-top:12px;color:var(--primary)">Kwaliteit</h4>' +
-        '<p>Positief: ' + r.kwaliteit.positief_percentage + '% (van ' + r.kwaliteit.totaal_met_feedback + ' met feedback)</p>' +
-        '<h4 style="margin-top:12px;color:var(--primary)">Tijdwinst (schatting)</h4>' +
-        '<p>' + r.tijdwinst.vragen + ' vragen × 10 min = ' + r.tijdwinst.geschatte_minuten + ' minuten bespaard</p>' +
-        '<p style="font-size:0.75rem;color:var(--text-muted);font-style:italic">Disclaimer: dit is een schatting</p>';
+        '<p style="color:var(--text-muted);font-size:0.85rem">Periode: ' + escapeHtml(r.periode || result.data.maand) + ' • ' + escapeHtml(r.team_filter || 'alle teams') + '</p>';
+
+      if (secties.gebruik !== false && r.gebruik) {
+        html += '<h4 style="margin-top:16px;color:var(--primary)">📊 Gebruik</h4>' +
+          '<p>Actieve medewerkers: <strong>' + r.gebruik.actief + '</strong> | Inactief: <strong>' + r.gebruik.inactief + '</strong> | Totaal vragen: <strong>' + r.gebruik.totaal_vragen + '</strong></p>';
+      }
+      if (secties.kwaliteit !== false && r.kwaliteit) {
+        html += '<h4 style="margin-top:16px;color:var(--primary)">⭐ Kwaliteit</h4>' +
+          '<p>Positieve feedback: <strong>' + r.kwaliteit.positief_percentage + '%</strong> (van ' + r.kwaliteit.totaal_met_feedback + ' beoordeelde antwoorden)</p>';
+      }
+      if (secties.tijdwinst !== false && r.tijdwinst) {
+        // Backwards-compat: oude rapporten hadden geschatte_minuten
+        if (typeof r.tijdwinst.medewerker_minuten_bespaard !== 'undefined') {
+          html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst</h4>' +
+            '<p><strong>Teamleider tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 8 min (zonder Wegwijzer) = ' + r.tijdwinst.teamleider_minuten_vrij + ' minuten (' + r.tijdwinst.teamleider_uren + ' uur) vrijgekomen</p>' +
+            '<p><strong>Medewerker tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 6 min (wachten + zoeken − 2 min Wegwijzer gebruik) = ' + r.tijdwinst.medewerker_minuten_bespaard + ' minuten (' + r.tijdwinst.medewerker_uren + ' uur) bespaard</p>' +
+            '<p style="margin-top:8px"><strong>Voordelen:</strong></p>' +
+            '<ul style="margin:4px 0 0 18px"><li>Antwoord direct beschikbaar zonder wachten</li><li>Antwoord terug te lezen wanneer nodig</li><li>Brondocument direct zichtbaar</li><li>Beschikbaar buiten kantooruren</li></ul>' +
+            '<p style="font-size:0.72rem;color:var(--text-muted);font-style:italic;margin-top:8px">Disclaimer: schatting op basis van gemiddeld 8 minuten per vraag zonder Wegwijzer vs 2 minuten met Wegwijzer.</p>';
+        } else {
+          html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst (oud rapport)</h4>' +
+            '<p>' + (r.tijdwinst.vragen || 0) + ' vragen × 10 min = ' + (r.tijdwinst.geschatte_minuten || 0) + ' minuten</p>';
+        }
+      }
+      if (secties.vertrouwen && r.vertrouwen) {
+        html += '<h4 style="margin-top:16px;color:var(--primary)">🤝 Vertrouwenscheck</h4>' +
+          '<p>Gemiddelde score: <strong>' + r.vertrouwen.gemiddelde + '/5</strong> (' + r.vertrouwen.aantal + ' metingen)</p>';
+      }
+      if (secties.quiz && r.quiz) {
+        html += '<h4 style="margin-top:16px;color:var(--primary)">📝 Quiz</h4>' +
+          '<p>Gemiddelde score: <strong>' + r.quiz.gemiddelde + '</strong> (' + r.quiz.aantal + ' resultaten)</p>';
+      }
 
       if (r.aanbevelingen && r.aanbevelingen.length > 0) {
-        html += '<h4 style="margin-top:12px;color:var(--primary)">Aanbevelingen</h4><ul>';
+        html += '<h4 style="margin-top:16px;color:var(--primary)">💡 Aanbevelingen</h4><ul>';
         r.aanbevelingen.forEach(function (a) { html += '<li>' + escapeHtml(a) + '</li>'; });
         html += '</ul>';
       }
