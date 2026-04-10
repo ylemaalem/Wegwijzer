@@ -1248,7 +1248,10 @@
     var conflictenContainer = document.getElementById('ks-conflicten-lijst');
     var hiatenContainer = document.getElementById('ks-hiaten-lijst');
     var suggestiesContainer = document.getElementById('ks-suggesties-lijst');
-    if (!conflictenContainer) return;
+    if (!conflictenContainer || !hiatenContainer || !suggestiesContainer) {
+      console.warn('[Kennissuggesties] container(s) ontbreken in DOM');
+      return;
+    }
 
     var result = await supabaseClient
       .from('kennissuggesties')
@@ -1257,7 +1260,14 @@
       .neq('status', 'niet_relevant')
       .order('aangemaakt_op', { ascending: false });
 
+    if (result.error) {
+      console.error('[Kennissuggesties] query fout:', result.error);
+    }
     var data = result.data || [];
+    console.log('[Kennissuggesties] geladen:', data.length, 'items',
+      'conflicten:', data.filter(function (s) { return s.type === 'conflict'; }).length,
+      'hiaten:', data.filter(function (s) { return s.type === 'hiaat'; }).length,
+      'suggesties:', data.filter(function (s) { return s.type === 'suggestie'; }).length);
 
     // Badge: alleen nieuwe items
     var nieuw = data.filter(function (s) { return s.status === 'nieuw'; }).length;
