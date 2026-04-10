@@ -34,6 +34,51 @@
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
+/* ---- Sub-tab navigatie (binnen een hoofdgroep) ---- */
+.sub-tab-nav {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 0;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+.sub-tab-nav::-webkit-scrollbar { display: none; }
+.sub-tab-nav[hidden] { display: none; }
+
+.sub-tab-btn {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  position: relative;
+}
+.sub-tab-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.sub-tab-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* Badge op een sub-tab knop */
+.sub-tab-btn .tab-badge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* ---- Tab content ---- */
 .tab-content {
   display: none;

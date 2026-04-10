@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/admin.css?v=2">
 </head>
 <body class="admin-page">
   <div class="page-container">
@@ -25,23 +25,17 @@
       <button class="header-btn" id="logout-btn">Uitloggen</button>
     </header>
 
-    <!-- Tab navigatie -->
+    <!-- Hoofdtab navigatie (6 groepen, scrollable op mobiel) -->
     <nav class="tab-nav" id="tab-nav">
-      <button class="tab-btn active" data-tab="documenten">Documenten</button>
-      <button class="tab-btn" data-tab="medewerkers">Medewerkers</button>
-      <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
-      <button class="tab-btn" data-tab="aanvragen">Aanvragen <span id="aanvragen-badge" class="melding-badge" style="display:none">0</span></button>
-      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
-      <button class="tab-btn" data-tab="rapporten">Rapporten</button>
-      <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
-      <button class="tab-btn" data-tab="doc-aanvragen">Doc. aanvragen</button>
-      <button class="tab-btn" data-tab="kennissuggesties">💡 Kennissuggesties</button>
-      <button class="tab-btn" data-tab="meldingen">Meldingen</button>
-      <button class="tab-btn" data-tab="vertrouwen">Vertrouwen</button>
-      <button class="tab-btn" data-tab="teamleiders">Leidinggevende/HR</button>
-      <button class="tab-btn" data-tab="privacy">Privacy verzoeken</button>
-      <button class="tab-btn" data-tab="instellingen">Instellingen</button>
+      <button class="tab-btn active" data-tabgroup="documenten">📄 Documenten</button>
+      <button class="tab-btn" data-tabgroup="medewerkers">👥 Medewerkers</button>
+      <button class="tab-btn" data-tabgroup="gesprekken">💬 Gesprekken</button>
+      <button class="tab-btn" data-tabgroup="verbeterpunten">🔍 Verbeterpunten</button>
+      <button class="tab-btn" data-tabgroup="rapporten">📊 Rapporten</button>
+      <button class="tab-btn" data-tabgroup="instellingen">⚙️ Instellingen</button>
     </nav>
+    <!-- Sub-tab nav (dynamisch gevuld door initTabs in admin.js) -->
+    <nav class="sub-tab-nav" id="sub-tab-nav" hidden></nav>
 
     <!-- Content -->
     <main class="page-content">
@@ -1137,7 +1131,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=5"></script>
+  <script src="js/admin.js?v=6"></script>
 
 </body>
 </html>

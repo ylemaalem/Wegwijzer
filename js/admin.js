@@ -92,21 +92,139 @@
   }
 
   // =============================================
-  // TABS
+  // TABS — 6 hoofdgroepen met dynamische sub-tabs
   // =============================================
+  // Mapping van hoofdgroep → lijst sub-tabs in volgorde.
+  // sub-tab .key komt overeen met de bestaande tab-content id (zonder "tab-" prefix).
+  var tabGroups = {
+    documenten: [
+      { key: 'documenten', label: '📄 Documenten' }
+    ],
+    medewerkers: [
+      { key: 'medewerkers', label: '👥 Mijn team' },
+      { key: 'aanvragen', label: '📥 Aanvragen' }
+    ],
+    gesprekken: [
+      { key: 'gesprekken', label: '💬 Gesprekken' }
+    ],
+    verbeterpunten: [
+      { key: 'verbeterpunten', label: '🔍 Verbeterpunten' },
+      { key: 'doc-aanvragen', label: '📑 Doc. aanvragen' },
+      { key: 'kennissuggesties', label: '💡 Kennissuggesties' },
+      { key: 'meldingen', label: '🔔 Meldingen' },
+      { key: 'vertrouwen', label: '🤝 Vertrouwen' }
+    ],
+    rapporten: [
+      { key: 'statistieken', label: '📈 Statistieken' },
+      { key: 'rapporten', label: '📊 Rapporten' }
+    ],
+    instellingen: [
+      { key: 'instellingen', label: '⚙️ Instellingen' },
+      { key: 'teamleiders', label: '👔 Leidinggevende/HR' },
+      { key: 'privacy', label: '🔒 Privacy verzoeken' }
+    ]
+  };
+
+  // Per-sub-tab badge counts (worden door updateTabBadge gevuld).
+  var tabBadgeCounts = {};
+  var currentTabGroup = 'documenten';
+  var currentSubTab = 'documenten';
+
   function initTabs() {
-    var buttons = document.querySelectorAll('.tab-btn');
-    buttons.forEach(function (btn) {
+    var groupBtns = document.querySelectorAll('#tab-nav .tab-btn');
+    groupBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var tab = btn.dataset.tab;
-        buttons.forEach(function (b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        document.querySelectorAll('.tab-content').forEach(function (c) {
-          c.classList.remove('active');
-        });
-        document.getElementById('tab-' + tab).classList.add('active');
+        activateGroup(btn.dataset.tabgroup);
       });
     });
+    activateGroup('documenten');
+  }
+
+  function activateGroup(groupKey) {
+    if (!tabGroups[groupKey]) return;
+    currentTabGroup = groupKey;
+
+    // Hoofdtab actieve state
+    document.querySelectorAll('#tab-nav .tab-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tabgroup') === groupKey);
+    });
+
+    // Bouw sub-tab nav (alleen tonen als groep meer dan 1 sub-tab heeft)
+    var subs = tabGroups[groupKey];
+    var subNav = document.getElementById('sub-tab-nav');
+    subNav.innerHTML = '';
+    if (subs.length > 1) {
+      subNav.removeAttribute('hidden');
+      subs.forEach(function (sub) {
+        var sb = document.createElement('button');
+        sb.className = 'sub-tab-btn';
+        sb.setAttribute('data-tab', sub.key);
+        sb.textContent = sub.label;
+        sb.addEventListener('click', function () { activateSubTab(sub.key); });
+        subNav.appendChild(sb);
+      });
+    } else {
+      subNav.setAttribute('hidden', '');
+    }
+
+    // Activeer eerste sub-tab van de groep
+    activateSubTab(subs[0].key);
+  }
+
+  function activateSubTab(subKey) {
+    currentSubTab = subKey;
+    // Sectie tonen
+    document.querySelectorAll('.tab-content').forEach(function (c) {
+      c.classList.remove('active');
+    });
+    var doel = document.getElementById('tab-' + subKey);
+    if (doel) doel.classList.add('active');
+
+    // Sub-tab knop active state
+    document.querySelectorAll('#sub-tab-nav .sub-tab-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tab') === subKey);
+    });
+
+    reapplyBadges();
+  }
+
+  // Geeft de hoofdgroep terug waar een sub-tab key bij hoort.
+  function findGroupForSub(subKey) {
+    var keys = Object.keys(tabGroups);
+    for (var i = 0; i < keys.length; i++) {
+      var subs = tabGroups[keys[i]];
+      for (var j = 0; j < subs.length; j++) {
+        if (subs[j].key === subKey) return keys[i];
+      }
+    }
+    return null;
+  }
+
+  // Re-apply alle badges op zowel zichtbare sub-tab knoppen als de hoofdgroep knoppen.
+  function reapplyBadges() {
+    // Sub-tab knoppen
+    document.querySelectorAll('#sub-tab-nav .sub-tab-btn').forEach(function (btn) {
+      var key = btn.getAttribute('data-tab');
+      setBadgeOn(btn, tabBadgeCounts[key] || 0);
+    });
+    // Hoofdgroep knoppen: aggregaat over alle subs
+    document.querySelectorAll('#tab-nav .tab-btn').forEach(function (btn) {
+      var groupKey = btn.getAttribute('data-tabgroup');
+      var subs = tabGroups[groupKey] || [];
+      var totaal = subs.reduce(function (s, sub) { return s + (tabBadgeCounts[sub.key] || 0); }, 0);
+      setBadgeOn(btn, totaal);
+    });
+  }
+
+  function setBadgeOn(el, count) {
+    var existing = el.querySelector('.tab-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.textContent = count;
+      el.appendChild(badge);
+    }
   }
 
   // =============================================
@@ -2660,16 +2778,9 @@
   }
 
   function updateTabBadge(tabName, count) {
-    var tabBtn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
-    if (!tabBtn) return;
-    var existing = tabBtn.querySelector('.tab-badge');
-    if (existing) existing.remove();
-    if (count > 0) {
-      var badge = document.createElement('span');
-      badge.className = 'tab-badge';
-      badge.textContent = count;
-      tabBtn.appendChild(badge);
-    }
+    // Sla count op en re-apply naar zowel sub-tab knop als hoofdgroep knop
+    tabBadgeCounts[tabName] = count;
+    reapplyBadges();
   }
 
   window.cycleFeedbackStatus = async function (id, newStatus) {
@@ -3422,16 +3533,8 @@
   }
 
   function updateMeldingenBadge(count) {
-    var tabBtn = document.querySelector('.tab-btn[data-tab="meldingen"]');
-    if (!tabBtn) return;
-    var existing = tabBtn.querySelector('.tab-badge');
-    if (existing) existing.remove();
-    if (count > 0) {
-      var badge = document.createElement('span');
-      badge.className = 'tab-badge';
-      badge.textContent = count;
-      tabBtn.appendChild(badge);
-    }
+    // Routeert via de centrale badge-cache zodat sub-tab + hoofdgroep tegelijk updaten
+    updateTabBadge('meldingen', count);
   }
 
   window.markeerAfgehandeld = async function (id) {
@@ -3465,17 +3568,9 @@
       return;
     }
 
-    // Badge updaten
+    // Badge updaten via centrale helper (sub-tab + hoofdgroep "Medewerkers")
     var openstaand = result.data.filter(function (a) { return a.status === 'in_afwachting'; });
-    var badge = document.getElementById('aanvragen-badge');
-    if (badge) {
-      if (openstaand.length > 0) {
-        badge.style.display = 'inline-block';
-        badge.textContent = openstaand.length;
-      } else {
-        badge.style.display = 'none';
-      }
-    }
+    updateTabBadge('aanvragen', openstaand.length);
 
     if (result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="no-data">Geen aanvragen.</td></tr>';
