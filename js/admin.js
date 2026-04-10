@@ -2278,10 +2278,12 @@
       var statusBadge = isBeantwoord
         ? '<span class="badge badge-goed">Beantwoord</span>'
         : '<span class="badge badge-niet-goed">Open</span>';
+      var escapedVraag = escapeHtml(item.vraag.replace(/'/g, "\\'"));
       var actieBtn = !isBeantwoord
-        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">Beantwoord</button> ' +
-          '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" onclick="window.openKennisnotitie(\'' + escapeHtml(item.vraag.replace(/'/g, "\\'")) + '\')">+ Notitie</button>'
-        : '<span class="badge badge-goed" style="font-size:0.7rem">✓</span>';
+        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapedVraag + '\')">Beantwoord</button> ' +
+          '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" onclick="window.openKennisnotitie(\'' + escapedVraag + '\')">+ Notitie</button> '
+        : '<span class="badge badge-goed" style="font-size:0.7rem">✓</span> ';
+      actieBtn += '<button class="btn-icon btn-icon-danger" onclick="window.deleteVerbeterpunt(\'' + escapedVraag + '\')" title="Verwijderen uit verbeterpunten">🗑️</button>';
 
       return '<tr>' +
         '<td title="' + escapeHtml(item.vraag) + '">' + escapeHtml(truncated) + '</td>' +
@@ -2296,6 +2298,19 @@
     loadKennisnotities();
     loadAppFeedback();
   }
+
+  // ---- Verbeterpunt verwijderen (feedback resetten) ----
+  window.deleteVerbeterpunt = async function (vraag) {
+    if (!confirm('Dit verbeterpunt verwijderen? De negatieve feedback wordt gereset op alle conversations met deze vraag.')) return;
+    var result = await supabaseClient
+      .from('conversations')
+      .update({ feedback: null })
+      .eq('tenant_id', tenantId)
+      .eq('vraag', vraag.replace(/\\'/g, "'"))
+      .eq('feedback', 'niet_goed');
+    if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    loadVerbeterpunten();
+  };
 
   // ---- App feedback van medewerkers ----
   async function loadAppFeedback() {
@@ -2434,15 +2449,57 @@
 
     container.innerHTML = result.data.map(function (kn) {
       var datum = new Date(kn.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
-      return '<div class="kennisbank-item" style="margin-bottom:8px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:start">' +
-        '<div><div class="kennisbank-item-vraag">📝 ' + escapeHtml(kn.originele_vraag) + '</div>' +
-        '<div class="kennisbank-item-antwoord">' + escapeHtml(kn.notitie) + '</div>' +
+      return '<div class="kennisbank-item" style="margin-bottom:8px" data-kn-id="' + kn.id + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
+        '<div style="flex:1"><div class="kennisbank-item-vraag">📝 ' + escapeHtml(kn.originele_vraag) + '</div>' +
+        '<div class="kennisbank-item-antwoord kn-tekst">' + escapeHtml(kn.notitie) + '</div>' +
         '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + '</span></div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        '<button class="btn-icon" onclick="window.editKennisnotitieInline(\'' + kn.id + '\')" title="Bewerken">✏️</button>' +
         '<button class="btn-icon btn-icon-danger" onclick="window.deleteKennisnotitie(\'' + kn.id + '\')" title="Verwijderen">🗑️</button>' +
-        '</div></div>';
+        '</div></div></div>';
     }).join('');
   }
+
+  window.editKennisnotitieInline = async function (id) {
+    var card = document.querySelector('[data-kn-id="' + id + '"]');
+    if (!card) return;
+    var tekstEl = card.querySelector('.kn-tekst');
+    var origineel = tekstEl.textContent;
+
+    var textarea = document.createElement('textarea');
+    textarea.value = origineel;
+    textarea.maxLength = 1000;
+    textarea.style.cssText = 'width:100%;padding:6px;border:1px solid var(--primary);border-radius:4px;font-family:inherit;font-size:0.85rem;min-height:60px;resize:vertical';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary';
+    saveBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;width:auto;margin-right:6px;margin-top:6px';
+    saveBtn.textContent = 'Opslaan';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;width:auto;margin-top:6px';
+    cancelBtn.textContent = 'Annuleren';
+
+    var wrapper = document.createElement('div');
+    wrapper.appendChild(textarea);
+    var actions = document.createElement('div');
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    wrapper.appendChild(actions);
+
+    tekstEl.replaceWith(wrapper);
+
+    cancelBtn.addEventListener('click', function () { loadKennisnotities(); });
+    saveBtn.addEventListener('click', async function () {
+      var nieuw = textarea.value.trim();
+      if (!nieuw) return;
+      await supabaseClient.from('kennisnotities').update({ notitie: nieuw.substring(0, 1000) }).eq('id', id);
+      loadKennisnotities();
+    });
+    textarea.focus();
+  };
 
   window.deleteKennisnotitie = async function (id) {
     if (!confirm('Kennisnotitie verwijderen?')) return;
