@@ -101,6 +101,108 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
 
+    // ---- Zoektermen genereren voor een document (admin only) ----
+    if (body.generate_zoektermen && body.document_id) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: doc } = await supabaseAdmin
+        .from("documents")
+        .select("id, naam, content, tenant_id")
+        .eq("id", body.document_id)
+        .eq("tenant_id", profile.tenant_id)
+        .single();
+
+      if (!doc || !doc.content) {
+        return new Response(
+          JSON.stringify({ error: "Document niet gevonden of geen content" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const prompt = `Analyseer dit document en genereer 30 zoektermen in het Nederlands die mensen zouden gebruiken om dit document te vinden.
+Denk aan synoniemen, afkortingen, gerelateerde begrippen, informele namen en variaties op de documenttitel.
+
+Geef ALLEEN een JSON array terug met 30 strings. Geen uitleg, geen opmaak, geen markdown.
+
+Document titel: ${doc.naam}
+Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
+
+      try {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        if (!aiResp.ok) {
+          return new Response(
+            JSON.stringify({ error: "Claude API fout" }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const aiJson = await aiResp.json();
+        let raw = aiJson.content?.[0]?.text || "[]";
+        // Strip markdown code fences als aanwezig
+        raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        // Probeer JSON array te vinden
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) raw = match[0];
+
+        let zoektermen: string[] = [];
+        try {
+          zoektermen = JSON.parse(raw);
+        } catch {
+          console.error("[Zoektermen] JSON parse fout, raw:", raw.substring(0, 200));
+          zoektermen = [];
+        }
+
+        if (!Array.isArray(zoektermen) || zoektermen.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "Geen zoektermen kunnen genereren" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Filter en lowercase
+        zoektermen = zoektermen
+          .filter((t: unknown) => typeof t === "string" && (t as string).trim().length > 0)
+          .map((t: string) => t.trim().toLowerCase())
+          .slice(0, 50);
+
+        await supabaseAdmin
+          .from("documents")
+          .update({ zoektermen })
+          .eq("id", doc.id);
+
+        console.log(`[Zoektermen] Gegenereerd: ${zoektermen.length} voor: ${doc.naam}`);
+
+        return new Response(
+          JSON.stringify({ success: true, count: zoektermen.length, zoektermen }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Zoektermen] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: String(err) }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- Teamleider: team medewerkers ophalen (via service role, omzeilt RLS) ----
     if (body.get_team_medewerkers) {
       if (profile.role !== "teamleider" && profile.role !== "admin") {

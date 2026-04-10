@@ -49,6 +49,7 @@
     initTeamleiderModal();
     initVerbeterModal();
     initKnToevoegen();
+    initHerindexeerBtn();
     loadRapporten();
     initRapportBtn();
     loadPrivacyVerzoeken();
@@ -836,7 +837,9 @@
 
         var insertResult = await supabaseClient
           .from('documents')
-          .insert(insertData);
+          .insert(insertData)
+          .select('id')
+          .single();
 
         console.log('[Upload] Insert resultaat:', insertResult.error ? 'FOUT: ' + insertResult.error.message : 'OK');
 
@@ -846,6 +849,27 @@
           fillEl.style.width = '100%';
           fillEl.style.background = 'var(--error)';
           continue;
+        }
+
+        // Stap 4: Zoektermen genereren via Claude
+        if (insertResult.data && insertResult.data.id && extractedText) {
+          statusEl.textContent = 'Zoektermen genereren...';
+          fillEl.style.width = '90%';
+          try {
+            var session = (await supabaseClient.auth.getSession()).data.session;
+            var ztResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + session.access_token
+              },
+              body: JSON.stringify({ generate_zoektermen: true, document_id: insertResult.data.id })
+            });
+            var ztData = await ztResponse.json();
+            console.log('[Upload] Zoektermen:', ztData.count || 0, 'voor', file.name);
+          } catch (e) {
+            console.error('[Upload] Zoektermen fout:', e);
+          }
         }
 
         // Klaar
@@ -1186,6 +1210,49 @@
 
     loadDocuments();
   };
+
+  // ---- Herindexeer alle documenten ----
+  function initHerindexeerBtn() {
+    var btn = document.getElementById('herindexeer-btn');
+    var statusEl = document.getElementById('herindexeer-status');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!allDocuments || allDocuments.length === 0) {
+        alert('Geen documenten om te indexeren.');
+        return;
+      }
+      if (!confirm('Alle ' + allDocuments.length + ' documenten herindexeren via Claude? Dit kan een paar minuten duren.')) return;
+
+      btn.disabled = true;
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var token = session.access_token;
+      var totaal = allDocuments.length;
+      var gedaan = 0;
+      var fouten = 0;
+
+      for (var i = 0; i < allDocuments.length; i++) {
+        var doc = allDocuments[i];
+        if (!doc.content) { gedaan++; continue; }
+        statusEl.textContent = (gedaan + 1) + ' van ' + totaal + ' documenten geïndexeerd...';
+        try {
+          var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ generate_zoektermen: true, document_id: doc.id })
+          });
+          var data = await resp.json();
+          if (data.error) fouten++;
+        } catch (e) {
+          fouten++;
+        }
+        gedaan++;
+      }
+
+      statusEl.textContent = '✓ Klaar: ' + gedaan + ' verwerkt, ' + fouten + ' fouten';
+      btn.disabled = false;
+      await loadDocuments();
+    });
+  }
 
   // ---- Synoniemen & afkortingen per document ----
   window.editSynoniemen = async function (docId) {
