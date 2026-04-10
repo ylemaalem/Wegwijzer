@@ -71,8 +71,9 @@
     initLogout();
     initSearch();
     laadTenantInstellingen();
-    // Nieuwe features — elke functie kiest zelf de juiste inwerkweek op basis van het zichtbaarheidsvenster
-    if (heeftInwerktraject) {
+    // Nieuwe features — elke functie kiest zelf de juiste inwerkweek op basis van het zichtbaarheidsvenster.
+    // weekNummer 0 = startdatum ligt nog in de toekomst → geen briefing/quiz/vertrouwenscheck.
+    if (heeftInwerktraject && weekNummer >= 1) {
       checkWeekstartBriefing();
       checkVertrouwenscheck();
       checkKennisquiz();
@@ -88,8 +89,9 @@
     var start = new Date(startdatum);
     var nu = new Date();
 
-    // Nog niet gestart
-    if (nu < start) return 1;
+    // Startdatum ligt in de toekomst → speciale waarde 0
+    // (caller toont een banner met de startdatum en skipt briefing/quiz/vertrouwenscheck)
+    if (nu < start) return 0;
 
     // Vind de maandag van de startweek
     // getDay(): 0=zo, 1=ma, ..., 6=za
@@ -191,7 +193,17 @@
     var weekBadge = document.getElementById('welcome-week');
     var subtitle = document.getElementById('welcome-subtitle');
 
-    if (weekNummer > 6) {
+    if (weekNummer === 0) {
+      // Inwerktraject start nog in de toekomst — toon datum, verberg progress
+      if (meter) meter.style.display = 'none';
+      if (labels) labels.style.display = 'none';
+      if (weekBadge) weekBadge.style.display = 'none';
+      if (subtitle) {
+        var startDatum = new Date(profile.startdatum);
+        var startDatumNL = startDatum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+        subtitle.textContent = 'Jouw inwerktraject start op ' + startDatumNL + '. Tot die tijd kun je al vragen stellen.';
+      }
+    } else if (weekNummer > 6) {
       // Na inwerkperiode: kennisassistent modus
       if (meter) meter.style.display = 'none';
       if (labels) labels.style.display = 'none';
@@ -316,7 +328,12 @@
     var naam = profile.naam ? profile.naam.split(' ')[0] : '';
     var tekst;
 
-    if (weekNummer > 6) {
+    if (weekNummer === 0) {
+      var startDatum = new Date(profile.startdatum);
+      var startDatumNL = startDatum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+      tekst = 'Hallo' + (naam ? ' ' + naam : '') + '! ' +
+        'Jouw inwerktraject start op ' + startDatumNL + '. Tot die tijd kun je me al vragen stellen over protocollen, werkwijze of de organisatie.';
+    } else if (weekNummer > 6) {
       tekst = 'Hallo' + (naam ? ' ' + naam : '') + '! ' +
         'Ik ben jouw kennisassistent. Stel me vragen over protocollen, werkwijze en procedures.';
     } else {
