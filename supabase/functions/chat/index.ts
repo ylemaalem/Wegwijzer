@@ -1106,6 +1106,23 @@ ${vragenContext}`;
     const vraagLower = vraag.toLowerCase();
     const gevondenTermen = ZORGWEKKENDE_TERMEN.filter(t => vraagLower.includes(t));
 
+    // Detectie of de medewerker EXPLICIET om een bron vraagt.
+    // Alleen dan voegt het model een bronlabel toe aan zijn antwoord.
+    const BRON_TRIGGERS = [
+      "waar haal je dit vandaan",
+      "waar haal je dat vandaan",
+      "wat is je bron",
+      "wat zijn je bronnen",
+      "wat is de bron",
+      "hoe weet je dit",
+      "hoe weet je dat",
+      "welk document",
+      "welke bron",
+      "waar staat dit",
+      "waar staat dat",
+    ];
+    const vraagtBron = BRON_TRIGGERS.some(t => vraagLower.includes(t));
+
     if (gevondenTermen.length > 0) {
       // Tel hoeveel zorgwekkende vragen er deze week zijn binnen hetzelfde team
       const weekStart = new Date();
@@ -1642,8 +1659,36 @@ ${alleKennisbronnen}`;
     }
 
     const aiResult = await anthropicResponse.json();
-    const antwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
-    console.log(`[Chat] AI response ontvangen, lengte: ${antwoord.length}, model: ${aiResult.model || "unknown"}`);
+    const rawAntwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
+    console.log(`[Chat] AI response ontvangen, lengte: ${rawAntwoord.length}, model: ${aiResult.model || "unknown"}`);
+
+    // ---- 9b. Kennishiaat detectie (op het RUWE antwoord, vóór bronlabels gestript worden) ----
+    if (rawAntwoord.includes("ℹ️") && rawAntwoord.includes("Niet gevonden in organisatie-documenten")) {
+      console.log("[Chat] Kennishiaat gedetecteerd voor vraag:", vraag.substring(0, 80));
+      try {
+        await supabaseAdmin.from("kenniskloof_meldingen").insert({
+          tenant_id: profile.tenant_id,
+          onderwerp: vraag.trim().substring(0, 200),
+          aantal_vragen: 1,
+        });
+      } catch { /* kenniskloof tabel bestaat mogelijk niet */ }
+    }
+
+    // ---- 9c. Bronlabels strippen wanneer de medewerker er NIET expliciet om vroeg ----
+    // Claude voegt altijd een bronlabel toe (zie BRONVERMELDING blok) zodat kennishiaat-
+    // detectie blijft werken. Daarna verwijderen we de label-regel uit het zichtbare
+    // antwoord, tenzij de vraag een expliciete bronvraag was (zie BRON_TRIGGERS).
+    let antwoord = rawAntwoord;
+    if (!vraagtBron) {
+      // Match een trailing regel die met één van de bron-emoji's begint:
+      // 📄 Bron: ..., ✏️ Bron: ..., 📝 Bron: ..., 🌐 Bron: ..., ℹ️ Niet gevonden ...
+      antwoord = antwoord.replace(/\s*\n+\s*(?:📄|✏️|📝|🌐|ℹ️)[^\n]*$/u, "");
+      // Soms produceert Claude meerdere labels — strip alles vanaf het eerste bronlabel
+      // dat als 'rest' op een nieuwe regel staat:
+      antwoord = antwoord.replace(/\n+\s*(?:📄|✏️|📝|🌐|ℹ️)\s*Bron:[^\n]*(?:\n[^\n]*)*$/u, "");
+      antwoord = antwoord.replace(/\n+\s*ℹ️\s*Niet gevonden[^\n]*(?:\n[^\n]*)*$/u, "");
+      antwoord = antwoord.trimEnd();
+    }
 
     // ---- 9. Gesprek opslaan ----
     const { data: conversation, error: convError } = await supabaseAdmin
@@ -1659,18 +1704,6 @@ ${alleKennisbronnen}`;
 
     if (convError) {
       console.error("Conversation opslaan mislukt:", convError);
-    }
-
-    // ---- 9b. Kennishiaat detectie ----
-    if (antwoord.includes("ℹ️") && antwoord.includes("Niet gevonden in organisatie-documenten")) {
-      console.log("[Chat] Kennishiaat gedetecteerd voor vraag:", vraag.substring(0, 80));
-      try {
-        await supabaseAdmin.from("kenniskloof_meldingen").insert({
-          tenant_id: profile.tenant_id,
-          onderwerp: vraag.trim().substring(0, 200),
-          aantal_vragen: 1,
-        });
-      } catch { /* kenniskloof tabel bestaat mogelijk niet */ }
     }
 
     // ---- 10. Antwoord terugsturen ----
