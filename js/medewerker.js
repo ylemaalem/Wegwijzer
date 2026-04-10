@@ -532,14 +532,16 @@
     info.textContent = 'Aanpasbaar tot ' + verloopt.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
     feedbackRow.appendChild(info);
 
-    // Bij negatieve feedback: toon document aanvraag knop
+    // Bij negatieve feedback: toon document aanvraag knop (max 1 per antwoord)
     if (waarde === 'niet_goed') {
-      // Zoek de vraag uit het gesprek
-      var msgRow = feedbackRow.closest('.message-row');
-      var prevRow = msgRow ? msgRow.previousElementSibling : null;
-      var vraagTekst = prevRow ? (prevRow.querySelector('.chat-bubble') || {}).textContent || '' : '';
-      if (vraagTekst) {
-        addDocumentAanvraagKnop(vraagTekst, feedbackRow);
+      var bestaandeKnop = feedbackRow.querySelector('.doc-aanvraag-btn');
+      if (!bestaandeKnop) {
+        var msgRow = feedbackRow.closest('.message-row');
+        var prevRow = msgRow ? msgRow.previousElementSibling : null;
+        var vraagTekst = prevRow ? (prevRow.querySelector('.chat-bubble') || {}).textContent || '' : '';
+        if (vraagTekst) {
+          addDocumentAanvraagKnop(vraagTekst, feedbackRow);
+        }
       }
     }
 
@@ -1083,23 +1085,31 @@
   // =============================================
   function addDocumentAanvraagKnop(vraagTekst, container) {
     var btn = document.createElement('button');
+    btn.className = 'doc-aanvraag-btn';
     btn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:0.7rem;cursor:pointer;color:var(--text-muted);margin-top:4px;font-family:var(--font)';
     btn.textContent = '📄 Vraag document aan over dit onderwerp';
     btn.addEventListener('click', async function () {
       btn.disabled = true;
       btn.textContent = 'Aanvraag versturen...';
       try {
-        var session4 = await supabaseClient.auth.getSession();
-        await fetch(SUPABASE_URL + '/functions/v1/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session4.data.session.access_token },
-          body: JSON.stringify({ generate_document_concept: true, vraag_tekst: vraagTekst })
+        // Direct insert — geen AI concept generatie
+        // user_id is FK naar auth.users (uit document_aanvragen schema)
+        var insertResult = await supabaseClient.from('document_aanvragen').insert({
+          user_id: user.id,
+          vraag: vraagTekst.trim().substring(0, 1000),
+          status: 'nieuw'
         });
-        btn.textContent = '✓ Aanvraag ontvangen';
-        btn.style.color = 'var(--success)';
+        if (insertResult.error) throw new Error(insertResult.error.message);
+
+        // Vervang knop door bevestiging
+        var bevestiging = document.createElement('div');
+        bevestiging.style.cssText = 'background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:10px 12px;font-size:0.78rem;color:#1B5E20;margin-top:6px;line-height:1.5';
+        bevestiging.innerHTML = '✓ Jouw aanvraag is ontvangen. De beheerder bekijkt of dit document kan worden toegevoegd aan de kennisbank. Je hoort hier niets meer over — we verwerken dit op de achtergrond.';
+        btn.replaceWith(bevestiging);
       } catch (e) {
-        btn.textContent = 'Aanvraag mislukt';
+        btn.textContent = 'Aanvraag mislukt: ' + (e.message || 'fout');
         btn.style.color = 'var(--error)';
+        btn.disabled = false;
       }
     });
     container.appendChild(btn);

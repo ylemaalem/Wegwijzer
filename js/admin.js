@@ -4031,36 +4031,65 @@
     }
 
     tbody.innerHTML = result.data.map(function (da) {
-      var datum = new Date(da.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var datum = new Date(da.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
       var statusBadge = da.status === 'nieuw' ? '<span class="badge badge-open">Nieuw</span>'
-        : da.status === 'gepubliceerd' ? '<span class="badge badge-goed">Gepubliceerd</span>'
+        : da.status === 'gepubliceerd' ? '<span class="badge badge-goed">Toegevoegd</span>'
         : '<span class="badge badge-niet-goed">Afgewezen</span>';
-      var acties = da.status === 'nieuw'
-        ? '<button class="btn-icon" onclick="window.publiceerDocAanvraag(\'' + da.id + '\')" title="Publiceer" style="color:var(--success)">✅</button>' +
-          '<button class="btn-icon btn-icon-danger" onclick="window.afwijsDocAanvraag(\'' + da.id + '\')" title="Afwijzen">❌</button>'
-        : '';
+      var acties = '';
+      if (da.status === 'nieuw') {
+        acties = '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-bottom:4px" onclick="window.editDocAanvraag(\'' + da.id + '\')" title="Bewerk vraagtekst">✏️ Bewerken</button>' +
+          '<button class="btn btn-primary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-bottom:4px;background:var(--success)" onclick="window.publiceerDocAanvraag(\'' + da.id + '\')" title="Voeg toe aan kennisbank">✅ Toevoegen aan kennisbank</button>' +
+          '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-bottom:4px" onclick="window.afwijsDocAanvraag(\'' + da.id + '\')" title="Aanvraag afwijzen">❌ Afwijzen</button>';
+      }
+      acties += '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocAanvraag(\'' + da.id + '\')" title="Verwijderen">🗑️</button>';
+
       return '<tr>' +
         '<td>' + datum + '</td>' +
-        '<td><div class="answer-preview">' + escapeHtml(da.vraag) + '</div></td>' +
-        '<td><div class="answer-preview">' + escapeHtml(da.concept_document || '-') + '</div></td>' +
+        '<td><div style="white-space:pre-wrap;font-size:0.85rem" class="da-vraag-' + da.id + '">' + escapeHtml(da.vraag) + '</div></td>' +
         '<td>' + statusBadge + '</td>' +
-        '<td>' + acties + '</td></tr>';
+        '<td><div style="display:flex;flex-direction:column;gap:2px">' + acties + '</div></td></tr>';
     }).join('');
   }
+
+  window.editDocAanvraag = async function (id) {
+    var huidigEl = document.querySelector('.da-vraag-' + id);
+    if (!huidigEl) return;
+    var huidig = huidigEl.textContent;
+    var nieuw = prompt('Bewerk de aanvraag tekst:', huidig);
+    if (nieuw === null) return;
+    nieuw = nieuw.trim();
+    if (!nieuw) return;
+    var result = await supabaseClient.from('document_aanvragen').update({ vraag: nieuw }).eq('id', id);
+    if (result.error) { alert('Bewerken mislukt: ' + result.error.message); return; }
+    loadDocumentAanvragen();
+  };
+
+  window.deleteDocAanvraag = async function (id) {
+    if (!confirm('Document aanvraag verwijderen?')) return;
+    var result = await supabaseClient.from('document_aanvragen').delete().eq('id', id);
+    if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    loadDocumentAanvragen();
+  };
 
   window.publiceerDocAanvraag = async function (id) {
     var result = await supabaseClient.from('document_aanvragen').select('*').eq('id', id).single();
     if (!result.data) return;
     var da = result.data;
 
+    // Vraag de admin om de inhoud handmatig in te voeren (geen AI generatie meer)
+    var inhoud = prompt('Geef de inhoud van het nieuwe kennisbank document.\n\nAanvraag: ' + da.vraag + '\n\nLaat leeg om alleen de aanvraag tekst als placeholder document op te slaan.', '');
+    if (inhoud === null) return;
+    inhoud = inhoud.trim() || da.vraag;
+
     // Voeg toe als document
-    await supabaseClient.from('documents').insert({
+    var insertResult = await supabaseClient.from('documents').insert({
       tenant_id: tenantId,
       naam: 'Aanvraag: ' + da.vraag.substring(0, 60),
       bestandspad: '',
-      content: da.concept_document,
+      content: inhoud,
       documenttype: 'overig'
     });
+    if (insertResult.error) { alert('Toevoegen mislukt: ' + insertResult.error.message); return; }
 
     await supabaseClient.from('document_aanvragen').update({ status: 'gepubliceerd' }).eq('id', id);
     loadDocumentAanvragen();

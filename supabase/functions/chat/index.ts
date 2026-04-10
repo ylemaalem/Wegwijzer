@@ -522,42 +522,23 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       } catch { /* skip */ }
     }
 
-    // ---- Document aanvraag concept genereren ----
+    // ---- Document aanvraag insert (geen AI concept generatie meer) ----
     if (body.generate_document_concept && body.vraag_tekst) {
+      // Backwards-compat: deze action wordt niet meer gebruikt door de frontend
+      // (medewerker.js inserts nu direct), maar we blijven het ondersteunen.
       try {
-        const docResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicApiKey!,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 512,
-            messages: [{
-              role: "user",
-              content: `Schrijf een beknopt informatiedocument voor zorgmedewerkers over: ${body.vraag_tekst}. Gebruik een professionele maar toegankelijke toon. Structuur: titel, inleiding, kern (max 3 punten), afsluiting. Maximaal 300 woorden. Nederlands.`
-            }],
-          }),
-        });
-        const docResult = await docResp.json();
-        const concept = docResult.content?.[0]?.text || "";
-
         await supabaseAdmin.from("document_aanvragen").insert({
           user_id: user.id,
           vraag: body.vraag_tekst,
-          concept_document: concept,
         });
-
         return new Response(
-          JSON.stringify({ concept: concept, saved: true }),
+          JSON.stringify({ saved: true }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {
-        console.error("[DocConcept] Fout:", err);
+        console.error("[DocAanvraag] Fout:", err);
         return new Response(
-          JSON.stringify({ error: "Concept genereren mislukt" }),
+          JSON.stringify({ error: "Aanvraag opslaan mislukt" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
