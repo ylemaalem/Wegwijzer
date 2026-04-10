@@ -4285,6 +4285,7 @@
 
       var detailId = 'terugblik-detail-' + idx;
       var bekijkBtn = t.inhoud ? '<button class="btn-icon" onclick="window.toggleTerugblikDetail(\'' + detailId + '\')" title="Bekijk rapport">📊</button>' : '';
+      var verwijderBtn = '<button class="btn-icon btn-icon-danger" onclick="window.deleteTerugblikLog(\'' + t.id + '\')" title="Verwijderen uit log">🗑️</button>';
 
       var detailHtml = '';
       if (t.inhoud) {
@@ -4309,7 +4310,7 @@
       return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.85rem">' +
           '<div><strong>' + escapeHtml(t.maand || '') + '</strong><br><span style="color:var(--text-muted);font-size:0.78rem">' + datum + ' · ' + teamTekst + '</span></div>' +
-          '<div style="text-align:right">' + statusBadge + ' ' + bekijkBtn + '<br><span style="font-size:0.78rem;color:var(--text-muted)">' + (t.aantal_ontvangers || 0) + ' ontvanger(s)</span></div>' +
+          '<div style="text-align:right">' + statusBadge + ' ' + bekijkBtn + ' ' + verwijderBtn + '<br><span style="font-size:0.78rem;color:var(--text-muted)">' + (t.aantal_ontvangers || 0) + ' ontvanger(s)</span></div>' +
         '</div>' +
         '<div style="font-size:0.78rem;color:var(--text-light);margin-top:4px">' + ontvangersTekst + '</div>' +
         foutTekst +
@@ -4321,6 +4322,26 @@
   window.toggleTerugblikDetail = function (id) {
     var el = document.getElementById(id);
     if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+  };
+
+  window.deleteTerugblikLog = async function (id) {
+    if (!confirm('Weet je zeker dat je deze terugblik wilt verwijderen uit de log?')) return;
+    console.log('[DELETE terugblik-log] Verwijder id:', id);
+    var result = await supabaseClient
+      .from('terugblik_log')
+      .delete()
+      .eq('id', id)
+      .select();
+    console.log('[DELETE terugblik-log] Response:', result.error, 'rows:', result.data);
+    if (result.error) {
+      alert('Verwijderen mislukt: ' + result.error.message);
+      return;
+    }
+    if (!result.data || result.data.length === 0) {
+      alert('Geen rij verwijderd — mogelijk een rechten-issue. Check console.');
+      return;
+    }
+    loadTerugblikLog();
   };
 
   // =============================================
