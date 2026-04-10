@@ -57,10 +57,13 @@
     // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true)
     var heeftInwerktraject = profile.inwerktraject_actief === true && !profile.inwerken_afgerond;
     weekNummer = heeftInwerktraject ? berekenWeekNummer(profile.startdatum) : 99;
-    // Toon dashboard knop voor teamleiders
-    if (profile.role === 'teamleider') {
+    // Toon dashboard knop voor teamleiders en admins
+    if (profile.role === 'teamleider' || profile.role === 'admin') {
       var dashBtn = document.getElementById('dashboard-btn');
-      if (dashBtn) dashBtn.classList.remove('hidden');
+      if (dashBtn) {
+        dashBtn.classList.remove('hidden');
+        dashBtn.href = profile.role === 'admin' ? appUrl('admin.html') : appUrl('teamleider.html');
+      }
     }
     initWelkom();
     initChatInput();
