@@ -427,32 +427,42 @@
           </table>
         </div>
 
-        <!-- Kennisbank items -->
-        <div style="margin-top:24px">
-          <h3 class="section-title" style="font-size:1rem">Kennisbank items</h3>
-          <p class="section-subtitle">Handmatig toegevoegde antwoorden en correcties</p>
-          <div id="kennisbank-items-list"></div>
+        <!-- Kennisbank items (inklapbaar) -->
+        <div style="margin-top:24px" class="vp-collapsible" data-collapse-key="kb">
+          <h3 class="section-title vp-collapse-header" style="font-size:1rem;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">
+            <span class="vp-chevron" aria-hidden="true">▼</span>
+            <span>Kennisbank items</span>
+          </h3>
+          <div class="vp-collapse-content">
+            <p class="section-subtitle">Handmatig toegevoegde antwoorden en correcties</p>
+            <div id="kennisbank-items-list"></div>
+          </div>
         </div>
 
-        <div style="margin-top:24px">
-          <h3 class="section-title" style="font-size:1rem">Kennisnotities</h3>
-          <p class="section-subtitle">Korte notities over ontbrekende onderwerpen — worden meegestuurd aan de AI</p>
-          <button type="button" class="btn btn-secondary" id="kn-toevoegen-btn" style="max-width:240px;margin-bottom:12px;padding:6px 12px;font-size:0.85rem">+ Kennisnotitie toevoegen</button>
-          <div id="kn-toevoegen-form" style="display:none;background:#F0FFF4;padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid #C6F6D5">
-            <div class="form-group">
-              <label class="form-label" for="kn-onderwerp">Onderwerp</label>
-              <input type="text" id="kn-onderwerp" class="form-input" maxlength="100" placeholder="Bijv. Reiskostenvergoeding">
+        <div style="margin-top:24px" class="vp-collapsible" data-collapse-key="kn">
+          <h3 class="section-title vp-collapse-header" style="font-size:1rem;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">
+            <span class="vp-chevron" aria-hidden="true">▼</span>
+            <span>Kennisnotities</span>
+          </h3>
+          <div class="vp-collapse-content">
+            <p class="section-subtitle">Korte notities over ontbrekende onderwerpen — worden meegestuurd aan de AI</p>
+            <button type="button" class="btn btn-secondary" id="kn-toevoegen-btn" style="max-width:240px;margin-bottom:12px;padding:6px 12px;font-size:0.85rem">+ Kennisnotitie toevoegen</button>
+            <div id="kn-toevoegen-form" style="display:none;background:#F0FFF4;padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid #C6F6D5">
+              <div class="form-group">
+                <label class="form-label" for="kn-onderwerp">Onderwerp</label>
+                <input type="text" id="kn-onderwerp" class="form-input" maxlength="100" placeholder="Bijv. Reiskostenvergoeding">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="kn-notitie-tekst">Notitie</label>
+                <textarea id="kn-notitie-tekst" class="form-input" rows="4" maxlength="1000" placeholder="Korte notitie die meegestuurd wordt aan de AI..."></textarea>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn-primary" id="kn-toevoegen-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan</button>
+                <button type="button" class="btn btn-secondary" id="kn-toevoegen-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="kn-notitie-tekst">Notitie</label>
-              <textarea id="kn-notitie-tekst" class="form-input" rows="4" maxlength="1000" placeholder="Korte notitie die meegestuurd wordt aan de AI..."></textarea>
-            </div>
-            <div style="display:flex;gap:8px">
-              <button type="button" class="btn btn-primary" id="kn-toevoegen-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan</button>
-              <button type="button" class="btn btn-secondary" id="kn-toevoegen-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>
-            </div>
+            <div id="kennisnotities-lijst"></div>
           </div>
-          <div id="kennisnotities-lijst"></div>
         </div>
 
         <!-- App feedback van medewerkers -->
@@ -1127,7 +1137,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js"></script>
+  <script src="js/admin.js?v=2"></script>
 
 </body>
 </html>

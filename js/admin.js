@@ -59,7 +59,37 @@
     loadDocumentAanvragen();
     loadVertrouwensData();
     loadTerugblikLog();
+    initVerbeterCollapse();
   });
+
+  // =============================================
+  // INKLAP / UITKLAP secties (kennisbank items, kennisnotities)
+  // =============================================
+  function initVerbeterCollapse() {
+    var secties = document.querySelectorAll('.vp-collapsible');
+    secties.forEach(function (sectie) {
+      var key = sectie.getAttribute('data-collapse-key');
+      var header = sectie.querySelector('.vp-collapse-header');
+      var content = sectie.querySelector('.vp-collapse-content');
+      var chevron = sectie.querySelector('.vp-chevron');
+      if (!header || !content || !chevron) return;
+
+      var storageKey = 'wegwijzer_collapse_' + key;
+      var ingeklapt = localStorage.getItem(storageKey) === '1';
+      applyState(ingeklapt);
+
+      header.addEventListener('click', function () {
+        ingeklapt = !ingeklapt;
+        localStorage.setItem(storageKey, ingeklapt ? '1' : '0');
+        applyState(ingeklapt);
+      });
+
+      function applyState(closed) {
+        content.style.display = closed ? 'none' : '';
+        chevron.textContent = closed ? '▶' : '▼';
+      }
+    });
+  }
 
   // =============================================
   // TABS
