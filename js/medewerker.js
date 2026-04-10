@@ -1386,9 +1386,27 @@
       modal.classList.remove('show');
     }
 
-    btn.addEventListener('click', openModal);
-    cancelBtn.addEventListener('click', closeModal);
-    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+    btn.addEventListener('click', function (e) {
+      // stopPropagation: voorkomt dat de directe document-click hieronder de net-geopende modal weer sluit
+      e.stopPropagation();
+      openModal();
+    });
+    cancelBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      closeModal();
+    });
+
+    // Klik buiten de popup sluit hem (popup is compact, dus we luisteren op document)
+    document.addEventListener('click', function (e) {
+      if (!modal.classList.contains('show')) return;
+      if (modal.contains(e.target) || btn.contains(e.target)) return;
+      closeModal();
+    });
+
+    // Escape-toets sluit de popup
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
+    });
 
     bericht.addEventListener('input', function () {
       teller.textContent = bericht.value.length;
