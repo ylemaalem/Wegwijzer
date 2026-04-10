@@ -2431,13 +2431,17 @@
   }
 
   function updateFeedbackBadge(count) {
-    var tabBtn = document.querySelector('.tab-btn[data-tab="verbeterpunten"]');
+    updateTabBadge('verbeterpunten', count);
+  }
+
+  function updateTabBadge(tabName, count) {
+    var tabBtn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
     if (!tabBtn) return;
-    var existing = tabBtn.querySelector('.feedback-badge');
+    var existing = tabBtn.querySelector('.tab-badge');
     if (existing) existing.remove();
     if (count > 0) {
       var badge = document.createElement('span');
-      badge.className = 'feedback-badge tab-badge';
+      badge.className = 'tab-badge';
       badge.textContent = count;
       tabBtn.appendChild(badge);
     }
@@ -3108,46 +3112,86 @@
   // MELDINGEN (patroon detectie)
   // =============================================
   async function loadMeldingen() {
+    var container = document.getElementById('meldingen-lijst-container');
+    var toonAfgehandeld = document.getElementById('meldingen-toon-afgehandeld');
+
+    if (toonAfgehandeld && !toonAfgehandeld.dataset.bound) {
+      toonAfgehandeld.dataset.bound = '1';
+      toonAfgehandeld.addEventListener('change', loadMeldingen);
+    }
+
     var result = await supabaseClient
       .from('meldingen')
       .select('id, type, bericht, created_at, gelezen')
       .eq('tenant_id', tenantId)
-      .eq('gelezen', false)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100);
 
-    if (result.error || !result.data || result.data.length === 0) return;
-
-    var meldingen = result.data;
-
-    // Toon notificatie badge of alert
-    var meldingenContainer = document.getElementById('meldingen-lijst');
-    if (meldingenContainer) {
-      meldingenContainer.innerHTML = meldingen.map(function (m) {
-        var datum = new Date(m.created_at).toLocaleDateString('nl-NL', {
-          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-        });
-        return '<div class="alert alert-warning show" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">' +
-          '<div><strong>' + escapeHtml(m.type || 'Melding') + '</strong> — ' + escapeHtml(m.bericht) +
-          '<br><small style="color:var(--text-muted)">' + datum + '</small></div>' +
-          '<button class="btn-icon" onclick="window.markeerGelezen(\'' + m.id + '\')" title="Markeer als gelezen">✓</button>' +
-          '</div>';
-      }).join('');
+    if (result.error || !result.data) {
+      if (container) container.innerHTML = '<p class="no-data">Geen meldingen gevonden.</p>';
+      updateMeldingenBadge(0);
+      return;
     }
 
-    // Badge op relevante tabs
-    var meldingenBadge = document.getElementById('meldingen-badge');
-    if (meldingenBadge) {
-      meldingenBadge.textContent = meldingen.length;
-      meldingenBadge.style.display = 'inline-block';
+    var nieuw = result.data.filter(function (m) { return !m.gelezen; });
+    updateMeldingenBadge(nieuw.length);
+
+    var weergave = (toonAfgehandeld && toonAfgehandeld.checked) ? result.data : nieuw;
+
+    if (container) {
+      if (weergave.length === 0) {
+        container.innerHTML = '<p class="no-data">Geen meldingen.</p>';
+      } else {
+        container.innerHTML = weergave.map(function (m) {
+          var datum = new Date(m.created_at).toLocaleDateString('nl-NL', {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+          var afgehandeld = m.gelezen;
+          var bgClass = afgehandeld ? '' : 'alert alert-warning show';
+          var style = afgehandeld
+            ? 'margin-bottom:8px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;opacity:0.6;display:flex;justify-content:space-between;align-items:center;gap:12px'
+            : 'margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px';
+          var statusBadge = afgehandeld
+            ? '<span class="badge badge-success" style="font-size:0.7rem;margin-left:8px">Afgehandeld</span>'
+            : '<span class="badge badge-warning" style="font-size:0.7rem;margin-left:8px">Nieuw</span>';
+          return '<div class="' + bgClass + '" style="' + style + '">' +
+            '<div style="flex:1"><strong>' + escapeHtml(m.type || 'Melding') + '</strong>' + statusBadge +
+            '<br>' + escapeHtml(m.bericht) +
+            '<br><small style="color:var(--text-muted)">' + datum + '</small></div>' +
+            '<div style="display:flex;flex-direction:column;gap:4px">' +
+            (afgehandeld
+              ? ''
+              : '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerAfgehandeld(\'' + m.id + '\')" title="Markeer als afgehandeld">✅ Afgehandeld</button>') +
+            '<button class="btn-icon btn-icon-danger" onclick="window.deleteMelding(\'' + m.id + '\')" title="Verwijderen">🗑️</button>' +
+            '</div></div>';
+        }).join('');
+      }
     }
   }
 
-  window.markeerGelezen = async function (id) {
-    await supabaseClient
-      .from('meldingen')
-      .update({ gelezen: true })
-      .eq('id', id);
+  function updateMeldingenBadge(count) {
+    var tabBtn = document.querySelector('.tab-btn[data-tab="meldingen"]');
+    if (!tabBtn) return;
+    var existing = tabBtn.querySelector('.tab-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.textContent = count;
+      tabBtn.appendChild(badge);
+    }
+  }
 
+  window.markeerAfgehandeld = async function (id) {
+    await supabaseClient.from('meldingen').update({ gelezen: true }).eq('id', id);
+    loadMeldingen();
+  };
+
+  window.markeerGelezen = window.markeerAfgehandeld; // Backwards-compat alias
+
+  window.deleteMelding = async function (id) {
+    if (!confirm('Melding verwijderen?')) return;
+    await supabaseClient.from('meldingen').delete().eq('id', id);
     loadMeldingen();
   };
 
@@ -3976,6 +4020,10 @@
       .from('document_aanvragen')
       .select('*')
       .order('created_at', { ascending: false });
+
+    // Badge bijwerken
+    var nieuw = (result.data || []).filter(function (da) { return da.status === 'nieuw'; }).length;
+    updateTabBadge('doc-aanvragen', nieuw);
 
     if (!result.data || result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen document aanvragen.</td></tr>';
