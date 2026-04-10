@@ -650,6 +650,112 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
     }
 
+    // ---- Kennisquiz genereren ----
+    if (body.generate_quiz && body.week_nummer) {
+      const wk = body.week_nummer;
+      const fg = profile.functiegroep || "medewerker";
+      console.log("[Quiz] Genereren voor week", wk, "functiegroep:", fg);
+
+      // Niveau per inwerkweek
+      const niveaus: Record<number, string> = {
+        2: "Basis — herkenningsvragen (wat is...?, welke...?)",
+        3: "Gemiddeld — situatievragen (wat doe je als...?)",
+        4: "Gevorderd — toepassingsvragen over procedures",
+        5: "Integratie — combinatievragen over meerdere onderwerpen"
+      };
+      const niveau = niveaus[wk] || "Gemiddeld";
+
+      // Haal recente vragen van deze medewerker op (alleen deze week)
+      let vragenContext = "";
+      try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const { data: recenteVragen } = await supabaseAdmin
+          .from("conversations")
+          .select("vraag")
+          .eq("user_id", profile.id)
+          .gte("created_at", sevenDaysAgo.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(15);
+        if (recenteVragen && recenteVragen.length > 0) {
+          vragenContext = "VRAGEN DIE DEZE MEDEWERKER DEZE WEEK STELDE:\n" +
+            recenteVragen.map((v: { vraag: string }, i: number) => (i + 1) + ". " + v.vraag).join("\n");
+        }
+      } catch (err) {
+        console.error("[Quiz] Vragen ophalen mislukt:", err);
+      }
+
+      // Haal relevante kennisbank documenten op (top 3 op basis van weeknummer + functiegroep)
+      let docContext = "";
+      try {
+        const { data: docs } = await supabaseAdmin
+          .from("documents")
+          .select("naam, content")
+          .eq("tenant_id", profile.tenant_id)
+          .is("user_id", null)
+          .not("content", "is", null)
+          .limit(20);
+        if (docs && docs.length > 0) {
+          const searchTerm = ("week " + wk + " " + fg.replace(/_/g, " ")).toLowerCase();
+          const scored = docs.map((d: { naam: string; content: string }) => {
+            const lower = (d.content + " " + d.naam).toLowerCase();
+            let score = 0;
+            searchTerm.split(/\s+/).forEach((w: string) => {
+              if (w.length > 2 && lower.indexOf(w) !== -1) score++;
+            });
+            return { ...d, score };
+          }).sort((a: { score: number }, b: { score: number }) => b.score - a.score).slice(0, 3);
+          docContext = "RELEVANTE KENNISBANK DOCUMENTEN:\n" +
+            scored.map((d: { naam: string; content: string }) =>
+              "--- " + d.naam + " ---\n" + d.content.substring(0, 2500)
+            ).join("\n\n");
+        }
+      } catch (err) {
+        console.error("[Quiz] Documenten ophalen mislukt:", err);
+      }
+
+      try {
+        const prompt = `Genereer 3 quizvragen voor een nieuwe zorgmedewerker in inwerkweek ${wk}.
+Niveau: ${niveau}.
+Functiegroep: ${fg.replace(/_/g, " ")}.
+Gebruik UITSLUITEND informatie uit de onderstaande kennisbank documenten — verzin niets.
+Per vraag 3 antwoordopties waarvan precies 1 correct is.
+Retourneer ALLEEN een JSON array, geen tekst eromheen, in dit exacte formaat:
+[{"vraag": "...", "opties": ["a", "b", "c"], "correct_antwoord": "a", "uitleg": "..."}]
+
+${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over ambulante zorg)"}
+
+${vragenContext}`;
+
+        const quizResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        const quizResult = await quizResp.json();
+        const quizText = quizResult.content?.[0]?.text || "";
+        return new Response(
+          JSON.stringify({ antwoord: quizText }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Quiz] Fout:", err);
+        return new Response(
+          JSON.stringify({ error: "Quiz genereren mislukt" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- Vertrouwenscheck tips genereren ----
     if (body.generate_tips && body.week_nummer) {
       const fg = profile.functiegroep || "medewerker";

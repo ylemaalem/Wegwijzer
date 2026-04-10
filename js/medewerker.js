@@ -71,8 +71,8 @@
     initLogout();
     initSearch();
     laadTenantInstellingen();
-    // Nieuwe features
-    if (weekNummer <= 6) {
+    // Nieuwe features — elke functie kiest zelf de juiste inwerkweek op basis van het zichtbaarheidsvenster
+    if (heeftInwerktraject) {
       checkWeekstartBriefing();
       checkVertrouwenscheck();
       checkKennisquiz();
@@ -113,6 +113,69 @@
     var week = verschilWeken + 1;
 
     return Math.max(1, week);
+  }
+
+  // Geeft de maandag 00:00 van inwerkweek N (1-based) terug op basis van startdatum
+  function maandagInwerkweek(startdatum, weekN) {
+    if (!startdatum) return null;
+    var start = new Date(startdatum);
+    var startDag = start.getDay();
+    var offsetNaarMaandag = startDag === 0 ? -6 : 1 - startDag;
+    var maandagWeek1 = new Date(start);
+    maandagWeek1.setDate(start.getDate() + offsetNaarMaandag);
+    maandagWeek1.setHours(0, 0, 0, 0);
+    var maandag = new Date(maandagWeek1);
+    maandag.setDate(maandagWeek1.getDate() + (weekN - 1) * 7);
+    return maandag;
+  }
+
+  // Welke inwerkweek heeft op dit moment een actief BRIEFING-venster?
+  // Briefing week N: ma 00:00 t/m zo 23:59 van inwerkweek N (1..6).
+  function actieveBriefingWeek(startdatum) {
+    if (!startdatum) return null;
+    var nu = new Date();
+    for (var n = 1; n <= 6; n++) {
+      var ma = maandagInwerkweek(startdatum, n);
+      if (!ma) return null;
+      var maVolgende = new Date(ma);
+      maVolgende.setDate(ma.getDate() + 7); // ma 00:00 van week N+1
+      if (nu >= ma && nu < maVolgende) return n;
+    }
+    return null;
+  }
+
+  // Welke inwerkweek heeft op dit moment een actief VERTROUWENSCHECK-venster?
+  // Vertrouwenscheck week N: vr 00:00 van inwerkweek N t/m do 23:59 van inwerkweek N+1.
+  function actieveVertrouwenscheckWeek(startdatum) {
+    if (!startdatum) return null;
+    var nu = new Date();
+    for (var n = 1; n <= 6; n++) {
+      var ma = maandagInwerkweek(startdatum, n);
+      if (!ma) return null;
+      var vrijdag = new Date(ma);
+      vrijdag.setDate(ma.getDate() + 4); // vr 00:00 van week N
+      var einde = new Date(vrijdag);
+      einde.setDate(vrijdag.getDate() + 7); // vr 00:00 van week N+1 = direct na do 23:59
+      if (nu >= vrijdag && nu < einde) return n;
+    }
+    return null;
+  }
+
+  // Welke inwerkweek heeft op dit moment een actief KENNISQUIZ-venster?
+  // Quiz week N (alleen 2..5): wo 00:00 van inwerkweek N t/m di 23:59 van inwerkweek N+1.
+  function actieveQuizWeek(startdatum) {
+    if (!startdatum) return null;
+    var nu = new Date();
+    for (var n = 2; n <= 5; n++) {
+      var ma = maandagInwerkweek(startdatum, n);
+      if (!ma) return null;
+      var woensdag = new Date(ma);
+      woensdag.setDate(ma.getDate() + 2); // wo 00:00 van week N
+      var einde = new Date(woensdag);
+      einde.setDate(woensdag.getDate() + 7); // wo 00:00 van week N+1 = direct na di 23:59
+      if (nu >= woensdag && nu < einde) return n;
+    }
+    return null;
   }
 
   // =============================================
@@ -742,9 +805,23 @@
   // WEEKSTART BRIEFING
   // =============================================
   async function checkWeekstartBriefing() {
-    // Zichtbaar hele week (ma 00:00 - zo 23:59)
-    var briefingKey = 'wegwijzer_briefing_week_' + weekNummer;
-    if (localStorage.getItem(briefingKey)) return; // Al gezien deze week
+    // Zichtbaarheidsvenster: ma 00:00 t/m zo 23:59 van inwerkweek N
+    var briefingWeek = actieveBriefingWeek(profile.startdatum);
+    if (!briefingWeek) return;
+
+    // Check of briefing van deze inwerkweek al gezien is (DB is leidend, localStorage is fallback)
+    var briefingKey = 'wegwijzer_briefing_week_' + briefingWeek;
+    var bestaand = await supabaseClient
+      .from('weekstart_briefings')
+      .select('id, gelezen')
+      .eq('user_id', user.id)
+      .eq('week_nummer', briefingWeek)
+      .limit(1);
+    if (bestaand.data && bestaand.data.length > 0 && bestaand.data[0].gelezen) {
+      localStorage.setItem(briefingKey, 'true');
+      return;
+    }
+    if (localStorage.getItem(briefingKey)) return;
 
     try {
       var session = await supabaseClient.auth.getSession();
@@ -753,7 +830,7 @@
       var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ generate_briefing: true, week_nummer: weekNummer })
+        body: JSON.stringify({ generate_briefing: true, week_nummer: briefingWeek })
       });
       var data = await resp.json();
 
@@ -764,7 +841,7 @@
         var sluitBtn = document.getElementById('briefing-sluit');
 
         if (container && header && tekst) {
-          header.textContent = 'Week ' + weekNummer + ' van 6';
+          header.textContent = 'Week ' + briefingWeek + ' van 6';
           tekst.textContent = data.briefing;
           container.style.display = '';
 
@@ -774,7 +851,8 @@
             supabaseClient.from('weekstart_briefings')
               .update({ gelezen: true })
               .eq('user_id', user.id)
-              .eq('week_nummer', weekNummer);
+              .eq('week_nummer', briefingWeek)
+              .then(function () {});
           });
         }
       }
@@ -784,25 +862,24 @@
   }
 
   // =============================================
-  // VERTROUWENSCHECK (nieuw model: delen ja/nee)
+  // VERTROUWENSCHECK (model: delen ja/nee)
   // =============================================
   async function checkVertrouwenscheck() {
-    // Check of al ingevuld deze week (via DB)
+    // Zichtbaarheidsvenster: vr 00:00 van inwerkweek N t/m do 23:59 van inwerkweek N+1
+    var vcWeek = actieveVertrouwenscheckWeek(profile.startdatum);
+    if (!vcWeek) return;
+
+    // Check of al ingevuld deze inwerkweek (DB is leidend)
     var bestaand = await supabaseClient
       .from('vertrouwens_scores')
       .select('id')
       .eq('user_id', user.id)
-      .eq('week_nummer', weekNummer)
+      .eq('week_nummer', vcWeek)
       .limit(1);
-
     if (bestaand.data && bestaand.data.length > 0) return;
 
-    // Zichtbaar van vrijdag t/m donderdag (7 dagen venster)
-    // Bepaal of we in het juiste venster zitten
-    var dag = new Date().getDay(); // 0=zo,1=ma..6=za
-    if (dag < 5 && dag > 0) return; // Ma-do: niet tonen (alleen vr,za,zo)
-    // Aanvullende check via localStorage
-    var vcKey = 'wegwijzer_vc_week_' + weekNummer;
+    // Aanvullende check via localStorage (per inwerkweek)
+    var vcKey = 'wegwijzer_vc_week_' + vcWeek;
     if (localStorage.getItem(vcKey)) return;
 
     var modal = document.getElementById('vertrouwenscheck-modal');
@@ -829,8 +906,8 @@
       if (gekozenScore >= 4) {
         // Score 4-5: opslaan, niet delen, positief bericht
         await supabaseClient.from('vertrouwens_scores').insert({
-          user_id: user.id, week_nummer: weekNummer, score: gekozenScore,
-          signaal_verstuurd: false, tenant_id: profile.tenant_id
+          user_id: user.id, week_nummer: vcWeek, score: gekozenScore,
+          gedeeld: false, tenant_id: profile.tenant_id
         });
         localStorage.setItem(vcKey, 'true');
         modal.querySelector('div > div').innerHTML =
@@ -838,12 +915,7 @@
           '<p style="font-size:0.9rem">Succes de komende week.</p>' +
           '<button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
       } else {
-        // Score 1-3: vraag of medewerker wil delen
-        await supabaseClient.from('vertrouwens_scores').insert({
-          user_id: user.id, week_nummer: weekNummer, score: gekozenScore,
-          signaal_verstuurd: false, tenant_id: profile.tenant_id
-        });
-
+        // Score 1-3: vraag of medewerker wil delen — pas opslaan na keuze
         opslaanBtn.style.display = 'none';
         gekozenEl.style.display = 'none';
         document.getElementById('vc-sterren').style.display = 'none';
@@ -853,20 +925,26 @@
         if (vervolg) vervolg.style.display = '';
 
         document.getElementById('vc-signaal').addEventListener('click', async function () {
-          await supabaseClient.from('vertrouwens_scores')
-            .update({ signaal_verstuurd: true })
-            .eq('user_id', user.id)
-            .eq('week_nummer', weekNummer);
+          await supabaseClient.from('vertrouwens_scores').insert({
+            user_id: user.id, week_nummer: vcWeek, score: gekozenScore,
+            gedeeld: true, tenant_id: profile.tenant_id
+          });
           localStorage.setItem(vcKey, 'true');
-          modal.style.display = 'none';
-          alert('Je score is gedeeld met je leidinggevende.');
+          modal.querySelector('div > div').innerHTML =
+            '<h3 style="margin-bottom:12px">Score gedeeld 🤝</h3>' +
+            '<p style="font-size:0.9rem">Je leidinggevende ziet je score en kan contact met je opnemen.</p>' +
+            '<button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
         });
 
-        document.getElementById('vc-zelf').addEventListener('click', function () {
+        document.getElementById('vc-zelf').addEventListener('click', async function () {
+          await supabaseClient.from('vertrouwens_scores').insert({
+            user_id: user.id, week_nummer: vcWeek, score: gekozenScore,
+            gedeeld: false, tenant_id: profile.tenant_id
+          });
           localStorage.setItem(vcKey, 'true');
           modal.querySelector('div > div').innerHTML =
             '<h3 style="margin-bottom:12px">Oké, geen probleem 👍</h3>' +
-            '<p style="font-size:0.9rem">Je score is alleen voor jou.</p>' +
+            '<p style="font-size:0.9rem">Oké, je score is alleen voor jou.</p>' +
             '<button class="btn btn-primary" style="margin-top:16px" onclick="this.closest(\'[id=vertrouwenscheck-modal]\').style.display=\'none\'">Sluiten</button>';
         });
       }
@@ -877,25 +955,20 @@
   // KENNISQUIZ (week 2-5)
   // =============================================
   async function checkKennisquiz() {
-    if (weekNummer < 2 || weekNummer > 5) return;
+    // Zichtbaarheidsvenster: wo 00:00 van inwerkweek N t/m di 23:59 van inwerkweek N+1 (alleen N=2..5)
+    var quizWeek = actieveQuizWeek(profile.startdatum);
+    if (!quizWeek) return;
 
-    // Check of al gedaan of overgeslagen
-    var quizKey = 'wegwijzer_quiz_week_' + weekNummer;
-    if (localStorage.getItem(quizKey)) return;
-
+    // Check of al gedaan of overgeslagen voor deze inwerkweek (DB is leidend)
+    var quizKey = 'wegwijzer_quiz_week_' + quizWeek;
     var bestaand = await supabaseClient
       .from('quiz_resultaten')
       .select('id')
       .eq('user_id', user.id)
-      .eq('week_nummer', weekNummer)
+      .eq('week_nummer', quizWeek)
       .limit(1);
     if (bestaand.data && bestaand.data.length > 0) { localStorage.setItem(quizKey, 'true'); return; }
-
-    // Zichtbaar wo t/m di (7 dagen venster)
-    var dag = new Date().getDay();
-    if (dag >= 1 && dag <= 2) { /* ma-di: laatste dagen, OK */ }
-    else if (dag >= 3) { /* wo-za: eerste dagen, OK */ }
-    else { /* zo: OK */ }
+    if (localStorage.getItem(quizKey)) return;
 
     // Toon quiz kaartje boven chat
     var quizCard = document.createElement('div');
@@ -904,7 +977,7 @@
 
     var niveaus = { 2: '🟢 Basis', 3: '🟡 Gemiddeld', 4: '🟠 Gevorderd', 5: '🔴 Integratie' };
     quizCard.innerHTML =
-      '<div><span style="font-size:1rem">📝</span> <strong style="font-size:0.85rem">Kennischeck week ' + weekNummer + '</strong> <span style="font-size:0.75rem;color:var(--text-muted)">' + (niveaus[weekNummer] || '') + ' · 3 vragen · 2 min</span></div>' +
+      '<div><span style="font-size:1rem">📝</span> <strong style="font-size:0.85rem">Kennischeck week ' + quizWeek + '</strong> <span style="font-size:0.75rem;color:var(--text-muted)">' + (niveaus[quizWeek] || '') + ' · 3 vragen · 2 min</span></div>' +
       '<div style="display:flex;gap:8px"><button id="quiz-start" class="btn btn-primary" style="width:auto;padding:6px 14px;font-size:0.8rem">Quiz starten</button><button id="quiz-skip" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-family:var(--font);color:var(--text-muted)">Overslaan</button></div>';
 
     var chatScreen = document.getElementById('chat-screen');
@@ -925,15 +998,12 @@
         var session = await supabaseClient.auth.getSession();
         var token = session.data.session.access_token;
 
-        var niveauTekst = { 2: 'Herkenningsvragen met 3 antwoordopties', 3: 'Situatievragen — wat doe jij?', 4: 'Toepassingsvragen over procedures', 5: 'Combinatievragen over meerdere onderwerpen' };
-
         var quizResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({
-            vraag: 'Genereer 3 quizvragen voor een nieuwe zorgmedewerker in inwerkweek ' + weekNummer + '. Moeilijkheidsgraad: ' + (niveauTekst[weekNummer] || 'gemiddeld') + '. Geef per vraag 3 antwoordopties waarvan 1 correct. Formaat: JSON array [{vraag, opties: [string], correct_antwoord: string, uitleg: string}]. Alleen de JSON, geen tekst eromheen.',
-            functiegroep: profile.functiegroep,
-            weeknummer: weekNummer
+            generate_quiz: true,
+            week_nummer: quizWeek
           })
         });
 
@@ -1014,7 +1084,7 @@
           document.getElementById('quiz-deel').addEventListener('click', async function () {
             await supabaseClient.from('quiz_resultaten').insert({
               user_id: user.id, tenant_id: profile.tenant_id,
-              week_nummer: weekNummer, score: correcteAntwoorden, gedeeld: true
+              week_nummer: quizWeek, score: correcteAntwoorden, gedeeld: true
             });
             localStorage.setItem(quizKey, 'true');
             quizCard.innerHTML = '<p style="padding:12px;font-size:0.85rem;text-align:center">✅ Score gedeeld. Goed gedaan!</p>';
@@ -1024,7 +1094,7 @@
           document.getElementById('quiz-niet-delen').addEventListener('click', async function () {
             await supabaseClient.from('quiz_resultaten').insert({
               user_id: user.id, tenant_id: profile.tenant_id,
-              week_nummer: weekNummer, score: correcteAntwoorden, gedeeld: false
+              week_nummer: quizWeek, score: correcteAntwoorden, gedeeld: false
             });
             localStorage.setItem(quizKey, 'true');
             quizCard.innerHTML = '<p style="padding:12px;font-size:0.85rem;text-align:center">👍 Score opgeslagen voor jezelf.</p>';

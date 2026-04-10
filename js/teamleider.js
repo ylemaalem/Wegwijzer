@@ -21,6 +21,8 @@
     loadTeamStatistieken();
     loadMijnAanvragen();
     loadTeamMeldingen();
+    loadTeamVertrouwen();
+    loadTeamQuiz();
     initAanvraagModal();
   });
 
@@ -307,6 +309,101 @@
         '<td>' + statusBadge + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  // =============================================
+  // VERTROUWENSCHECK — alleen scores die medewerker expliciet heeft gedeeld
+  // =============================================
+  async function loadTeamVertrouwen() {
+    var container = document.getElementById('tl-vertrouwen-lijst');
+    if (!container) return;
+
+    // Verzamel auth user_ids van mijn teamleden
+    var teamUserIds = teamProfiles.map(function (p) { return p.user_id; }).filter(function (v) { return !!v; });
+    if (teamUserIds.length === 0) {
+      container.innerHTML = '<p class="no-data">Geen gedeelde scores.</p>';
+      return;
+    }
+
+    var result = await supabaseClient
+      .from('vertrouwens_scores')
+      .select('user_id, week_nummer, score, created_at')
+      .eq('gedeeld', true)
+      .in('user_id', teamUserIds)
+      .order('created_at', { ascending: false });
+
+    var rows = (result.data || []);
+    if (rows.length === 0) {
+      container.innerHTML = '<p class="no-data">Geen gedeelde scores.</p>';
+      return;
+    }
+
+    // Naam-mapping op basis van auth user_id
+    var naamMap = {};
+    teamProfiles.forEach(function (p) { if (p.user_id) naamMap[p.user_id] = p.naam; });
+
+    var html = '<div class="data-table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Medewerker</th><th>Inwerkweek</th><th>Score</th><th>Datum</th></tr></thead><tbody>';
+    rows.forEach(function (s) {
+      var naam = naamMap[s.user_id] || 'Onbekend';
+      var sterren = '';
+      for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
+      var datum = new Date(s.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      html += '<tr>' +
+        '<td>' + escapeHtml(naam) + '</td>' +
+        '<td>Week ' + s.week_nummer + '</td>' +
+        '<td>' + sterren + ' (' + s.score + '/5)</td>' +
+        '<td>' + datum + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+  }
+
+  // =============================================
+  // KENNISQUIZ — alleen resultaten die medewerker expliciet heeft gedeeld
+  // =============================================
+  async function loadTeamQuiz() {
+    var container = document.getElementById('tl-quiz-lijst');
+    if (!container) return;
+
+    var teamUserIds = teamProfiles.map(function (p) { return p.user_id; }).filter(function (v) { return !!v; });
+    if (teamUserIds.length === 0) {
+      container.innerHTML = '<p class="no-data">Geen gedeelde resultaten.</p>';
+      return;
+    }
+
+    var result = await supabaseClient
+      .from('quiz_resultaten')
+      .select('user_id, week_nummer, score, totaal, created_at')
+      .eq('gedeeld', true)
+      .in('user_id', teamUserIds)
+      .order('created_at', { ascending: false });
+
+    var rows = (result.data || []);
+    if (rows.length === 0) {
+      container.innerHTML = '<p class="no-data">Geen gedeelde resultaten.</p>';
+      return;
+    }
+
+    var naamMap = {};
+    teamProfiles.forEach(function (p) { if (p.user_id) naamMap[p.user_id] = p.naam; });
+
+    var html = '<div class="data-table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Medewerker</th><th>Inwerkweek</th><th>Score</th><th>Datum</th></tr></thead><tbody>';
+    rows.forEach(function (q) {
+      var naam = naamMap[q.user_id] || 'Onbekend';
+      var datum = new Date(q.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var totaal = q.totaal || 3;
+      html += '<tr>' +
+        '<td>' + escapeHtml(naam) + '</td>' +
+        '<td>Week ' + q.week_nummer + '</td>' +
+        '<td>' + q.score + ' / ' + totaal + '</td>' +
+        '<td>' + datum + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
   }
 
   // =============================================

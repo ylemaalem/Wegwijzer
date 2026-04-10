@@ -3956,9 +3956,9 @@
         aanbevelingen: []
       };
 
-      // Vertrouwenscheck data
+      // Vertrouwenscheck data — alleen gedeelde scores
       if (inclVertrouwen) {
-        var vcResult = await supabaseClient.from('vertrouwens_scores').select('score, week_nummer');
+        var vcResult = await supabaseClient.from('vertrouwens_scores').select('score, week_nummer').eq('gedeeld', true);
         var vcData = vcResult.data || [];
         if (vcData.length > 0) {
           var som = vcData.reduce(function (s, v) { return s + v.score; }, 0);
@@ -3966,9 +3966,9 @@
         }
       }
 
-      // Quiz data
+      // Quiz data — alleen gedeelde resultaten
       if (inclQuiz) {
-        var quizResult = await supabaseClient.from('quiz_resultaten').select('score');
+        var quizResult = await supabaseClient.from('quiz_resultaten').select('score').eq('gedeeld', true);
         var quizData = quizResult.data || [];
         if (quizData.length > 0) {
           var quizSom = quizData.reduce(function (s, q) { return s + (q.score || 0); }, 0);
@@ -4429,19 +4429,16 @@
     var tbody = document.getElementById('vertrouwen-body');
     if (!tbody) return;
 
-    // Haal scores op met user_id zodat we namen kunnen tonen bij toestemming
+    // Haal alleen scores op die expliciet zijn gedeeld door de medewerker
     var result = await supabaseClient
       .from('vertrouwens_scores')
-      .select('user_id, week_nummer, score, signaal_verstuurd')
-      .order('week_nummer');
+      .select('user_id, week_nummer, score, gedeeld, created_at')
+      .eq('gedeeld', true)
+      .order('created_at', { ascending: false });
 
-    if (!result.data || result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Nog geen vertrouwenscheck data.</td></tr>';
-      return;
-    }
+    var gedeeld = (result.data || []);
 
-    // Statistieken: alleen gedeelde scores tellen voor gemiddelde
-    var gedeeld = result.data.filter(function (s) { return s.signaal_verstuurd; });
+    // Statistieken: gemiddelde over gedeelde scores
     var gemEl = document.getElementById('vc-gem-score');
     var sigEl = document.getElementById('vc-signalen');
     if (gemEl) {
@@ -4454,7 +4451,10 @@
     }
     if (sigEl) sigEl.textContent = gedeeld.length;
 
-    // Toon alleen scores waar toestemming voor is gegeven (signaal_verstuurd = true)
+    // Sectie verbergen als er geen gedeelde scores zijn
+    var sectie = document.getElementById('vertrouwen-sectie');
+    if (sectie) sectie.style.display = gedeeld.length > 0 ? '' : 'none';
+
     if (gedeeld.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen medewerkers hebben hun score gedeeld.</td></tr>';
       return;
