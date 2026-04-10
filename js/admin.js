@@ -1278,7 +1278,21 @@
 
   window.deleteSuggestie = async function (id) {
     if (!confirm('Suggestie verwijderen?')) return;
-    await supabaseClient.from('kennissuggesties').delete().eq('id', id);
+    console.log('[DELETE suggestie] Verwijder id:', id);
+    var result = await supabaseClient
+      .from('kennissuggesties')
+      .delete()
+      .eq('id', id)
+      .select();
+    console.log('[DELETE suggestie] Response:', result.error, 'rows:', result.data);
+    if (result.error) {
+      alert('Verwijderen mislukt: ' + result.error.message);
+      return;
+    }
+    if (!result.data || result.data.length === 0) {
+      alert('Geen rij verwijderd — mogelijk een rechten-issue. Check console.');
+      return;
+    }
     loadKennissuggesties();
   };
 
@@ -2532,13 +2546,21 @@
   // ---- Verbeterpunt verwijderen (feedback resetten) ----
   window.deleteVerbeterpunt = async function (vraag) {
     if (!confirm('Dit verbeterpunt verwijderen? De negatieve feedback wordt gereset op alle conversations met deze vraag.')) return;
+    var unescapedVraag = vraag.replace(/\\'/g, "'");
+    console.log('[DELETE verbeterpunt] Reset feedback voor vraag:', unescapedVraag);
     var result = await supabaseClient
       .from('conversations')
       .update({ feedback: null })
       .eq('tenant_id', tenantId)
-      .eq('vraag', vraag.replace(/\\'/g, "'"))
-      .eq('feedback', 'niet_goed');
+      .eq('vraag', unescapedVraag)
+      .eq('feedback', 'niet_goed')
+      .select();
+    console.log('[DELETE verbeterpunt] Response:', result.error, 'rows bijgewerkt:', result.data ? result.data.length : 0);
     if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    if (!result.data || result.data.length === 0) {
+      alert('Geen rij gereset — mogelijk een rechten-issue of de vraag matcht niet meer. Check console.');
+      return;
+    }
     loadVerbeterpunten();
   };
 
@@ -2737,7 +2759,21 @@
 
   window.deleteKennisnotitie = async function (id) {
     if (!confirm('Kennisnotitie verwijderen?')) return;
-    await supabaseClient.from('kennisnotities').update({ actief: false }).eq('id', id);
+    console.log('[DELETE kennisnotitie] Verwijder id:', id);
+    var result = await supabaseClient
+      .from('kennisnotities')
+      .update({ actief: false })
+      .eq('id', id)
+      .select();
+    console.log('[DELETE kennisnotitie] Response:', result.error, 'rows:', result.data);
+    if (result.error) {
+      alert('Verwijderen mislukt: ' + result.error.message);
+      return;
+    }
+    if (!result.data || result.data.length === 0) {
+      alert('Geen rij verwijderd — mogelijk een rechten-issue. Check console.');
+      return;
+    }
     loadKennisnotities();
   };
 
@@ -2814,8 +2850,21 @@
 
   window.deleteKennisbankItem = async function (id) {
     if (!confirm('Weet je zeker dat je dit kennisbank item wilt verwijderen?')) return;
-    var result = await supabaseClient.from('kennisbank_items').delete().eq('id', id);
-    if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    console.log('[DELETE kennisbank-item] Verwijder id:', id);
+    var result = await supabaseClient
+      .from('kennisbank_items')
+      .delete()
+      .eq('id', id)
+      .select();
+    console.log('[DELETE kennisbank-item] Response:', result.error, 'rows:', result.data);
+    if (result.error) {
+      alert('Verwijderen mislukt: ' + result.error.message);
+      return;
+    }
+    if (!result.data || result.data.length === 0) {
+      alert('Geen rij verwijderd — mogelijk een rechten-issue. Check console.');
+      return;
+    }
     loadVerbeterpunten();
   };
 
