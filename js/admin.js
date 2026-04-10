@@ -50,6 +50,8 @@
     initVerbeterModal();
     initKnToevoegen();
     initHerindexeerBtn();
+    initKennisScanBtns();
+    loadKennissuggesties();
     loadRapporten();
     initRapportBtn();
     loadPrivacyVerzoeken();
@@ -1210,6 +1212,167 @@
 
     loadDocuments();
   };
+
+  // ---- Kennissuggesties (proactieve scan) ----
+  async function loadKennissuggesties() {
+    var conflictenContainer = document.getElementById('ks-conflicten-lijst');
+    var hiatenContainer = document.getElementById('ks-hiaten-lijst');
+    var suggestiesContainer = document.getElementById('ks-suggesties-lijst');
+    if (!conflictenContainer) return;
+
+    var result = await supabaseClient
+      .from('kennissuggesties')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .neq('status', 'niet_relevant')
+      .order('aangemaakt_op', { ascending: false });
+
+    var data = result.data || [];
+
+    // Badge: alleen nieuwe items
+    var nieuw = data.filter(function (s) { return s.status === 'nieuw'; }).length;
+    updateTabBadge('kennissuggesties', nieuw);
+
+    function renderGroep(items, container, icoon) {
+      if (items.length === 0) {
+        container.innerHTML = '<p class="no-data" style="font-size:0.85rem">Geen items.</p>';
+        return;
+      }
+      container.innerHTML = items.map(function (s) {
+        var datum = new Date(s.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+        var docs = '';
+        if (s.document_a) docs += '<span style="font-size:0.72rem;color:var(--text-muted)"> 📄 ' + escapeHtml(s.document_a) + '</span>';
+        if (s.document_b) docs += '<span style="font-size:0.72rem;color:var(--text-muted)"> ↔ ' + escapeHtml(s.document_b) + '</span>';
+        var statusClass = s.status === 'opgepakt' ? 'badge-success' : 'badge-warning';
+        var opacity = s.status === 'opgepakt' ? 'opacity:0.6;' : '';
+        var notitieHtml = s.notitie ? '<div style="font-size:0.75rem;font-style:italic;margin-top:4px;color:var(--text-muted)">📝 ' + escapeHtml(s.notitie) + '</div>' : '';
+        return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
+          '<div style="flex:1">' +
+          '<div style="font-size:0.85rem">' + icoon + ' ' + escapeHtml(s.omschrijving) + '</div>' +
+          docs +
+          '<span class="badge ' + statusClass + '" style="font-size:0.7rem;margin-top:4px;display:inline-block">' + (s.status === 'opgepakt' ? 'Opgepakt' : 'Nieuw') + '</span>' +
+          '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px">' + datum + ' • ' + (s.scan_type === 'grondig' ? 'grondige' : 'snelle') + ' scan</span>' +
+          notitieHtml +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:4px">' +
+          (s.status === 'nieuw'
+            ? '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerSuggestie(\'' + s.id + '\', \'opgepakt\')" title="Opgepakt">✅ Opgepakt</button>'
+            : '') +
+          '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerSuggestie(\'' + s.id + '\', \'niet_relevant\')" title="Niet relevant">❌ Niet relevant</button>' +
+          '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.notitieSuggestie(\'' + s.id + '\')" title="Notitie">💬 Notitie</button>' +
+          '<button class="btn-icon btn-icon-danger" onclick="window.deleteSuggestie(\'' + s.id + '\')" title="Verwijderen">🗑️</button>' +
+          '</div></div></div>';
+      }).join('');
+    }
+
+    renderGroep(data.filter(function (s) { return s.type === 'conflict'; }), conflictenContainer, '🔴');
+    renderGroep(data.filter(function (s) { return s.type === 'hiaat'; }), hiatenContainer, '🟡');
+    renderGroep(data.filter(function (s) { return s.type === 'suggestie'; }), suggestiesContainer, '🟢');
+  }
+
+  window.markeerSuggestie = async function (id, status) {
+    await supabaseClient.from('kennissuggesties').update({ status: status }).eq('id', id);
+    loadKennissuggesties();
+  };
+
+  window.deleteSuggestie = async function (id) {
+    if (!confirm('Suggestie verwijderen?')) return;
+    await supabaseClient.from('kennissuggesties').delete().eq('id', id);
+    loadKennissuggesties();
+  };
+
+  window.notitieSuggestie = async function (id) {
+    var huidig = prompt('Korte notitie bij deze suggestie:', '');
+    if (huidig === null) return;
+    await supabaseClient.from('kennissuggesties').update({ notitie: huidig.trim() }).eq('id', id);
+    loadKennissuggesties();
+  };
+
+  function initKennisScanBtns() {
+    var snelBtn = document.getElementById('ks-snelle-scan-btn');
+    var grondigBtn = document.getElementById('ks-grondige-scan-btn');
+    var mappenSelectie = document.getElementById('ks-mappen-selectie');
+    var mappenContainer = document.getElementById('ks-mappen-checkboxes');
+    var selectAll = document.getElementById('ks-select-all');
+    var startGrondig = document.getElementById('ks-start-grondig-btn');
+    var cancelGrondig = document.getElementById('ks-cancel-grondig-btn');
+    var statusEl = document.getElementById('ks-status');
+    var progressEl = document.getElementById('ks-progress');
+    var progressFill = document.getElementById('ks-progress-fill');
+
+    if (!snelBtn || !grondigBtn) return;
+
+    async function runScan(type, mappen) {
+      statusEl.textContent = (type === 'snel' ? '⚡ Snelle scan' : '🔍 Grondige scan') + ' loopt... Dit kan even duren.';
+      progressEl.style.display = 'block';
+      progressFill.style.width = '50%';
+
+      try {
+        var session = (await supabaseClient.auth.getSession()).data.session;
+        var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+          body: JSON.stringify({ kennis_scan: true, scan_type: type, mappen: mappen || [] })
+        });
+        var data = await resp.json();
+        progressFill.style.width = '100%';
+        if (data.error) {
+          statusEl.textContent = '❌ Fout: ' + data.error;
+          statusEl.style.color = 'var(--error)';
+        } else {
+          statusEl.textContent = '✓ Klaar: ' + (data.count || 0) + ' suggesties gevonden';
+          statusEl.style.color = 'var(--success)';
+          loadKennissuggesties();
+        }
+      } catch (e) {
+        statusEl.textContent = '❌ Fout: ' + (e.message || 'onbekend');
+        statusEl.style.color = 'var(--error)';
+      }
+      setTimeout(function () {
+        progressEl.style.display = 'none';
+        progressFill.style.width = '0%';
+      }, 2000);
+    }
+
+    snelBtn.addEventListener('click', function () { runScan('snel'); });
+
+    grondigBtn.addEventListener('click', function () {
+      // Toon mappen selectie
+      var mappen = {};
+      (allDocuments || []).forEach(function (d) {
+        var m = d.map || 'Overig';
+        mappen[m] = (mappen[m] || 0) + 1;
+      });
+      var keys = Object.keys(mappen).sort();
+      mappenContainer.innerHTML = keys.map(function (m) {
+        return '<label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer">' +
+          '<input type="checkbox" class="ks-map-cb" value="' + escapeHtml(m) + '"> ' +
+          escapeHtml(m) + ' (' + mappen[m] + ')</label>';
+      }).join('');
+      mappenSelectie.style.display = 'block';
+    });
+
+    selectAll.addEventListener('change', function () {
+      var cbs = mappenContainer.querySelectorAll('.ks-map-cb');
+      cbs.forEach(function (cb) { cb.checked = selectAll.checked; });
+    });
+
+    cancelGrondig.addEventListener('click', function () {
+      mappenSelectie.style.display = 'none';
+    });
+
+    startGrondig.addEventListener('click', function () {
+      var checked = Array.prototype.slice.call(mappenContainer.querySelectorAll('.ks-map-cb:checked'));
+      if (checked.length === 0) {
+        alert('Selecteer minstens één map.');
+        return;
+      }
+      var mappen = checked.map(function (cb) { return cb.value; });
+      mappenSelectie.style.display = 'none';
+      runScan('grondig', mappen);
+    });
+  }
 
   // ---- Herindexeer alle documenten ----
   function initHerindexeerBtn() {

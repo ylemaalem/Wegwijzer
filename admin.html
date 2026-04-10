@@ -35,6 +35,7 @@
       <button class="tab-btn" data-tab="rapporten">Rapporten</button>
       <button class="tab-btn" data-tab="verbeterpunten">Verbeterpunten</button>
       <button class="tab-btn" data-tab="doc-aanvragen">Doc. aanvragen</button>
+      <button class="tab-btn" data-tab="kennissuggesties">💡 Kennissuggesties</button>
       <button class="tab-btn" data-tab="meldingen">Meldingen</button>
       <button class="tab-btn" data-tab="vertrouwen">Vertrouwen</button>
       <button class="tab-btn" data-tab="teamleiders">Leidinggevende/HR</button>
@@ -486,6 +487,49 @@
               <tr><td colspan="4" class="no-data">Laden...</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- ========== TAB: KENNISSUGGESTIES ========== -->
+      <section class="tab-content" id="tab-kennissuggesties">
+        <h2 class="section-title">💡 Kennissuggesties</h2>
+        <p class="section-subtitle">Proactieve suggesties voor verbetering van de kennisbank.</p>
+
+        <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="btn btn-secondary" id="ks-snelle-scan-btn" style="width:auto;padding:8px 14px;font-size:0.85rem">⚡ Snelle scan</button>
+            <button class="btn btn-primary" id="ks-grondige-scan-btn" style="width:auto;padding:8px 14px;font-size:0.85rem">🔍 Grondige scan uitvoeren</button>
+          </div>
+          <div id="ks-mappen-selectie" style="display:none;background:var(--bg-white);padding:10px;border-radius:6px;border:1px solid var(--border);margin-bottom:8px">
+            <div style="font-size:0.78rem;font-weight:600;margin-bottom:6px">Selecteer mappen voor grondige scan:</div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;margin-bottom:6px;cursor:pointer">
+              <input type="checkbox" id="ks-select-all"> <strong>Selecteer alles</strong>
+            </label>
+            <div id="ks-mappen-checkboxes" style="display:flex;flex-direction:column;gap:4px"></div>
+            <div style="margin-top:10px;display:flex;gap:8px">
+              <button class="btn btn-primary" id="ks-start-grondig-btn" style="width:auto;padding:6px 12px;font-size:0.78rem">Start grondige scan</button>
+              <button class="btn btn-secondary" id="ks-cancel-grondig-btn" style="width:auto;padding:6px 12px;font-size:0.78rem">Annuleren</button>
+            </div>
+          </div>
+          <div id="ks-status" style="font-size:0.85rem;color:var(--text-muted)"></div>
+          <div id="ks-progress" style="display:none;margin-top:8px">
+            <div style="background:var(--border);height:6px;border-radius:3px;overflow:hidden">
+              <div id="ks-progress-fill" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="ks-conflicten-sectie" style="margin-bottom:24px">
+          <h3 class="section-title" style="font-size:1rem;color:#C62828">🔴 Conflicten</h3>
+          <div id="ks-conflicten-lijst"></div>
+        </div>
+        <div id="ks-hiaten-sectie" style="margin-bottom:24px">
+          <h3 class="section-title" style="font-size:1rem;color:#F57C00">🟡 Hiaten</h3>
+          <div id="ks-hiaten-lijst"></div>
+        </div>
+        <div id="ks-suggesties-sectie" style="margin-bottom:24px">
+          <h3 class="section-title" style="font-size:1rem;color:#2E7D32">🟢 Suggesties</h3>
+          <div id="ks-suggesties-lijst"></div>
         </div>
       </section>
 

@@ -101,6 +101,162 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
 
+    // ---- Kennissuggesties scan (snel of grondig, admin only) ----
+    if (body.kennis_scan && (body.scan_type === "snel" || body.scan_type === "grondig")) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const scanType = body.scan_type;
+
+      // Haal alle documenten op
+      let docsQuery = supabaseAdmin
+        .from("documents")
+        .select("id, naam, content, map")
+        .eq("tenant_id", profile.tenant_id)
+        .is("user_id", null);
+
+      const { data: alleDocs } = await docsQuery;
+
+      // Filter op geselecteerde mappen voor grondige scan
+      let scanDocs = alleDocs || [];
+      if (scanType === "grondig" && Array.isArray(body.mappen) && body.mappen.length > 0) {
+        scanDocs = scanDocs.filter((d: { map: string | null }) => body.mappen.includes(d.map || "Overig"));
+      }
+
+      // Vraagpatronen ophalen (laatste 30 dagen voor snel, 90 voor grondig)
+      const dagen = scanType === "snel" ? 30 : 90;
+      const sinds = new Date(Date.now() - dagen * 24 * 60 * 60 * 1000).toISOString();
+      const { data: convs } = await supabaseAdmin
+        .from("conversations")
+        .select("vraag, feedback")
+        .eq("tenant_id", profile.tenant_id)
+        .gte("created_at", sinds);
+
+      // Verzamel vragen
+      const vraagLijst = (convs || []).map((c: { vraag: string }) => c.vraag).slice(0, 200);
+      const documentNamen = scanDocs.map((d: { naam: string }) => d.naam).join(", ");
+
+      // Bouw prompt afhankelijk van scan type
+      let scanPrompt = "";
+      if (scanType === "snel") {
+        scanPrompt = `Je bent een kennisbank-analist voor een ambulante zorgorganisatie. Analyseer de volgende informatie en identificeer:
+
+1. ONTBREKENDE DOCUMENTEN: Welke standaard documenten voor een ambulante zorgorganisatie ontbreken? (denk aan: agressieprotocol, incidentmelding, reiskosten, zorgplan, WMO-procedure, inwerkschema, functieomschrijvingen, CAO-arbeidsvoorwaarden)
+2. HIATEN UIT VRAAGPATRONEN: Welke onderwerpen worden vaak gevraagd maar ontbreken in de documentnamen?
+
+DOCUMENTNAMEN IN KENNISBANK (${scanDocs.length}):
+${documentNamen}
+
+VEELGESTELDE VRAGEN (${vraagLijst.length}):
+${vraagLijst.slice(0, 50).join("\n")}
+
+Geef een JSON array terug met dit formaat (max 10 items, alleen relevant):
+[
+  {"type": "hiaat", "omschrijving": "...", "document_a": null, "document_b": null}
+]
+Geen uitleg, alleen JSON.`;
+      } else {
+        // Grondige scan: voeg ook document inhoud toe
+        const docContexts = scanDocs.slice(0, 30).map((d: { naam: string; content: string }) =>
+          `--- ${d.naam} ---\n${(d.content || "").substring(0, 1500)}`
+        ).join("\n\n");
+        scanPrompt = `Je bent een kennisbank-analist voor een ambulante zorgorganisatie. Analyseer de volgende documenten en vraagpatronen en identificeer:
+
+1. CONFLICTEN: Documenten die elkaar tegenspreken (verschillende bedragen, procedures, regels)
+2. HIATEN: Ontbrekende documenten (sectorstandaard + uit vraagpatronen)
+3. SUGGESTIES: Documenten die naar onderwerpen verwijzen waar geen apart document over bestaat
+
+DOCUMENTEN (${scanDocs.length} totaal, eerste 30 getoond):
+${docContexts}
+
+VEELGESTELDE VRAGEN (${vraagLijst.length}):
+${vraagLijst.slice(0, 30).join("\n")}
+
+Geef een JSON array terug met dit formaat (max 20 items, alleen relevant):
+[
+  {"type": "conflict", "omschrijving": "Document A en B noemen verschillende bedragen voor X", "document_a": "naam_a.pdf", "document_b": "naam_b.pdf"},
+  {"type": "hiaat", "omschrijving": "Standaard ontbreekt: agressieprotocol", "document_a": null, "document_b": null},
+  {"type": "suggestie", "omschrijving": "Document X verwijst naar Y maar Y bestaat niet", "document_a": "x.pdf", "document_b": null}
+]
+Geen uitleg, alleen JSON.`;
+      }
+
+      try {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: scanType === "grondig" ? 4096 : 2048,
+            messages: [{ role: "user", content: scanPrompt }],
+          }),
+        });
+
+        if (!aiResp.ok) {
+          return new Response(
+            JSON.stringify({ error: "Claude API fout" }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const aiJson = await aiResp.json();
+        let raw = aiJson.content?.[0]?.text || "[]";
+        raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) raw = match[0];
+
+        let suggesties: Array<{ type: string; omschrijving: string; document_a?: string | null; document_b?: string | null }> = [];
+        try {
+          suggesties = JSON.parse(raw);
+        } catch {
+          console.error("[KennisScan] JSON parse fout:", raw.substring(0, 300));
+          return new Response(
+            JSON.stringify({ error: "Kon AI antwoord niet parsen" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        if (!Array.isArray(suggesties)) suggesties = [];
+
+        // Insert in kennissuggesties tabel
+        let inserted = 0;
+        for (const s of suggesties) {
+          if (!s.type || !s.omschrijving) continue;
+          if (!["conflict", "hiaat", "suggestie"].includes(s.type)) continue;
+          await supabaseAdmin.from("kennissuggesties").insert({
+            tenant_id: profile.tenant_id,
+            type: s.type,
+            omschrijving: s.omschrijving,
+            document_a: s.document_a || null,
+            document_b: s.document_b || null,
+            scan_type: scanType,
+          });
+          inserted++;
+        }
+
+        console.log(`[KennisScan] ${scanType}: ${inserted} suggesties opgeslagen`);
+
+        return new Response(
+          JSON.stringify({ success: true, count: inserted, scan_type: scanType }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[KennisScan] Exception:", err);
+        return new Response(
+          JSON.stringify({ error: String(err) }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- Zoektermen genereren voor een document (admin only) ----
     if (body.generate_zoektermen && body.document_id) {
       if (profile.role !== "admin") {
