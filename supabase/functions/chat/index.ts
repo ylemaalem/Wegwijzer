@@ -140,7 +140,23 @@ Deno.serve(async (req: Request) => {
       const vraagLijst = (convs || []).map((c: { vraag: string }) => c.vraag).slice(0, 200);
       const documentNamen = scanDocs.map((d: { naam: string }) => d.naam).join(", ");
 
-      // Bouw prompt afhankelijk van scan type
+      // ================================================================
+      // OMSCHRIJVING FORMAT — alle suggesties bevatten 3 blokken in de
+      // omschrijving kolom, gescheiden door lege regels en herkenbaar
+      // aan de prefixes UITLEG: en AANBEVELING:
+      //
+      //   {Korte titel zin van max 60 tekens}
+      //
+      //   UITLEG: {2-3 zinnen die uitleggen WAT er ontbreekt/conflicteert
+      //   en WAAROM dit relevant is voor medewerkers. Verwijs naar
+      //   betrokken documenten waar mogelijk.}
+      //
+      //   AANBEVELING: {1 concrete vervolgactie voor de admin}
+      //
+      // Het frontend (admin.js) parset deze 3 blokken en rendert ze
+      // visueel gescheiden. Oudere suggesties zonder UITLEG/AANBEVELING
+      // worden backwards-compatible weergegeven als alleen-titel.
+      // ================================================================
       let scanPrompt = "";
       if (scanType === "snel") {
         scanPrompt = `Je bent een kennisbank-analist voor een ambulante zorgorganisatie. Analyseer de volgende informatie en identificeer:
@@ -154,9 +170,22 @@ ${documentNamen}
 VEELGESTELDE VRAGEN (${vraagLijst.length}):
 ${vraagLijst.slice(0, 50).join("\n")}
 
+OMSCHRIJVING FORMAT — Genereer per hiaat een omschrijving die EXACT dit format volgt, met dubbele \\n als regelscheider:
+
+  {Korte titel van max 60 tekens, geen punt aan eind}
+
+  UITLEG: Medewerkers stelden vragen over [onderwerp] maar de kennisbank heeft hier geen volledig antwoord op. [Documentnaam] raakt dit onderwerp maar dekt het niet volledig. (2-3 zinnen)
+
+  AANBEVELING: Voeg een specifiek document toe over [onderwerp] of markeer als niet relevant als de huidige informatie voldoende is.
+
+VOORBEELD omschrijving:
+"Ziekteverlof registratie richtlijnen\\n\\nUITLEG: Medewerkers stelden vragen over hoe ziekteverlof geregistreerd wordt in ONS maar de bestaande documenten geven hier geen volledig antwoord op. De Procedure ziekteverlof raakt dit onderwerp maar dekt het registratieproces niet.\\n\\nAANBEVELING: Voeg een specifieke registratie-instructie toe of markeer als niet relevant als de huidige informatie voldoende is."
+
+Vul document_a met de naam van het document dat het onderwerp het dichtst raakt (mag null zijn).
+
 Geef een JSON array terug met dit formaat (max 10 items, alleen relevant):
 [
-  {"type": "hiaat", "omschrijving": "...", "document_a": null, "document_b": null}
+  {"type": "hiaat", "omschrijving": "Titel\\n\\nUITLEG: ...\\n\\nAANBEVELING: ...", "document_a": null, "document_b": null}
 ]
 Geen uitleg, alleen JSON.`;
       } else {
@@ -176,11 +205,32 @@ ${docContexts}
 VEELGESTELDE VRAGEN (${vraagLijst.length}):
 ${vraagLijst.slice(0, 30).join("\n")}
 
+OMSCHRIJVING FORMAT — Genereer per item een omschrijving die EXACT dit format volgt, met dubbele \\n als regelscheider:
+
+  {Korte titel van max 60 tekens, geen punt aan eind}
+
+  UITLEG: {2-3 zinnen die uitleggen wat er aan de hand is en waarom dit relevant is voor medewerkers}
+
+  AANBEVELING: {1 concrete vervolgactie voor de admin}
+
+VOORBEELDEN per type:
+
+CONFLICT — gebruik dit format:
+"Verschillende reiskostenbedragen tussen documenten\\n\\nUITLEG: Document Reiskosten 2024 en Document Reiskosten beleid geven verschillende informatie over de kilometervergoeding. Reiskosten 2024 noemt €0,23 per km, Reiskosten beleid noemt €0,21 per km. Medewerkers weten hierdoor niet welke vergoeding actueel is.\\n\\nAANBEVELING: Controleer welke versie actueel is en verwijder of update het verouderde document."
+
+HIAAT — gebruik dit format:
+"Agressieprotocol ontbreekt\\n\\nUITLEG: Een agressieprotocol is standaard voor ambulante zorgorganisaties maar ontbreekt in de kennisbank. Medewerkers hebben houvast nodig bij omgaan met agressie van cliënten of derden, en een protocol beschermt zowel medewerker als organisatie.\\n\\nAANBEVELING: Voeg een agressieprotocol toe of markeer als niet relevant als dit elders is geregeld."
+
+SUGGESTIE — gebruik dit format:
+"Verwijzing naar verzuimbeleid maar geen apart document\\n\\nUITLEG: Document Personeelshandboek verwijst naar het verzuimbeleid maar er is geen apart document over verzuimbeleid in de kennisbank. Dit onderwerp wordt mogelijk vaker gevraagd door medewerkers die specifieke informatie zoeken.\\n\\nAANBEVELING: Overweeg een document toe te voegen als dit regelmatig ter sprake komt."
+
+Vul document_a en document_b met de exacte documentnamen waar van toepassing.
+
 Geef een JSON array terug met dit formaat (max 20 items, alleen relevant):
 [
-  {"type": "conflict", "omschrijving": "Document A en B noemen verschillende bedragen voor X", "document_a": "naam_a.pdf", "document_b": "naam_b.pdf"},
-  {"type": "hiaat", "omschrijving": "Standaard ontbreekt: agressieprotocol", "document_a": null, "document_b": null},
-  {"type": "suggestie", "omschrijving": "Document X verwijst naar Y maar Y bestaat niet", "document_a": "x.pdf", "document_b": null}
+  {"type": "conflict", "omschrijving": "Titel\\n\\nUITLEG: ...\\n\\nAANBEVELING: ...", "document_a": "naam_a.pdf", "document_b": "naam_b.pdf"},
+  {"type": "hiaat", "omschrijving": "Titel\\n\\nUITLEG: ...\\n\\nAANBEVELING: ...", "document_a": null, "document_b": null},
+  {"type": "suggestie", "omschrijving": "Titel\\n\\nUITLEG: ...\\n\\nAANBEVELING: ...", "document_a": "x.pdf", "document_b": null}
 ]
 Geen uitleg, alleen JSON.`;
       }

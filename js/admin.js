@@ -1391,6 +1391,33 @@
     var nieuw = data.filter(function (s) { return s.status === 'nieuw'; }).length;
     updateTabBadge('kennissuggesties', nieuw);
 
+    // Parse de gestructureerde omschrijving die de scan genereert.
+    // Format: "{titel}\n\nUITLEG: {2-3 zinnen}\n\nAANBEVELING: {1 zin}"
+    // Backwards-compatible: oude items zonder UITLEG/AANBEVELING worden
+    // volledig als titel teruggegeven (uitleg en aanbeveling leeg).
+    function parseSuggestieOmschrijving(raw) {
+      var result = { titel: '', uitleg: '', aanbeveling: '' };
+      if (!raw) return result;
+      var tekst = String(raw);
+
+      var uitlegMatch = tekst.match(/(?:^|\n)\s*UITLEG:\s*([\s\S]*?)(?=\n\s*AANBEVELING:|$)/i);
+      var aanbevelingMatch = tekst.match(/(?:^|\n)\s*AANBEVELING:\s*([\s\S]*?)$/i);
+
+      if (uitlegMatch) {
+        result.titel = tekst.substring(0, uitlegMatch.index).trim();
+        result.uitleg = uitlegMatch[1].trim();
+        if (aanbevelingMatch) result.aanbeveling = aanbevelingMatch[1].trim();
+      } else if (aanbevelingMatch) {
+        // Edge case: alleen AANBEVELING zonder UITLEG
+        result.titel = tekst.substring(0, aanbevelingMatch.index).trim();
+        result.aanbeveling = aanbevelingMatch[1].trim();
+      } else {
+        // Geen rich format → hele tekst is de titel (oude items)
+        result.titel = tekst.trim();
+      }
+      return result;
+    }
+
     function renderGroep(items, container, icoon) {
       if (items.length === 0) {
         container.innerHTML = '<p class="no-data" style="font-size:0.85rem">Geen items.</p>';
@@ -1398,22 +1425,38 @@
       }
       container.innerHTML = items.map(function (s) {
         var datum = new Date(s.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+        var parsed = parseSuggestieOmschrijving(s.omschrijving);
+
         var docs = '';
         if (s.document_a) docs += '<span style="font-size:0.72rem;color:var(--text-muted)"> 📄 ' + escapeHtml(s.document_a) + '</span>';
         if (s.document_b) docs += '<span style="font-size:0.72rem;color:var(--text-muted)"> ↔ ' + escapeHtml(s.document_b) + '</span>';
+        var docsHtml = docs ? '<div style="margin-top:2px">' + docs + '</div>' : '';
+
+        var uitlegHtml = parsed.uitleg
+          ? '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;line-height:1.5;display:flex;gap:6px"><span aria-hidden="true">📝</span><span>' + escapeHtml(parsed.uitleg) + '</span></div>'
+          : '';
+        var aanbevelingHtml = parsed.aanbeveling
+          ? '<div style="font-size:0.8rem;font-weight:600;margin-top:6px;line-height:1.5;display:flex;gap:6px"><span aria-hidden="true">💡</span><span>' + escapeHtml(parsed.aanbeveling) + '</span></div>'
+          : '';
+
         var statusClass = s.status === 'opgepakt' ? 'badge-success' : 'badge-warning';
         var opacity = s.status === 'opgepakt' ? 'opacity:0.6;' : '';
-        var notitieHtml = s.notitie ? '<div style="font-size:0.75rem;font-style:italic;margin-top:4px;color:var(--text-muted)">📝 ' + escapeHtml(s.notitie) + '</div>' : '';
+        var notitieHtml = s.notitie ? '<div style="font-size:0.75rem;font-style:italic;margin-top:6px;color:var(--text-muted)">💬 ' + escapeHtml(s.notitie) + '</div>' : '';
+
         return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
-          '<div style="flex:1">' +
-          '<div style="font-size:0.85rem">' + icoon + ' ' + escapeHtml(s.omschrijving) + '</div>' +
-          docs +
-          '<span class="badge ' + statusClass + '" style="font-size:0.7rem;margin-top:4px;display:inline-block">' + (s.status === 'opgepakt' ? 'Opgepakt' : 'Nieuw') + '</span>' +
-          '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px">' + datum + ' • ' + (s.scan_type === 'grondig' ? 'grondige' : 'snelle') + ' scan</span>' +
+          '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:0.9rem;font-weight:600">' + icoon + ' ' + escapeHtml(parsed.titel) + '</div>' +
+          docsHtml +
+          uitlegHtml +
+          aanbevelingHtml +
+          '<div style="margin-top:8px">' +
+            '<span class="badge ' + statusClass + '" style="font-size:0.7rem">' + (s.status === 'opgepakt' ? 'Opgepakt' : 'Nieuw') + '</span>' +
+            '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px">' + datum + ' • ' + (s.scan_type === 'grondig' ? 'grondige' : 'snelle') + ' scan</span>' +
+          '</div>' +
           notitieHtml +
           '</div>' +
-          '<div style="display:flex;flex-direction:column;gap:4px">' +
+          '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
           (s.status === 'nieuw'
             ? '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerSuggestie(\'' + s.id + '\', \'opgepakt\')" title="Opgepakt">✅ Opgepakt</button>'
             : '') +
