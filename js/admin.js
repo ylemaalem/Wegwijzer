@@ -64,7 +64,29 @@
     loadVertrouwensData();
     loadTerugblikLog();
     initVerbeterCollapse();
+    initSuggestieDelegation();
   });
+
+  // =============================================
+  // EVENT DELEGATION voor dynamisch gerenderde knoppen in kennissuggesties
+  // =============================================
+  // De suggestie-cards (en hun knoppen) worden steeds opnieuw via innerHTML
+  // geschreven door renderGroep. Een listener direct op de knop overleeft
+  // dat niet. Daarom delegeren we naar document — één listener die op
+  // class+data-attribute matcht.
+  function initSuggestieDelegation() {
+    document.addEventListener('click', function (e) {
+      var target = e.target;
+      // closest vangt klikken op span/icoon binnen de knop
+      var btn = target && target.closest ? target.closest('.notitie-suggestie-btn') : null;
+      if (!btn) return;
+      e.preventDefault();
+      var id = btn.getAttribute('data-suggestie-id');
+      if (!id) return;
+      console.log('[notitie-delegation] click op suggestie', id);
+      window.notitieSuggestie(id);
+    });
+  }
 
   // =============================================
   // INKLAP / UITKLAP secties (kennisbank items, kennisnotities)
@@ -1366,6 +1388,35 @@
   };
 
   // ---- Kennissuggesties (proactieve scan) ----
+  // Parse de gestructureerde omschrijving die de scan genereert.
+  // Format: "{titel}\n\nUITLEG: {2-3 zinnen}\n\nAANBEVELING: {1 zin}"
+  // Backwards-compatible: oude items zonder UITLEG/AANBEVELING worden
+  // volledig als titel teruggegeven (uitleg en aanbeveling leeg).
+  // STAAT OP MODULE SCOPE — wordt zowel door renderGroep als door
+  // window.notitieSuggestie aangeroepen.
+  function parseSuggestieOmschrijving(raw) {
+    var result = { titel: '', uitleg: '', aanbeveling: '' };
+    if (!raw) return result;
+    var tekst = String(raw);
+
+    var uitlegMatch = tekst.match(/(?:^|\n)\s*UITLEG:\s*([\s\S]*?)(?=\n\s*AANBEVELING:|$)/i);
+    var aanbevelingMatch = tekst.match(/(?:^|\n)\s*AANBEVELING:\s*([\s\S]*?)$/i);
+
+    if (uitlegMatch) {
+      result.titel = tekst.substring(0, uitlegMatch.index).trim();
+      result.uitleg = uitlegMatch[1].trim();
+      if (aanbevelingMatch) result.aanbeveling = aanbevelingMatch[1].trim();
+    } else if (aanbevelingMatch) {
+      // Edge case: alleen AANBEVELING zonder UITLEG
+      result.titel = tekst.substring(0, aanbevelingMatch.index).trim();
+      result.aanbeveling = aanbevelingMatch[1].trim();
+    } else {
+      // Geen rich format → hele tekst is de titel (oude items)
+      result.titel = tekst.trim();
+    }
+    return result;
+  }
+
   async function loadKennissuggesties() {
     var conflictenContainer = document.getElementById('ks-conflicten-lijst');
     var hiatenContainer = document.getElementById('ks-hiaten-lijst');
@@ -1397,33 +1448,6 @@
     // Badge: alleen nieuwe items
     var nieuw = data.filter(function (s) { return s.status === 'nieuw'; }).length;
     updateTabBadge('kennissuggesties', nieuw);
-
-    // Parse de gestructureerde omschrijving die de scan genereert.
-    // Format: "{titel}\n\nUITLEG: {2-3 zinnen}\n\nAANBEVELING: {1 zin}"
-    // Backwards-compatible: oude items zonder UITLEG/AANBEVELING worden
-    // volledig als titel teruggegeven (uitleg en aanbeveling leeg).
-    function parseSuggestieOmschrijving(raw) {
-      var result = { titel: '', uitleg: '', aanbeveling: '' };
-      if (!raw) return result;
-      var tekst = String(raw);
-
-      var uitlegMatch = tekst.match(/(?:^|\n)\s*UITLEG:\s*([\s\S]*?)(?=\n\s*AANBEVELING:|$)/i);
-      var aanbevelingMatch = tekst.match(/(?:^|\n)\s*AANBEVELING:\s*([\s\S]*?)$/i);
-
-      if (uitlegMatch) {
-        result.titel = tekst.substring(0, uitlegMatch.index).trim();
-        result.uitleg = uitlegMatch[1].trim();
-        if (aanbevelingMatch) result.aanbeveling = aanbevelingMatch[1].trim();
-      } else if (aanbevelingMatch) {
-        // Edge case: alleen AANBEVELING zonder UITLEG
-        result.titel = tekst.substring(0, aanbevelingMatch.index).trim();
-        result.aanbeveling = aanbevelingMatch[1].trim();
-      } else {
-        // Geen rich format → hele tekst is de titel (oude items)
-        result.titel = tekst.trim();
-      }
-      return result;
-    }
 
     function renderGroep(items, container, icoon) {
       if (items.length === 0) {
@@ -1468,7 +1492,7 @@
             ? '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerSuggestie(\'' + s.id + '\', \'opgepakt\')" title="Opgepakt">✅ Opgepakt</button>'
             : '') +
           '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.markeerSuggestie(\'' + s.id + '\', \'niet_relevant\')" title="Niet relevant">❌ Niet relevant</button>' +
-          '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.notitieSuggestie(\'' + s.id + '\')" title="Notitie">💬 Notitie</button>' +
+          '<button type="button" class="btn btn-secondary notitie-suggestie-btn" data-suggestie-id="' + s.id + '" style="padding:4px 8px;font-size:0.7rem;width:auto" title="Notitie">💬 Notitie</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteSuggestie(\'' + s.id + '\')" title="Verwijderen">🗑️</button>' +
           '</div></div></div>';
       }).join('');
