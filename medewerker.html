@@ -189,13 +189,58 @@
         </form>
       </div>
     </div>
+
+    <!-- App feedback knop (zwevend rechtsonder) -->
+    <button type="button" id="app-feedback-btn" class="app-feedback-btn" aria-label="Feedback geven">
+      <span class="app-feedback-icon">💬</span>
+      <span class="app-feedback-text">Feedback</span>
+    </button>
+
+    <!-- App feedback modal -->
+    <div class="modal-overlay" id="modal-app-feedback">
+      <div class="modal">
+        <h3 class="modal-title">Hoe kunnen we Wegwijzer verbeteren?</h3>
+        <p class="section-subtitle">Jouw feedback helpt ons de app beter te maken.</p>
+        <form id="app-feedback-form" novalidate>
+          <div class="form-group">
+            <label class="form-label">Categorie</label>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="radio" name="afb-categorie" value="werkt_niet" required> Iets werkt niet
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="radio" name="afb-categorie" value="verbetering"> Idee voor verbetering
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="radio" name="afb-categorie" value="antwoord_klopt_niet"> Een antwoord klopte niet
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="radio" name="afb-categorie" value="anders"> Anders
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="afb-bericht">Vertel het ons</label>
+            <textarea class="form-input" id="afb-bericht" rows="5" maxlength="1000" placeholder="Vertel het ons..." required></textarea>
+            <p class="section-subtitle" style="margin:4px 0 0;font-size:0.75rem"><span id="afb-teller">0</span> / 1000</p>
+          </div>
+          <div id="afb-success" style="display:none;color:var(--primary);font-weight:600;text-align:center;margin:12px 0">
+            ✓ Bedankt voor je feedback!
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button type="button" class="btn btn-secondary" id="afb-cancel">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="afb-submit">Versturen</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=2"></script>
-  <script src="js/medewerker.js?v=2"></script>
+  <script src="js/medewerker.js?v=3"></script>
 
 </body>
 </html>

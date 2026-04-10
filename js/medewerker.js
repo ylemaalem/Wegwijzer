@@ -1277,4 +1277,68 @@
       }
     });
   })();
+
+  // ---- App feedback ----
+  (function initAppFeedback() {
+    var btn = document.getElementById('app-feedback-btn');
+    var modal = document.getElementById('modal-app-feedback');
+    var form = document.getElementById('app-feedback-form');
+    var cancelBtn = document.getElementById('afb-cancel');
+    var bericht = document.getElementById('afb-bericht');
+    var teller = document.getElementById('afb-teller');
+    var successMsg = document.getElementById('afb-success');
+    var submitBtn = document.getElementById('afb-submit');
+
+    if (!btn || !modal) return;
+
+    function openModal() {
+      modal.classList.add('show');
+      successMsg.style.display = 'none';
+      form.style.display = '';
+      form.reset();
+      teller.textContent = '0';
+      submitBtn.disabled = false;
+    }
+    function closeModal() {
+      modal.classList.remove('show');
+    }
+
+    btn.addEventListener('click', openModal);
+    cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+
+    bericht.addEventListener('input', function () {
+      teller.textContent = bericht.value.length;
+    });
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var categorieEl = document.querySelector('input[name="afb-categorie"]:checked');
+      var tekst = bericht.value.trim();
+      if (!categorieEl || !tekst) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Versturen...';
+
+      var result = await supabaseClient.from('app_feedback').insert({
+        tenant_id: profile.tenant_id,
+        medewerker_id: profile.id,
+        functiegroep: profile.functiegroep || null,
+        categorie: categorieEl.value,
+        bericht: tekst
+      });
+
+      submitBtn.textContent = 'Versturen';
+
+      if (result.error) {
+        alert('Versturen mislukt: ' + result.error.message);
+        submitBtn.disabled = false;
+        return;
+      }
+
+      form.style.display = 'none';
+      successMsg.style.display = 'block';
+      setTimeout(closeModal, 2000);
+    });
+  })();
 })();

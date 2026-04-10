@@ -36,7 +36,9 @@
       "Bash(cp wegwijzer-logo-192.png icon-192.png)",
       "Bash(cp wegwijzer-logo-192.png wegwijzer-app-icon-192.png)",
       "Bash(rm wegwijzer-logo-512.png wegwijzer-logo-192.png)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(grep -l \"base-path.js\" *.html)",
+      "Bash(grep:*)"
     ]
   }
 }

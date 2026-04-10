@@ -349,20 +349,26 @@
 }
 
 /* ---- Melding badge ---- */
-.melding-badge {
+.melding-badge,
+.tab-badge {
   display: inline-block;
   background: var(--error);
   color: white;
   font-size: 0.65rem;
   font-weight: 700;
-  width: 18px;
+  min-width: 18px;
   height: 18px;
   line-height: 18px;
   text-align: center;
-  border-radius: 50%;
+  border-radius: 9px;
   margin-left: 4px;
+  padding: 0 5px;
   vertical-align: top;
 }
+
+.badge-warning { background: #FFF3CD; color: #856404; }
+.badge-success { background: var(--success-bg); color: var(--success); }
+.badge-info { background: rgba(13, 92, 107, 0.1); color: #0D5C6B; }
 
 /* ---- Admin page overrides ---- */
 .admin-page .page-content {

@@ -2271,7 +2271,83 @@
 
     loadKennisbankItems(kennisbankItems);
     loadKennisnotities();
+    loadAppFeedback();
   }
+
+  // ---- App feedback van medewerkers ----
+  async function loadAppFeedback() {
+    var container = document.getElementById('app-feedback-lijst');
+    if (!container) return;
+
+    var result = await supabaseClient
+      .from('app_feedback')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('ingediend_op', { ascending: false });
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p class="no-data">Nog geen feedback ontvangen.</p>';
+      updateFeedbackBadge(0);
+      return;
+    }
+
+    var nieuw = result.data.filter(function (f) { return f.status === 'nieuw'; }).length;
+    updateFeedbackBadge(nieuw);
+
+    var categorieLabels = {
+      werkt_niet: '🔧 Werkt niet',
+      verbetering: '💡 Idee',
+      antwoord_klopt_niet: '⚠️ Antwoord klopt niet',
+      anders: '💬 Anders'
+    };
+    var statusLabels = { nieuw: 'Nieuw', gelezen: 'Gelezen', afgehandeld: 'Afgehandeld' };
+    var nextStatus = { nieuw: 'gelezen', gelezen: 'afgehandeld', afgehandeld: 'nieuw' };
+
+    container.innerHTML = result.data.map(function (f) {
+      var datum = new Date(f.ingediend_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var fg = formatFunctiegroep(f.functiegroep || '');
+      var statusClass = f.status === 'nieuw' ? 'badge-warning' : (f.status === 'afgehandeld' ? 'badge-success' : 'badge-info');
+      var opacity = f.status === 'afgehandeld' ? 'opacity:0.6;' : '';
+      return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
+        '<div style="flex:1">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">' +
+        '<strong style="font-size:0.85rem">' + (categorieLabels[f.categorie] || f.categorie) + '</strong>' +
+        '<span class="badge ' + statusClass + '" style="font-size:0.7rem">' + statusLabels[f.status] + '</span>' +
+        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + (fg ? ' • ' + fg : '') + '</span>' +
+        '</div>' +
+        '<div style="font-size:0.85rem;white-space:pre-wrap">' + escapeHtml(f.bericht) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.cycleFeedbackStatus(\'' + f.id + '\', \'' + nextStatus[f.status] + '\')">→ ' + statusLabels[nextStatus[f.status]] + '</button>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteAppFeedback(\'' + f.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div></div></div>';
+    }).join('');
+  }
+
+  function updateFeedbackBadge(count) {
+    var tabBtn = document.querySelector('.tab-btn[data-tab="verbeterpunten"]');
+    if (!tabBtn) return;
+    var existing = tabBtn.querySelector('.feedback-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'feedback-badge tab-badge';
+      badge.textContent = count;
+      tabBtn.appendChild(badge);
+    }
+  }
+
+  window.cycleFeedbackStatus = async function (id, newStatus) {
+    await supabaseClient.from('app_feedback').update({ status: newStatus }).eq('id', id);
+    loadAppFeedback();
+  };
+
+  window.deleteAppFeedback = async function (id) {
+    if (!confirm('Feedback verwijderen?')) return;
+    await supabaseClient.from('app_feedback').delete().eq('id', id);
+    loadAppFeedback();
+  };
 
   // Kennisnotitie toevoegen
   window.openKennisnotitie = function (vraag) {
