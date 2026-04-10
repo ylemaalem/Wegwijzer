@@ -8,11 +8,14 @@
   // ---- State ----
   var namenZichtbaar = false;
   var tenantId = null;
+  var currentUserId = null;
   var allConversations = [];
   var allProfiles = [];
   var allTeamleiders = [];
   var allDocuments = [];
   var allFunctiegroepen = [];
+  // Cache van geladen kennissuggesties voor lookup vanuit notitie-handler.
+  var suggestiesCache = {};
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
@@ -29,6 +32,7 @@
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
     tenantId = e.detail.profile.tenant_id;
+    currentUserId = e.detail.user ? e.detail.user.id : null;
     initTabs();
     initLogout();
     await loadFunctiegroepen();
@@ -1382,6 +1386,9 @@
       console.error('[Kennissuggesties] query fout:', result.error);
     }
     var data = result.data || [];
+    // Cache vullen voor lookup vanuit notitieSuggestie etc.
+    suggestiesCache = {};
+    data.forEach(function (s) { suggestiesCache[s.id] = s; });
     console.log('[Kennissuggesties] geladen:', data.length, 'items',
       'conflicten:', data.filter(function (s) { return s.type === 'conflict'; }).length,
       'hiaten:', data.filter(function (s) { return s.type === 'hiaat'; }).length,
@@ -1443,7 +1450,7 @@
         var opacity = s.status === 'opgepakt' ? 'opacity:0.6;' : '';
         var notitieHtml = s.notitie ? '<div style="font-size:0.75rem;font-style:italic;margin-top:6px;color:var(--text-muted)">💬 ' + escapeHtml(s.notitie) + '</div>' : '';
 
-        return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '">' +
+        return '<div class="kennisbank-item" style="margin-bottom:8px;' + opacity + '" data-suggestie-id="' + s.id + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
           '<div style="flex:1;min-width:0">' +
           '<div style="font-size:0.9rem;font-weight:600">' + icoon + ' ' + escapeHtml(parsed.titel) + '</div>' +
@@ -1497,11 +1504,78 @@
     loadKennissuggesties();
   };
 
-  window.notitieSuggestie = async function (id) {
-    var huidig = prompt('Korte notitie bij deze suggestie:', '');
-    if (huidig === null) return;
-    await supabaseClient.from('kennissuggesties').update({ notitie: huidig.trim() }).eq('id', id);
-    loadKennissuggesties();
+  // Notitie bij een kennissuggestie — slaat op in de kennisnotities tabel
+  // (zelfde flow als window.openKennisnotitie voor verbeterpunten).
+  window.notitieSuggestie = function (id) {
+    var card = document.querySelector('[data-suggestie-id="' + id + '"]');
+    if (!card) {
+      console.error('[notitieSuggestie] suggestie card niet gevonden voor id', id);
+      return;
+    }
+    // Bestaande inline form van een andere suggestie sluiten
+    var bestaand = document.getElementById('suggestie-notitie-form');
+    if (bestaand) bestaand.remove();
+
+    var s = suggestiesCache[id];
+    if (!s) {
+      console.error('[notitieSuggestie] suggestie niet in cache voor id', id);
+      return;
+    }
+    var parsed = parseSuggestieOmschrijving(s.omschrijving);
+    var titel = parsed.titel || (s.omschrijving || '').substring(0, 200);
+
+    var form = document.createElement('div');
+    form.id = 'suggestie-notitie-form';
+    form.style.cssText = 'margin-top:10px;padding:12px;background:#F0FFF4;border:1px solid #C6F6D5;border-radius:8px';
+    form.innerHTML =
+      '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">Notitie bij: <strong>' + escapeHtml(titel) + '</strong></div>' +
+      '<textarea id="sug-kn-tekst" placeholder="Schrijf een korte notitie (max 500 tekens)..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:0.85rem;resize:vertical;min-height:60px" maxlength="500"></textarea>' +
+      '<div id="sug-kn-bevestiging" style="display:none;color:var(--success);font-size:0.78rem;margin-top:6px">✓ Notitie opgeslagen</div>' +
+      '<div style="display:flex;gap:8px;margin-top:8px">' +
+      '<button class="btn btn-primary" id="sug-kn-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan als kennisnotitie</button>' +
+      '<button class="btn btn-secondary" id="sug-kn-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>' +
+      '</div>';
+
+    card.appendChild(form);
+    var textarea = form.querySelector('#sug-kn-tekst');
+    textarea.focus();
+
+    form.querySelector('#sug-kn-annuleer').addEventListener('click', function () { form.remove(); });
+
+    form.querySelector('#sug-kn-opslaan').addEventListener('click', async function () {
+      var tekst = textarea.value.trim();
+      if (!tekst) { alert('Vul een notitie in.'); return; }
+
+      var opslaanBtn = form.querySelector('#sug-kn-opslaan');
+      opslaanBtn.disabled = true;
+      opslaanBtn.textContent = 'Opslaan...';
+
+      var insertResult = await supabaseClient.from('kennisnotities').insert({
+        tenant_id: tenantId,
+        originele_vraag: titel,
+        notitie: tekst.substring(0, 500),
+        aangemaakt_door: currentUserId
+      }).select();
+
+      console.log('[notitieSuggestie] Insert response:', insertResult.error, 'rows:', insertResult.data);
+
+      if (insertResult.error) {
+        alert('Notitie opslaan mislukt: ' + insertResult.error.message);
+        opslaanBtn.disabled = false;
+        opslaanBtn.textContent = 'Opslaan als kennisnotitie';
+        return;
+      }
+
+      // Bevestiging tonen, veld leegmaken, na 1.5s form sluiten
+      textarea.value = '';
+      form.querySelector('#sug-kn-bevestiging').style.display = '';
+      opslaanBtn.disabled = false;
+      opslaanBtn.textContent = 'Opslaan als kennisnotitie';
+      setTimeout(function () { form.remove(); }, 1500);
+
+      // Vernieuw de kennisnotities lijst (in verbeterpunten tab) als die zichtbaar is
+      if (typeof loadKennisnotities === 'function') loadKennisnotities();
+    });
   };
 
   function initKennisScanBtns() {
