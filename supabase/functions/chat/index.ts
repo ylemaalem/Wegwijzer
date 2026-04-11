@@ -28,6 +28,20 @@ const ZORGWEKKENDE_TERMEN = [
   "suicid", "suïcid", "zelfdoding", "zelfmoord", "levenseinde",
 ];
 
+// Onderwerp-triggers die ALTIJD alle toegestane websites van de tenant
+// ophalen, ongeacht of de site-naam in de vraag of keywords voorkomt.
+// Bv. een vraag over "salaris in schaal 7 trede 4" matcht niet op de naam
+// "CAO Gehandicaptenzorg" maar moet die website wel raadplegen.
+const WEBSITE_TRIGGERS = [
+  "cao", "salaris", "loon", "trede",
+  "schaal", "inschaling", "functiegroep",
+  "arbeidsvoorwaard", "vakantiegeld",
+  "pensioen", "verlof", "vergoeding",
+  "reiskosten", "kilometer", "onkost",
+  "uitkering", "ww", "ziektewet",
+  "contract", "proeftijd", "ontslag"
+];
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1567,12 +1581,22 @@ ${vragenContext}`;
 
     let websitesContext = "";
     if (toegestaneWebsites && toegestaneWebsites.length > 0) {
+      // Onderwerp-match: één keer berekenen voor de hele tenant. Als de vraag
+      // over een arbeidsvoorwaarden-onderwerp gaat, halen we ALLE toegestane
+      // websites op (de tenant kan meerdere relevante bronnen hebben zoals
+      // CAO + pensioenfonds + vakbond).
+      const onderwerpMatch = WEBSITE_TRIGGERS.some((trigger) => vraagLower.includes(trigger));
+
       // Probeer relevante websites op te halen op basis van de vraag
       const websiteTexts: string[] = [];
       for (const site of toegestaneWebsites) {
-        // Check of de vraag gerelateerd is aan deze website
+        // Naam-match: site naam in vraag, of een van de keywords in de site naam
         const siteNaamLower = site.naam.toLowerCase();
-        if (vraagLower.includes(siteNaamLower) || keywords.some((kw: string) => siteNaamLower.includes(kw))) {
+        const naamMatch = vraagLower.includes(siteNaamLower) ||
+          keywords.some((kw: string) => siteNaamLower.includes(kw));
+
+        if (naamMatch || onderwerpMatch) {
+          console.log("[Website] Match via:", naamMatch ? "naam" : "onderwerp", site.naam);
           try {
             const siteResponse = await fetch(site.url, {
               headers: { "User-Agent": "Wegwijzer-Bot/1.0" },
