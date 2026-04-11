@@ -369,25 +369,14 @@
       });
     }
 
-    // Handleiding link — altijd zichtbaar als laatste chip in de rij,
-    // ongeacht inwerkfase of kennisassistent-modus. Idempotent: bestaande
-    // handleiding-link wordt eerst verwijderd zodat herhaalde initChips
-    // aanroepen geen duplicaten maken.
-    var bestaandeHandleiding = chipsBar.querySelector('.chip-handleiding');
-    if (bestaandeHandleiding) bestaandeHandleiding.remove();
-    var handleidingLink = document.createElement('a');
-    handleidingLink.className = 'chip chip-link chip-handleiding';
-    handleidingLink.href = 'https://mijnwegwijzer.com/handleiding';
-    handleidingLink.target = '_blank';
-    handleidingLink.rel = 'noopener noreferrer';
-    handleidingLink.textContent = '📖 Handleiding';
-    chipsBar.appendChild(handleidingLink);
+    // Verwijder eventuele oude handleiding-chip uit een vorige sessie
+    // (die verhuisde naar de header).
+    var oudeHandleiding = chipsBar.querySelector('.chip-handleiding');
+    if (oudeHandleiding) oudeHandleiding.remove();
 
-    // Attach click handlers aan vraag-chips (skip de handleiding link — die
-    // navigeert via target=_blank en heeft geen data-vraag).
+    // Attach click handlers aan vraag-chips
     var chips = chipsBar.querySelectorAll('.chip');
     chips.forEach(function (chip) {
-      if (chip.classList.contains('chip-link')) return;
       chip.addEventListener('click', function () {
         var vraag = chip.dataset.vraag;
         if (vraag && !isSending) {
@@ -1420,8 +1409,7 @@
     }
 
     btn.addEventListener('click', function (e) {
-      // stopPropagation: voorkomt dat de directe document-click hieronder de net-geopende modal weer sluit
-      e.stopPropagation();
+      e.preventDefault();
       openModal();
     });
     cancelBtn.addEventListener('click', function (e) {
@@ -1429,14 +1417,12 @@
       closeModal();
     });
 
-    // Klik buiten de popup sluit hem (popup is compact, dus we luisteren op document)
-    document.addEventListener('click', function (e) {
-      if (!modal.classList.contains('show')) return;
-      if (modal.contains(e.target) || btn.contains(e.target)) return;
-      closeModal();
+    // Klik op de overlay-achtergrond (NIET op de inner .modal) sluit de modal
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
     });
 
-    // Escape-toets sluit de popup
+    // Escape-toets sluit de modal
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
     });

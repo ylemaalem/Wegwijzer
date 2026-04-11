@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=3">
-  <link rel="stylesheet" href="css/medewerker.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/medewerker.css?v=5">
 </head>
 <body class="medewerker-page">
   <div class="page-container">
@@ -28,7 +28,9 @@
         </span>
       </div>
       <div class="header-spacer"></div>
-      <button class="search-toggle hidden" id="search-toggle-btn" title="Zoeken in gesprekken">🔍</button>
+      <a href="https://mijnwegwijzer.com/handleiding.html" target="_blank" rel="noopener noreferrer" class="header-icon-btn" id="handleiding-btn" title="Handleiding" aria-label="Handleiding openen">📖</a>
+      <button class="header-icon-btn hidden" id="search-toggle-btn" title="Zoeken in gesprekken" aria-label="Zoeken">🔍</button>
+      <button type="button" class="header-icon-btn" id="app-feedback-btn" title="Feedback geven" aria-label="Feedback geven">💬</button>
       <a href="teamleider.html" class="header-btn hidden" id="dashboard-btn">← Terug naar dashboard</a>
       <button class="header-btn" id="logout-btn">Uitloggen</button>
     </header>
@@ -190,13 +192,7 @@
       </div>
     </div>
 
-    <!-- App feedback knop (zwevend rechtsonder) -->
-    <button type="button" id="app-feedback-btn" class="app-feedback-btn" aria-label="Feedback geven">
-      <span class="app-feedback-icon">💬</span>
-      <span class="app-feedback-text">Feedback</span>
-    </button>
-
-    <!-- App feedback modal -->
+    <!-- App feedback modal (centered overlay) -->
     <div class="modal-overlay" id="modal-app-feedback">
       <div class="modal">
         <h3 class="modal-title">Hoe kunnen we Wegwijzer verbeteren?</h3>
@@ -240,7 +236,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=2"></script>
-  <script src="js/medewerker.js?v=6"></script>
+  <script src="js/medewerker.js?v=7"></script>
 
 </body>
 </html>

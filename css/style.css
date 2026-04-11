@@ -134,6 +134,35 @@ body {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* ---- Header icoon-knop (subtiele transparante knop voor handleiding/zoek/feedback) ---- */
+.header-icon-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  font-size: 1.05rem;
+  padding: 7px 11px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.header-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  text-decoration: none;
+}
+@media (max-width: 480px) {
+  .header-icon-btn {
+    padding: 6px 9px;
+    font-size: 1rem;
+  }
+}
+
 /* ---- Kaarten ---- */
 .card {
   background: var(--bg-white);
@@ -268,46 +297,6 @@ body {
 .mt-16 { margin-top: 16px; }
 .mt-8 { margin-top: 8px; }
 .hidden { display: none !important; }
-
-/* ---- App feedback knop (zwevend, BOVEN de chat input bar) ---- */
-.app-feedback-btn {
-  position: fixed;
-  /* Chat input bar is ~64px hoog bij min textarea, kan groeien tot ~120px
-     bij max textarea (100px max-height + 2x10px padding). Knop staat ruim
-     boven de groei-zone met 16px gap. */
-  bottom: calc(140px + env(safe-area-inset-bottom, 0px));
-  right: 16px;
-  z-index: 100;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  border-radius: 24px;
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-.app-feedback-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-}
-.app-feedback-icon { font-size: 1.05rem; }
-@media (max-width: 480px) {
-  .app-feedback-btn {
-    padding: 8px 12px;
-    font-size: 0.78rem;
-    /* Mobiele chat input bar is ~56px bij min textarea, kan groeien tot
-       ~116px (100 + 2x8 padding). Knop staat erboven met ruime gap. */
-    bottom: calc(128px + env(safe-area-inset-bottom, 0px));
-    right: 12px;
-  }
-}
 
 /* ---- Responsive ---- */
 @media (max-width: 480px) {
