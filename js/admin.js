@@ -53,6 +53,7 @@
     initTeamleiderModal();
     initVerbeterModal();
     initKnToevoegen();
+    initKbToevoegen();
     initHerindexeerBtn();
     initKennisScanBtns();
     loadKennissuggesties();
@@ -3117,6 +3118,66 @@
     await supabaseClient.from('kennisnotities').update({ notitie: nieuweTekst.substring(0, 1000) }).eq('id', id);
     loadKennisnotities();
   };
+
+  // ---- Proactief kennisbank item toevoegen (zonder gekoppelde vraag) ----
+  function initKbToevoegen() {
+    var btn = document.getElementById('kb-toevoegen-btn');
+    var form = document.getElementById('kb-toevoegen-form');
+    var opslaan = document.getElementById('kb-toevoegen-opslaan');
+    var annuleer = document.getElementById('kb-toevoegen-annuleer');
+    var bevestiging = document.getElementById('kb-bevestiging');
+    if (!btn || !form) return;
+
+    btn.addEventListener('click', function () {
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      if (bevestiging) bevestiging.style.display = 'none';
+    });
+    annuleer.addEventListener('click', function () {
+      form.style.display = 'none';
+      document.getElementById('kb-vraag').value = '';
+      document.getElementById('kb-antwoord').value = '';
+      if (bevestiging) bevestiging.style.display = 'none';
+    });
+    opslaan.addEventListener('click', async function () {
+      var vraag = document.getElementById('kb-vraag').value.trim();
+      var antwoord = document.getElementById('kb-antwoord').value.trim();
+      if (!vraag || !antwoord) { alert('Vul beide velden in.'); return; }
+
+      opslaan.disabled = true;
+      var origineelLabel = opslaan.textContent;
+      opslaan.textContent = 'Opslaan...';
+
+      var result = await supabaseClient.from('kennisbank_items').insert({
+        tenant_id: tenantId,
+        vraag: vraag.substring(0, 200),
+        antwoord: antwoord.substring(0, 2000)
+      }).select();
+
+      console.log('[KennisItem] Insert result:', result.error, 'rows:', result.data);
+
+      opslaan.disabled = false;
+      opslaan.textContent = origineelLabel;
+
+      if (result.error) {
+        alert('Opslaan mislukt: ' + result.error.message);
+        return;
+      }
+      if (!result.data || result.data.length === 0) {
+        alert('Opslaan mislukt: geen rij ingevoegd. Mogelijk een rechten-issue. Check console.');
+        return;
+      }
+
+      // Bevestiging tonen, velden leegmaken, form sluit na 1.5s, lijst verversen
+      if (bevestiging) bevestiging.style.display = 'block';
+      document.getElementById('kb-vraag').value = '';
+      document.getElementById('kb-antwoord').value = '';
+      setTimeout(function () {
+        form.style.display = 'none';
+        if (bevestiging) bevestiging.style.display = 'none';
+      }, 1500);
+      loadVerbeterpunten();
+    });
+  }
 
   // ---- Proactief kennisnotitie toevoegen (zonder gekoppelde vraag) ----
   function initKnToevoegen() {

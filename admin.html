@@ -429,6 +429,22 @@
           </h3>
           <div class="vp-collapse-content">
             <p class="section-subtitle">Handmatig toegevoegde antwoorden en correcties</p>
+            <button type="button" class="btn btn-secondary" id="kb-toevoegen-btn" style="max-width:240px;margin-bottom:12px;padding:6px 12px;font-size:0.85rem">+ Kennisbank item toevoegen</button>
+            <div id="kb-toevoegen-form" style="display:none;background:#F0FFF4;padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid #C6F6D5">
+              <div class="form-group">
+                <label class="form-label" for="kb-vraag">Vraag</label>
+                <input type="text" id="kb-vraag" class="form-input" maxlength="200" placeholder="Bijv. Wat zijn de openingstijden?">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="kb-antwoord">Antwoord</label>
+                <textarea id="kb-antwoord" class="form-input" rows="5" maxlength="2000" placeholder="Het exacte antwoord dat de chatbot letterlijk teruggeeft..."></textarea>
+              </div>
+              <div id="kb-bevestiging" style="display:none;color:var(--success);font-size:0.82rem;margin-bottom:8px">✓ Kennisbank item opgeslagen</div>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn-primary" id="kb-toevoegen-opslaan" style="width:auto;padding:6px 14px;font-size:0.8rem">Opslaan</button>
+                <button type="button" class="btn btn-secondary" id="kb-toevoegen-annuleer" style="width:auto;padding:6px 14px;font-size:0.8rem">Annuleren</button>
+              </div>
+            </div>
             <div id="kennisbank-items-list"></div>
           </div>
         </div>
@@ -1131,7 +1147,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=11"></script>
+  <script src="js/admin.js?v=12"></script>
 
 </body>
 </html>
