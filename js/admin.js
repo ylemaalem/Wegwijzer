@@ -2786,7 +2786,11 @@
 
     if (nietGoedResult.error || !nietGoedResult.data || nietGoedResult.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen verbeterpunten gevonden.</td></tr>';
+      // Notities en kennisbank-items moeten OOK geladen worden als er geen
+      // negatieve feedback is — anders verschijnt de hele sectie leeg.
       loadKennisbankItems(kennisbankItems);
+      loadKennisnotities();
+      loadAppFeedback();
       return;
     }
 
@@ -3020,6 +3024,12 @@
       .eq('actief', true)
       .order('created_at', { ascending: false });
 
+    console.log('[Notities] Geladen:', result.data ? result.data.length : 0, result.error);
+
+    if (result.error) {
+      container.innerHTML = '<p style="color:var(--error);font-size:0.85rem">Notities laden mislukt: ' + escapeHtml(result.error.message) + '</p>';
+      return;
+    }
     if (!result.data || result.data.length === 0) {
       container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Nog geen kennisnotities.</p>';
       return;
@@ -3278,10 +3288,15 @@
             tenant_id: tenantId,
             vraag: vraag,
             antwoord: antwoord
-          });
+          })
+          .select();
+
+        console.log('[KennisItem] Insert result:', result.error, 'rows:', result.data);
 
         if (result.error) {
           alert('Opslaan mislukt: ' + result.error.message);
+        } else if (!result.data || result.data.length === 0) {
+          alert('Opslaan mislukt: geen rij ingevoegd. Mogelijk een rechten-issue. Check console.');
         } else {
           modal.classList.remove('show');
           loadVerbeterpunten();
