@@ -369,9 +369,25 @@
       });
     }
 
-    // Attach click handlers to ALL chips (existing or new)
+    // Handleiding link — altijd zichtbaar als laatste chip in de rij,
+    // ongeacht inwerkfase of kennisassistent-modus. Idempotent: bestaande
+    // handleiding-link wordt eerst verwijderd zodat herhaalde initChips
+    // aanroepen geen duplicaten maken.
+    var bestaandeHandleiding = chipsBar.querySelector('.chip-handleiding');
+    if (bestaandeHandleiding) bestaandeHandleiding.remove();
+    var handleidingLink = document.createElement('a');
+    handleidingLink.className = 'chip chip-link chip-handleiding';
+    handleidingLink.href = 'https://mijnwegwijzer.com/handleiding';
+    handleidingLink.target = '_blank';
+    handleidingLink.rel = 'noopener noreferrer';
+    handleidingLink.textContent = '📖 Handleiding';
+    chipsBar.appendChild(handleidingLink);
+
+    // Attach click handlers aan vraag-chips (skip de handleiding link — die
+    // navigeert via target=_blank en heeft geen data-vraag).
     var chips = chipsBar.querySelectorAll('.chip');
     chips.forEach(function (chip) {
+      if (chip.classList.contains('chip-link')) return;
       chip.addEventListener('click', function () {
         var vraag = chip.dataset.vraag;
         if (vraag && !isSending) {

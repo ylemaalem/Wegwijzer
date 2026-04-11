@@ -282,6 +282,19 @@
   color: white;
 }
 
+/* Anchor variant (bv. handleiding link) — geen text-decoration, gedraagt
+   zich verder identiek aan een button-chip dankzij dezelfde .chip class. */
+a.chip,
+.chip-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+a.chip:hover,
+.chip-link:hover {
+  text-decoration: none;
+}
+
 /* ---- Chat berichten ---- */
 .chat-messages {
   flex: 1;
@@ -853,8 +866,8 @@
 #modal-app-feedback {
   position: fixed;
   right: 20px;
-  /* Knop staat op bottom 80px (+safe area), is ~40px hoog. Modal 12px daarboven. */
-  bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  /* Knop staat op bottom 140px (+safe area), is ~40px hoog. Modal 12px daarboven. */
+  bottom: calc(196px + env(safe-area-inset-bottom, 0px));
   width: calc(100vw - 40px);
   max-width: 380px;
   max-height: 500px;
@@ -918,9 +931,9 @@
 @media (max-width: 480px) {
   #modal-app-feedback {
     right: 12px;
-    /* Knop staat op bottom 72px (+safe area), is ~36px hoog. Modal 12px daarboven. */
-    bottom: calc(124px + env(safe-area-inset-bottom, 0px));
+    /* Knop staat op bottom 128px (+safe area), is ~36px hoog. Modal 12px daarboven. */
+    bottom: calc(180px + env(safe-area-inset-bottom, 0px));
     width: calc(100vw - 24px);
-    max-height: 70vh;
+    max-height: 60vh;
   }
 }
