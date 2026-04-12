@@ -874,7 +874,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  from: "Wegwijzer <onboarding@resend.dev>",
+                  from: "Wegwijzer <info@mijnwegwijzer.com>",
                   to: [(tl as {email:string}).email],
                   subject: subject,
                   html: buildTerugblikHtml(
