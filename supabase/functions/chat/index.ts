@@ -1635,6 +1635,25 @@ ${vragenContext}`;
         ).join("\n");
     }
 
+    // ---- 6j. Gespreksgeheugen: laatste 3 gesprekken uit eerdere sessies ----
+    // Alleen in de normale chat route — alle speciale routes (briefing/quiz/scan
+    // etc.) zijn eerder in het bestand al geretourneerd.
+    const { data: recenteGesprekken } = await supabaseAdmin
+      .from("conversations")
+      .select("vraag, antwoord")
+      .eq("user_id", profile.id)
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    let geheugenContext = "";
+    if (recenteGesprekken && recenteGesprekken.length > 0) {
+      const recente = [...recenteGesprekken].reverse();
+      geheugenContext = "\n\nRECENTE GESPREKSGESCHIEDENIS (vorige sessies van deze medewerker):\n" +
+        recente.map((g: { vraag: string; antwoord: string }, i: number) =>
+          `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`
+        ).join("\n\n");
+    }
+
     // Bronnen combineren
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
@@ -1652,7 +1671,7 @@ ${vragenContext}`;
       alleKennisbronnen = "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de teamleider voor organisatiespecifieke informatie.";
     }
 
-    const systemPrompt = `${basisPrompt}${profielInfo}${weekContext}
+    const systemPrompt = `${basisPrompt}${profielInfo}${geheugenContext}${weekContext}
 
 INSTRUCTIES:
 - Antwoord ALTIJD in het Nederlands.
@@ -1691,6 +1710,7 @@ ALGEMEEN:
 - BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
 - Als de medewerker vraagt naar zijn/haar teamleider: geef direct de naam en het telefoonnummer.
 - ONZEKERHEID: Als je niet volledig zeker bent, zeg dit expliciet. Verzin NOOIT informatie.
+- GESPREKSGEHEUGEN: Je hebt toegang tot de laatste 3 vragen die deze medewerker in eerdere sessies heeft gesteld. Gebruik dit ALLEEN als de nieuwe vraag er direct op aansluit. Verwijs er subtiel naar: 'Je vroeg hier eerder ook naar' of 'Dit sluit aan bij wat je vroeg over...' Zeg NOOIT letterlijk 'vorige sessie' of 'ik heb je gegevens opgeslagen'.
 
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
