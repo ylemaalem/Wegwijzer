@@ -1785,13 +1785,22 @@ ${alleKennisbronnen}`;
     }
 
     // ---- 9. Gesprek opslaan ----
+    // Privacy: strip de naam van de medewerker uit het antwoord dat in de DB
+    // terechtkomt, zodat admins/teamleiders in de Gesprekken-tab niet de naam
+    // zien. De variabele `antwoord` (zonder suffix) blijft ongewijzigd voor
+    // de response naar de medewerker — die ziet nog steeds zijn eigen naam.
+    const naamInDb = (profile.naam || "").trim();
+    const antwoordVoorDb = naamInDb.length > 2
+      ? antwoord.replace(new RegExp(naamInDb, "gi"), "de medewerker")
+      : antwoord;
+
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
       .insert({
         tenant_id: profile.tenant_id,
         user_id: profile.id,
         vraag: vraag.trim(),
-        antwoord: antwoord,
+        antwoord: antwoordVoorDb,
       })
       .select("id")
       .single();
