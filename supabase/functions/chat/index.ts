@@ -42,6 +42,62 @@ const WEBSITE_TRIGGERS = [
   "contract", "proeftijd", "ontslag"
 ];
 
+console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
+
+// HTML email builder voor de maandelijkse terugblik
+function buildTerugblikHtml(
+  naam: string, maand: string, team: string,
+  totaalVragen: number, positief: number, negatief: number, pct: number,
+  actiefMedewerkers: number, totaalMedewerkers: number,
+  tijdBespaard: number, kostenBespaard: number
+): string {
+  return `<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f4f4f4">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff">
+  <tr><td style="background:#0D5C6B;padding:24px 32px">
+    <h1 style="margin:0;color:#ffffff;font-size:22px">Wegwijzer Terugblik</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px">${maand} — ${team}</p>
+  </td></tr>
+  <tr><td style="padding:28px 32px">
+    <p style="margin:0 0 18px;font-size:15px;color:#333">Beste ${naam},</p>
+    <p style="margin:0 0 22px;font-size:15px;color:#333;line-height:1.6">
+      Hier is de Wegwijzer terugblik voor <strong>${maand}</strong> — team <strong>${team}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;margin-bottom:24px">
+      <tr style="background:#f8f8f8">
+        <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e0e0e0">Totaal vragen gesteld</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#333;text-align:right;border-bottom:1px solid #e0e0e0">${totaalVragen}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e0e0e0">Positieve feedback</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#2e7d32;text-align:right;border-bottom:1px solid #e0e0e0">${positief} (${pct}%)</td>
+      </tr>
+      <tr style="background:#f8f8f8">
+        <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e0e0e0">Negatieve feedback</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#c62828;text-align:right;border-bottom:1px solid #e0e0e0">${negatief}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e0e0e0">Actieve medewerkers</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#333;text-align:right;border-bottom:1px solid #e0e0e0">${actiefMedewerkers} van ${totaalMedewerkers}</td>
+      </tr>
+      <tr style="background:#f8f8f8">
+        <td style="padding:12px 16px;font-size:14px;color:#666">Tijdwinst teamleider</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#0D5C6B;text-align:right">~${tijdBespaard} uur (~&euro;${kostenBespaard} bespaard)</td>
+      </tr>
+    </table>
+    <p style="margin:0;font-size:13px;color:#999;line-height:1.5">
+      Met vriendelijke groet,<br><strong>Wegwijzer</strong>
+    </p>
+  </td></tr>
+  <tr><td style="background:#f4f4f4;padding:16px 32px;text-align:center">
+    <p style="margin:0;font-size:12px;color:#999">Deze email is automatisch verstuurd door Wegwijzer.</p>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -985,18 +1041,67 @@ ${vragenContext}`;
         });
 
         // Stap 4: Log opslaan met inhoud
-        const status = body.is_test ? "test" : "verstuurd";
+        let logStatus = body.is_test ? "test" : "verstuurd";
+
+        // Stap 5: Email verzenden via Resend
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        let mailVerstuurd = 0;
+
+        if (!resendApiKey) {
+          console.error("[Terugblik] RESEND_API_KEY ontbreekt — emails worden NIET verstuurd. Voeg de key toe via het Supabase dashboard > Edge Functions > Secrets.");
+          logStatus = "mail_niet_geconfigureerd";
+        } else {
+          // Bij test-modus: stuur alleen naar Younes, niet naar de teamleiders
+          const emailOntvangers = body.is_test
+            ? [{ naam: "Test", email: "younes.lemaalem@outlook.com" }]
+            : metEmail;
+
+          for (const tl of emailOntvangers) {
+            const subject = (body.is_test ? "TEST — " : "") + "Wegwijzer terugblik — " + maand;
+            try {
+              const mailResp = await fetch("https://api.resend.com/emails", {
+                method: "POST",
+                headers: {
+                  "Authorization": "Bearer " + resendApiKey,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  from: "Wegwijzer <info@mijnwegwijzer.com>",
+                  to: [(tl as {email:string}).email],
+                  subject: subject,
+                  html: buildTerugblikHtml(
+                    (tl as {naam:string}).naam, maand, teamNaam,
+                    totaalVragen, positief, negatief, pct,
+                    actiefMedewerkers, profs?.length || 0,
+                    tijdBespaard, kostenBespaard
+                  ),
+                }),
+              });
+              if (mailResp.ok) {
+                mailVerstuurd++;
+                console.log("[Terugblik] Email verstuurd naar:", (tl as {email:string}).email);
+              } else {
+                const errBody = await mailResp.text();
+                console.error("[Terugblik] Resend fout voor:", (tl as {email:string}).email, mailResp.status, errBody);
+              }
+            } catch (mailErr) {
+              console.error("[Terugblik] Mail fout voor:", (tl as {email:string}).email, mailErr);
+            }
+          }
+          console.log("[Terugblik] Emails verstuurd:", mailVerstuurd, "van", emailOntvangers.length);
+        }
+
         await supabaseAdmin.from("terugblik_log").insert({
           tenant_id: profile.tenant_id,
           maand: maand,
           aantal_ontvangers: metEmail.length,
-          status: status,
+          status: logStatus,
           inhoud: inhoud,
           ontvangers: ontvangerNamen,
           team: teamNaam,
         });
 
-        console.log("[Terugblik] Klaar, ontvangers:", ontvangerNamen.join(", "));
+        console.log("[Terugblik] Klaar, ontvangers:", ontvangerNamen.join(", "), "status:", logStatus);
 
         return new Response(
           JSON.stringify({
@@ -1004,6 +1109,8 @@ ${vragenContext}`;
             aantal_ontvangers: metEmail.length,
             ontvangers: ontvangerNamen,
             maand: maand,
+            mail_verstuurd: mailVerstuurd,
+            status: logStatus,
             data: { totaalVragen, positief, negatief, pct, actiefMedewerkers, tijdBespaard, kostenBespaard }
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
