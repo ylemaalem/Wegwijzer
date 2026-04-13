@@ -505,6 +505,14 @@
         return;
       }
 
+      // Auto-seed standaard functiegroepen + document-mappen voor de nieuwe org
+      var seedResult = await supabaseClient.rpc('seed_nieuwe_tenant', { p_tenant_id: newTenantId });
+      if (seedResult.error) {
+        console.error('[NieuweOrg] Seed fout:', seedResult.error.message);
+      } else {
+        console.log('[NieuweOrg] Seed gelukt voor tenant:', newTenantId);
+      }
+
       showAlert('success', 'Organisatie aangemaakt. Schakel ernaar via de dropdown om accounts en documenten toe te voegen.');
       submitBtn.disabled = false;
       submitBtn.textContent = 'Aanmaken';
