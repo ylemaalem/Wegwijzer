@@ -3303,21 +3303,59 @@
 
     container.innerHTML = result.data.map(function (kn) {
       var datum = new Date(kn.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
-      return '<div class="kennisbank-item" style="margin-bottom:8px" data-kn-id="' + kn.id + '">' +
+      // Standaard ingeklapt; localStorage '0' = uitgeklapt, '1' of niet = ingeklapt.
+      var storageKey = 'wegwijzer_kn_collapse_' + kn.id;
+      var ingeklapt = localStorage.getItem(storageKey) !== '0';
+      var chevron = ingeklapt ? '▶' : '▼';
+      var wrapDisplay = ingeklapt ? 'none' : '';
+
+      return '<div class="kennisbank-item kn-item" style="margin-bottom:8px" data-kn-id="' + kn.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
-        '<div style="flex:1"><div class="kennisbank-item-vraag">📝 ' + escapeHtml(kn.originele_vraag) + '</div>' +
-        '<div class="kennisbank-item-antwoord kn-tekst">' + escapeHtml(kn.notitie) + '</div>' +
-        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + '</span></div>' +
-        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        '<div style="flex:1;min-width:0">' +
+        '<div class="kn-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
+          '<span class="kn-chevron" style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0">' + chevron + '</span>' +
+          '<span class="kennisbank-item-vraag" style="font-weight:600">📝 ' + escapeHtml(kn.originele_vraag) + '</span>' +
+        '</div>' +
+        '<div class="kn-tekst-wrap" style="display:' + wrapDisplay + ';margin-top:6px;padding-left:18px">' +
+          '<div class="kennisbank-item-antwoord kn-tekst">' + escapeHtml(kn.notitie) + '</div>' +
+          '<span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:4px">' + datum + '</span>' +
+        '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
         '<button class="btn-icon" onclick="window.editKennisnotitieInline(\'' + kn.id + '\')" title="Bewerken">✏️</button>' +
         '<button class="btn-icon btn-icon-danger" onclick="window.deleteKennisnotitie(\'' + kn.id + '\')" title="Verwijderen">🗑️</button>' +
         '</div></div></div>';
     }).join('');
+
+    // Event delegation voor kennisnotities — zelfde patroon als kennisbank items
+    if (!container.dataset.knToggleDelegated) {
+      container.addEventListener('click', function (e) {
+        var toggle = e.target && e.target.closest ? e.target.closest('.kn-toggle') : null;
+        if (!toggle) return;
+        var card = toggle.closest('.kn-item');
+        if (!card) return;
+        var id = card.getAttribute('data-kn-id');
+        var wrap = card.querySelector('.kn-tekst-wrap');
+        var chev = card.querySelector('.kn-chevron');
+        if (!id || !wrap || !chev) return;
+        var nuIngeklapt = wrap.style.display === 'none';
+        wrap.style.display = nuIngeklapt ? '' : 'none';
+        chev.textContent = nuIngeklapt ? '▼' : '▶';
+        localStorage.setItem('wegwijzer_kn_collapse_' + id, nuIngeklapt ? '0' : '1');
+      });
+      container.dataset.knToggleDelegated = '1';
+    }
   }
 
   window.editKennisnotitieInline = async function (id) {
     var card = document.querySelector('[data-kn-id="' + id + '"]');
     if (!card) return;
+    // Force uitklappen zodat de textarea zichtbaar is tijdens edit
+    var wrap = card.querySelector('.kn-tekst-wrap');
+    if (wrap) wrap.style.display = '';
+    var chev = card.querySelector('.kn-chevron');
+    if (chev) chev.textContent = '▼';
+
     var tekstEl = card.querySelector('.kn-tekst');
     var origineel = tekstEl.textContent;
 
@@ -3499,10 +3537,10 @@
       var chevron = ingeklapt ? '▶' : '▼';
       var wrapDisplay = ingeklapt ? 'none' : '';
 
-      return '<div class="kennisbank-item" style="margin-bottom:8px" data-kb-id="' + kb.id + '">' +
+      return '<div class="kennisbank-item kb-item" style="margin-bottom:8px" data-kb-id="' + kb.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
         '<div style="flex:1;min-width:0">' +
-        '<div class="kb-toggle" data-kb-id="' + kb.id + '" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
+        '<div class="kb-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
           '<span class="kb-chevron" style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0">' + chevron + '</span>' +
           '<span class="kennisbank-item-vraag kb-vraag" style="font-weight:600">✏️ ' + escapeHtml(kb.vraag) + '</span>' +
         '</div>' +
@@ -3517,17 +3555,19 @@
         '</div></div></div>';
     }).join('');
 
-    // Event delegation — één listener per container, overleeft re-renders
+    // Event delegation — één listener per container, overleeft re-renders.
+    // BUG-FIX: was closest('[data-kb-id]') wat de toggle zelf matchte (die
+    // had ook dat attribuut). Nu closest('.kb-item') → de outer card.
     if (!container.dataset.kbToggleDelegated) {
       container.addEventListener('click', function (e) {
         var toggle = e.target && e.target.closest ? e.target.closest('.kb-toggle') : null;
         if (!toggle) return;
-        var id = toggle.getAttribute('data-kb-id');
-        if (!id) return;
-        var card = toggle.closest('[data-kb-id]');
-        var wrap = card && card.querySelector('.kb-antwoord-wrap');
-        var chev = card && card.querySelector('.kb-chevron');
-        if (!wrap || !chev) return;
+        var card = toggle.closest('.kb-item');
+        if (!card) return;
+        var id = card.getAttribute('data-kb-id');
+        var wrap = card.querySelector('.kb-antwoord-wrap');
+        var chev = card.querySelector('.kb-chevron');
+        if (!id || !wrap || !chev) return;
         var nuIngeklapt = wrap.style.display === 'none';
         wrap.style.display = nuIngeklapt ? '' : 'none';
         chev.textContent = nuIngeklapt ? '▼' : '▶';
