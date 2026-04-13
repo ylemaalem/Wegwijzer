@@ -3509,10 +3509,10 @@
       return;
     }
 
-    var rolLabels = { teamleider: 'Teamleider', manager: 'Manager', hr: 'HR Medewerker' };
+    var rolLabels = { teamleider: 'Leidinggevende', manager: 'Manager', hr: 'HR Medewerker' };
 
     tbody.innerHTML = result.data.map(function (tl) {
-      var rolLabel = rolLabels[tl.rol] || 'Teamleider';
+      var rolLabel = rolLabels[tl.rol] || 'Leidinggevende';
       var koppelingStr = '-';
       if (tl.rol === 'manager' && tl.afdelingen && tl.afdelingen.length > 0) {
         koppelingStr = tl.afdelingen.join(', ');
@@ -3552,8 +3552,8 @@
     var afdelingenGroup = document.getElementById('tl-afdelingen-group');
     var modalTitle = document.getElementById('teamleider-modal-title');
 
-    var rolTitels = { teamleider: 'Teamleider toevoegen', manager: 'Manager toevoegen', hr: 'HR Medewerker toevoegen' };
-    var rolTitelsEdit = { teamleider: 'Teamleider bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
+    var rolTitels = { teamleider: 'Leidinggevende toevoegen', manager: 'Manager toevoegen', hr: 'HR Medewerker toevoegen' };
+    var rolTitelsEdit = { teamleider: 'Leidinggevende bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
 
     function toggleRolVelden() {
       var rol = rolSelect ? rolSelect.value : 'teamleider';
@@ -3686,7 +3686,7 @@
                     .update(profileUpdate)
                     .eq('user_id', inviteData.user_id);
                 }
-                var rolNaam = { teamleider: 'Teamleider', manager: 'Manager', hr: 'HR Medewerker' };
+                var rolNaam = { teamleider: 'Leidinggevende', manager: 'Manager', hr: 'HR Medewerker' };
                 alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd.\nUitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
               }
             } catch (err) {
@@ -3753,7 +3753,7 @@
     var teamsGroup = document.getElementById('tl-teams-group');
     var afdelingenGroup = document.getElementById('tl-afdelingen-group');
     var modalTitle = document.getElementById('teamleider-modal-title');
-    var rolTitelsEdit = { teamleider: 'Teamleider bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
+    var rolTitelsEdit = { teamleider: 'Leidinggevende bewerken', manager: 'Manager bewerken', hr: 'HR Medewerker bewerken' };
     var rol = tl.rol || 'teamleider';
     if (teamsGroup) teamsGroup.style.display = (rol === 'teamleider') ? '' : 'none';
     if (afdelingenGroup) afdelingenGroup.style.display = (rol === 'manager') ? '' : 'none';
@@ -3799,7 +3799,7 @@
   };
 
   window.deleteTeamleider = async function (id) {
-    if (!confirm('Weet je zeker dat je deze teamleider wilt verwijderen?')) return;
+    if (!confirm('Weet je zeker dat je deze leidinggevende wilt verwijderen?')) return;
 
     await supabaseClient
       .from('teamleiders')
@@ -4633,7 +4633,7 @@
 
     function vulTlDropdown(teamFilter) {
       if (!tlSelect) return;
-      tlSelect.innerHTML = '<option value="">Alle teamleiders</option>';
+      tlSelect.innerHTML = '<option value="">Alle leidinggevenden</option>';
       var filtered = allTeamleiders;
       if (teamFilter) {
         filtered = allTeamleiders.filter(function (tl) {
