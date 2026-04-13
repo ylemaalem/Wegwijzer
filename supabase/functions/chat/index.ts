@@ -861,7 +861,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           logStatus = "mail_niet_geconfigureerd";
         } else {
           const emailOntvangers = body.is_test
-            ? [{ naam: "Test", email: "younes.lemaalem@outlook.com" }]
+            ? [{ naam: "Younes", email: "y.lemaalem@ambulantehulpverlening.nl" }]
             : metEmail;
 
           for (const tl of emailOntvangers) {
