@@ -365,35 +365,88 @@
   }
 
   // =============================================
-  // SUGGESTIE CHIPS
+  // SUGGESTIE CHIPS — dynamisch op basis van rol, weeknummer en functiegroep
   // =============================================
-  function initChips() {
-    if (weekNummer > 6) {
-      chipsBar.innerHTML = '';
-      var kennisChips = [
-        { emoji: '📋', text: 'Protocollen opzoeken', vraag: 'Welke protocollen zijn er?' },
-        { emoji: '📝', text: 'Rapportage schrijven', vraag: 'Ik wil een rapportage schrijven. Kun je me helpen?' },
-        { emoji: '📅', text: 'Planning maken', vraag: 'Kun je een dagplanning voor me maken?' },
-        { emoji: '✉️', text: 'Email opstellen', vraag: 'Kun je me helpen met het opstellen van een email?' },
-        { emoji: '💭', text: 'Situatie doordenken', vraag: 'Ik wil een situatie met je doordenken.' }
+
+  // Pak max 2 woorden uit de functiegroep voor gebruik in een chip-zin,
+  // bv. "ambulant_begeleider" → "ambulant begeleider".
+  function functiegroepKort() {
+    var fg = profile && profile.functiegroep ? profile.functiegroep : '';
+    if (!fg) return 'jouw functie';
+    var woorden = fg.replace(/_/g, ' ').split(/\s+/).filter(Boolean);
+    return woorden.slice(0, 2).join(' ').toLowerCase() || 'jouw functie';
+  }
+
+  function chipsVoorContext() {
+    // Teamleider/admin: vaste set
+    if (profile.role === 'teamleider' || profile.role === 'admin') {
+      return [
+        { emoji: '📊', vraag: 'Geef me een overzicht van mijn team' },
+        { emoji: '📝', vraag: 'Help me een brief opstellen' },
+        { emoji: '💬', vraag: 'Sparren over een medewerkerssituatie' },
+        { emoji: '📋', vraag: 'Maak een vergaderagenda' }
       ];
-      kennisChips.forEach(function(c) {
-        var btn = document.createElement('button');
-        btn.className = 'chip';
-        btn.dataset.vraag = c.vraag;
-        btn.textContent = c.emoji + ' ' + c.text;
-        chipsBar.appendChild(btn);
-      });
     }
 
-    // Verwijder eventuele oude handleiding-chip uit een vorige sessie
-    // (die verhuisde naar de header).
-    var oudeHandleiding = chipsBar.querySelector('.chip-handleiding');
-    if (oudeHandleiding) oudeHandleiding.remove();
+    var fgKort = functiegroepKort();
 
-    // Attach click handlers aan vraag-chips
-    var chips = chipsBar.querySelectorAll('.chip');
-    chips.forEach(function (chip) {
+    // Week 1-2 (nieuw)
+    if (weekNummer >= 1 && weekNummer <= 2) {
+      return [
+        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
+        { emoji: '🚗', vraag: 'Wat is ' + fgKort + ' werken?' },
+        { emoji: '👤', vraag: 'Bij wie kan ik terecht?' },
+        { emoji: '🎯', vraag: 'Wat is de missie van de organisatie?' },
+        { emoji: '🤝', vraag: 'Hoe ga ik om met een cliënt?' }
+      ];
+    }
+
+    // Week 3-4 (halverwege)
+    if (weekNummer >= 3 && weekNummer <= 4) {
+      return [
+        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
+        { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
+        { emoji: '❓', vraag: 'Leg zorgplan, indicatie en WMO uit' },
+        { emoji: '👤', vraag: 'Wie is mijn leidinggevende?' },
+        { emoji: '🤝', vraag: 'Sparren over een cliëntsituatie' }
+      ];
+    }
+
+    // Week 5-6 (afronden)
+    if (weekNummer >= 5 && weekNummer <= 6) {
+      return [
+        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
+        { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
+        { emoji: '💬', vraag: 'Sparren over een cliëntsituatie' },
+        { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
+        { emoji: '🎯', vraag: 'Wat verwacht de organisatie van mij?' }
+      ];
+    }
+
+    // Na week 6, weekNummer 99 (inwerken_afgerond), of weekNummer 0
+    // (toekomstige startdatum) — kennisassistent modus
+    return [
+      { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
+      { emoji: '💬', vraag: 'Sparren over een cliëntsituatie' },
+      { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
+      { emoji: '📎', vraag: 'Zoek een protocol op' },
+      { emoji: '💶', vraag: 'Hoe declareer ik reiskosten?' }
+    ];
+  }
+
+  function initChips() {
+    chipsBar.innerHTML = '';
+    var setjes = chipsVoorContext();
+    setjes.forEach(function (c) {
+      var btn = document.createElement('button');
+      btn.className = 'chip';
+      btn.dataset.vraag = c.vraag;
+      btn.textContent = c.emoji + ' ' + c.vraag;
+      chipsBar.appendChild(btn);
+    });
+
+    // Klik-handlers
+    chipsBar.querySelectorAll('.chip').forEach(function (chip) {
       chip.addEventListener('click', function () {
         var vraag = chip.dataset.vraag;
         if (vraag && !isSending) {

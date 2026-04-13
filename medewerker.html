@@ -121,15 +121,9 @@
           <input type="text" id="search-input" placeholder="Zoek in je gesprekken..." autocomplete="off">
         </div>
 
-        <!-- Suggestie chips -->
-        <div class="chips-bar" id="chips-bar">
-          <button class="chip" data-vraag="Wat zijn mijn taken in week 1?">📋 Wat zijn mijn taken in week 1?</button>
-          <button class="chip" data-vraag="Wat is ambulant werken?">🚗 Wat is ambulant werken?</button>
-          <button class="chip" data-vraag="Bij wie kan ik terecht?">👤 Bij wie kan ik terecht?</button>
-          <button class="chip" data-vraag="Wat is de missie?">🎯 Wat is de missie?</button>
-          <button class="chip" data-vraag="Welke zorgvormen zijn er?">❤️ Welke zorgvormen zijn er?</button>
-          <button class="chip" data-vraag="Hoe ga ik om met een cliënt?">🤝 Hoe ga ik om met een cliënt?</button>
-        </div>
+        <!-- Suggestie chips — dynamisch gevuld door initChips() in medewerker.js
+             op basis van weekNummer, profile.functiegroep en profile.role -->
+        <div class="chips-bar" id="chips-bar"></div>
 
         <!-- Berichten -->
         <div class="chat-messages" id="chat-messages">
@@ -239,7 +233,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=2"></script>
-  <script src="js/medewerker.js?v=8"></script>
+  <script src="js/medewerker.js?v=9"></script>
 
 </body>
 </html>
