@@ -3492,18 +3492,49 @@
       var datum = new Date(kb.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       });
+      // Standaard ingeklapt; localStorage '0' = uitgeklapt, '1' of niet = ingeklapt.
+      // Zelfde patroon als .vp-collapsible secties in de Verbeterpunten-tab.
+      var storageKey = 'wegwijzer_kb_collapse_' + kb.id;
+      var ingeklapt = localStorage.getItem(storageKey) !== '0';
+      var chevron = ingeklapt ? '▶' : '▼';
+      var wrapDisplay = ingeklapt ? 'none' : '';
+
       return '<div class="kennisbank-item" style="margin-bottom:8px" data-kb-id="' + kb.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">' +
-        '<div style="flex:1">' +
-        '<div class="kennisbank-item-vraag kb-vraag" style="font-weight:600;margin-bottom:4px">✏️ ' + escapeHtml(kb.vraag) + '</div>' +
-        '<div class="kennisbank-item-antwoord kb-antwoord" style="white-space:pre-wrap">' + escapeHtml(kb.antwoord) + '</div>' +
-        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + '</span>' +
+        '<div style="flex:1;min-width:0">' +
+        '<div class="kb-toggle" data-kb-id="' + kb.id + '" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
+          '<span class="kb-chevron" style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0">' + chevron + '</span>' +
+          '<span class="kennisbank-item-vraag kb-vraag" style="font-weight:600">✏️ ' + escapeHtml(kb.vraag) + '</span>' +
         '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        '<div class="kb-antwoord-wrap" style="display:' + wrapDisplay + ';margin-top:6px;padding-left:18px">' +
+          '<div class="kennisbank-item-antwoord kb-antwoord" style="white-space:pre-wrap">' + escapeHtml(kb.antwoord) + '</div>' +
+          '<span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:4px">' + datum + '</span>' +
+        '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
         '<button class="btn-icon" onclick="window.editKennisbankItemInline(\'' + kb.id + '\')" title="Bewerken">✏️</button>' +
         '<button class="btn-icon btn-icon-danger" onclick="window.deleteKennisbankItem(\'' + kb.id + '\')" title="Verwijderen">🗑️</button>' +
         '</div></div></div>';
     }).join('');
+
+    // Event delegation — één listener per container, overleeft re-renders
+    if (!container.dataset.kbToggleDelegated) {
+      container.addEventListener('click', function (e) {
+        var toggle = e.target && e.target.closest ? e.target.closest('.kb-toggle') : null;
+        if (!toggle) return;
+        var id = toggle.getAttribute('data-kb-id');
+        if (!id) return;
+        var card = toggle.closest('[data-kb-id]');
+        var wrap = card && card.querySelector('.kb-antwoord-wrap');
+        var chev = card && card.querySelector('.kb-chevron');
+        if (!wrap || !chev) return;
+        var nuIngeklapt = wrap.style.display === 'none';
+        wrap.style.display = nuIngeklapt ? '' : 'none';
+        chev.textContent = nuIngeklapt ? '▼' : '▶';
+        localStorage.setItem('wegwijzer_kb_collapse_' + id, nuIngeklapt ? '0' : '1');
+      });
+      container.dataset.kbToggleDelegated = '1';
+    }
   }
 
   window.deleteKennisbankItem = async function (id) {
@@ -3529,6 +3560,12 @@
   window.editKennisbankItemInline = function (id) {
     var card = document.querySelector('[data-kb-id="' + id + '"]');
     if (!card) return;
+    // Force uitklappen zodat de antwoord-textarea zichtbaar is tijdens edit
+    var wrap = card.querySelector('.kb-antwoord-wrap');
+    if (wrap) wrap.style.display = '';
+    var chev = card.querySelector('.kb-chevron');
+    if (chev) chev.textContent = '▼';
+
     var vraagEl = card.querySelector('.kb-vraag');
     var antwoordEl = card.querySelector('.kb-antwoord');
     var huidigeVraag = vraagEl.textContent.replace(/^✏️\s*/, '');
