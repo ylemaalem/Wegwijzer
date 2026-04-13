@@ -71,12 +71,18 @@
     initLogout();
     initSearch();
     laadTenantInstellingen();
-    // Nieuwe features — elke functie kiest zelf de juiste inwerkweek op basis van het zichtbaarheidsvenster.
-    // weekNummer 0 = startdatum ligt nog in de toekomst → geen briefing/quiz/vertrouwenscheck.
+    initVcToggle();
+    // Briefing en quiz alleen tijdens inwerktraject (week 1-6).
+    // weekNummer 0 = startdatum ligt nog in de toekomst → geen briefing/quiz.
     if (heeftInwerktraject && weekNummer >= 1) {
       checkWeekstartBriefing();
-      checkVertrouwenscheck();
       checkKennisquiz();
+    }
+    // Vertrouwenscheck loopt OOK door na week 6 / na afronding inwerktraject —
+    // gate zit nu op profile.vertrouwenscheck_actief en de startdatum.
+    // Alleen skip als startdatum nog in toekomst ligt.
+    if (profile.startdatum && weekNummer !== 0) {
+      checkVertrouwenscheck();
     }
     checkRolwissel();
   });
@@ -146,18 +152,29 @@
     return null;
   }
 
-  // Welke inwerkweek heeft op dit moment een actief VERTROUWENSCHECK-venster?
-  // Vertrouwenscheck week N: vr 00:00 van inwerkweek N t/m do 23:59 van inwerkweek N+1.
+  // Welke (inwerk)week heeft op dit moment een actief VERTROUWENSCHECK-venster?
+  // Venster: vr 00:00 van week N t/m do 23:59 van week N+1.
+  // Loopt door OOK na week 6 — de check blijft wekelijks beschikbaar tenzij
+  // de medewerker hem expliciet uitschakelt via profile.vertrouwenscheck_actief.
   function actieveVertrouwenscheckWeek(startdatum) {
     if (!startdatum) return null;
     var nu = new Date();
-    for (var n = 1; n <= 6; n++) {
-      var ma = maandagInwerkweek(startdatum, n);
-      if (!ma) return null;
+    var ma1 = maandagInwerkweek(startdatum, 1);
+    if (!ma1) return null;
+    // Bereken huidige inwerkweek-nummer rechtstreeks i.p.v. te loopen
+    var msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    var weekIndex = Math.floor((nu.getTime() - ma1.getTime()) / msPerWeek); // 0-based
+    // Het venster van week N start vrijdag = ma1 + (N-1)*7 + 4 dagen
+    // Check eerst de voorlopende week (medewerker is na vrijdag van week N maar voor vrijdag week N+1)
+    for (var delta = 0; delta <= 1; delta++) {
+      var n = weekIndex + 1 - delta; // huidige week of vorige
+      if (n < 1) continue;
+      var ma = new Date(ma1);
+      ma.setDate(ma1.getDate() + (n - 1) * 7);
       var vrijdag = new Date(ma);
-      vrijdag.setDate(ma.getDate() + 4); // vr 00:00 van week N
+      vrijdag.setDate(ma.getDate() + 4);
       var einde = new Date(vrijdag);
-      einde.setDate(vrijdag.getDate() + 7); // vr 00:00 van week N+1 = direct na do 23:59
+      einde.setDate(vrijdag.getDate() + 7);
       if (nu >= vrijdag && nu < einde) return n;
     }
     return null;
@@ -886,12 +903,69 @@
   // =============================================
   // VERTROUWENSCHECK (model: delen ja/nee)
   // =============================================
+
+  // Eénmalig dialoog na week 6: wil je de wekelijkse check blijven ontvangen?
+  // Resolved met true = doorgaan deze sessie, false = uitgeschakeld (geen check tonen).
+  function toonVertrouwenscheckKeuze() {
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px';
+      overlay.innerHTML =
+        '<div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:100%;text-align:center">' +
+        '<h3 style="margin:0 0 12px;font-size:1.05rem">Je inwerktraject is afgerond 🎉</h3>' +
+        '<p style="font-size:0.9rem;color:var(--text);margin:0 0 20px;line-height:1.5">Wil je de wekelijkse check blijven ontvangen?</p>' +
+        '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<button class="btn btn-primary" id="vc-keuze-ja" style="font-size:0.9rem;padding:10px">Ja, blijven</button>' +
+        '<button class="btn btn-secondary" id="vc-keuze-nee" style="font-size:0.9rem;padding:10px">Nee, stoppen</button>' +
+        '</div></div>';
+      document.body.appendChild(overlay);
+
+      overlay.querySelector('#vc-keuze-ja').addEventListener('click', async function () {
+        localStorage.setItem('vertrouwenscheck_keuze_gemaakt', 'true');
+        // vertrouwenscheck_actief blijft true (default) — geen DB-update nodig,
+        // maar voor de zekerheid expliciet zetten zodat oude rijen zonder waarde meegaan
+        await supabaseClient
+          .from('profiles')
+          .update({ vertrouwenscheck_actief: true })
+          .eq('user_id', user.id);
+        profile.vertrouwenscheck_actief = true;
+        if (typeof window.updateVcToggleVisual === 'function') window.updateVcToggleVisual();
+        overlay.remove();
+        resolve(true);
+      });
+
+      overlay.querySelector('#vc-keuze-nee').addEventListener('click', async function () {
+        localStorage.setItem('vertrouwenscheck_keuze_gemaakt', 'true');
+        await supabaseClient
+          .from('profiles')
+          .update({ vertrouwenscheck_actief: false })
+          .eq('user_id', user.id);
+        profile.vertrouwenscheck_actief = false;
+        if (typeof window.updateVcToggleVisual === 'function') window.updateVcToggleVisual();
+        overlay.remove();
+        resolve(false);
+      });
+    });
+  }
+
   async function checkVertrouwenscheck() {
-    // Zichtbaarheidsvenster: vr 00:00 van inwerkweek N t/m do 23:59 van inwerkweek N+1
+    // Profile gate: medewerker kan zelf de wekelijkse check uitschakelen
+    // via 🔔 toggle in de header. Default = true.
+    if (profile.vertrouwenscheck_actief === false) return;
+
+    // Zichtbaarheidsvenster: vr 00:00 van week N t/m do 23:59 van week N+1
+    // (loopt door na week 6)
     var vcWeek = actieveVertrouwenscheckWeek(profile.startdatum);
     if (!vcWeek) return;
 
-    // Check of al ingevuld deze inwerkweek (DB is leidend)
+    // Na week 6 — eerste keer dat de check verschijnt: vraag of medewerker
+    // hem wil blijven ontvangen. Eénmalig per browser via localStorage.
+    if (vcWeek > 6 && !localStorage.getItem('vertrouwenscheck_keuze_gemaakt')) {
+      var keuzeBevestigd = await toonVertrouwenscheckKeuze();
+      if (!keuzeBevestigd) return; // medewerker koos "Nee, stoppen" — break out
+    }
+
+    // Check of al ingevuld deze week (DB is leidend)
     var bestaand = await supabaseClient
       .from('vertrouwens_scores')
       .select('id')
@@ -900,12 +974,21 @@
       .limit(1);
     if (bestaand.data && bestaand.data.length > 0) return;
 
-    // Aanvullende check via localStorage (per inwerkweek)
+    // Aanvullende check via localStorage (per week)
     var vcKey = 'wegwijzer_vc_week_' + vcWeek;
     if (localStorage.getItem(vcKey)) return;
 
     var modal = document.getElementById('vertrouwenscheck-modal');
     if (!modal) return;
+
+    // Vraagstelling aanpassen op fase
+    var titelEl = modal.querySelector('h3');
+    if (titelEl) {
+      titelEl.textContent = vcWeek <= 6
+        ? 'Hoe zeker voel je je in je werk deze week?'
+        : 'Hoe zit jij erin deze week?';
+    }
+
     modal.style.display = 'flex';
 
     var gekozenScore = 0;
@@ -1312,6 +1395,57 @@
     document.getElementById('logout-btn').addEventListener('click', async function () {
       await supabaseClient.auth.signOut();
       window.location.href = appUrl('index.html');
+    });
+  }
+
+  // =============================================
+  // 🔔 VERTROUWENSCHECK TOGGLE in header
+  // =============================================
+  function initVcToggle() {
+    var btn = document.getElementById('vc-toggle-btn');
+    var bevestiging = document.getElementById('vc-toggle-bevestiging');
+    if (!btn) return;
+
+    // Toon alleen voor medewerkers met een startdatum (anders niet relevant)
+    if (!profile.startdatum) {
+      btn.classList.add('hidden');
+      return;
+    }
+
+    function applyVisual() {
+      var aan = profile.vertrouwenscheck_actief !== false;
+      btn.classList.toggle('vc-on', aan);
+      btn.classList.toggle('vc-off', !aan);
+      btn.title = aan ? 'Wekelijkse check staat aan — klik om uit te zetten' : 'Wekelijkse check staat uit — klik om aan te zetten';
+    }
+    // Expose voor de keuze-dialoog (na week 6) zodat die de visual kan refreshen
+    window.updateVcToggleVisual = applyVisual;
+    applyVisual();
+
+    function toonBevestiging(tekst) {
+      if (!bevestiging) return;
+      bevestiging.textContent = tekst;
+      bevestiging.style.display = '';
+      setTimeout(function () { bevestiging.style.display = 'none'; }, 2000);
+    }
+
+    btn.addEventListener('click', async function () {
+      var nieuw = !(profile.vertrouwenscheck_actief !== false);
+      btn.disabled = true;
+      var result = await supabaseClient
+        .from('profiles')
+        .update({ vertrouwenscheck_actief: nieuw })
+        .eq('user_id', user.id)
+        .select();
+      btn.disabled = false;
+      console.log('[VcToggle] Update naar', nieuw, 'response:', result.error, 'rows:', result.data);
+      if (result.error) {
+        alert('Toggle mislukt: ' + result.error.message);
+        return;
+      }
+      profile.vertrouwenscheck_actief = nieuw;
+      applyVisual();
+      toonBevestiging(nieuw ? '🔔 Wekelijkse check ingeschakeld' : '🔕 Wekelijkse check uitgeschakeld');
     });
   }
 

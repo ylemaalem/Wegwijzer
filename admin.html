@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/admin.css?v=2">
+  <link rel="stylesheet" href="css/admin.css?v=3">
 </head>
 <body class="admin-page">
   <div class="page-container">
@@ -308,6 +308,25 @@
       <section class="tab-content" id="tab-rapporten">
         <h2 class="section-title">Rapporten</h2>
         <p class="section-subtitle">Rapportages over gebruik, kwaliteit en tijdwinst.</p>
+
+        <!-- ROI widget (altijd zichtbaar) -->
+        <div class="roi-card" id="roi-card">
+          <div class="roi-card-head">
+            <h3 class="roi-card-title">ROI overzicht</h3>
+            <div class="roi-toggle" role="tablist">
+              <button type="button" class="roi-toggle-btn active" data-roi-periode="maand" role="tab" aria-selected="true">Maand</button>
+              <button type="button" class="roi-toggle-btn" data-roi-periode="week" role="tab" aria-selected="false">Week</button>
+            </div>
+          </div>
+          <div class="roi-grid" id="roi-grid">
+            <div class="roi-metric"><span class="roi-label">Totaal vragen</span><span class="roi-value" id="roi-vragen">—</span></div>
+            <div class="roi-metric"><span class="roi-label">Tijdwinst leidinggevende</span><span class="roi-value" id="roi-tijdwinst">—</span></div>
+            <div class="roi-metric"><span class="roi-label">Positieve feedback</span><span class="roi-value" id="roi-feedback">—</span></div>
+            <div class="roi-metric"><span class="roi-label">Actieve medewerkers</span><span class="roi-value" id="roi-actief">—</span></div>
+            <div class="roi-metric roi-metric-jaar" id="roi-metric-jaar"><span class="roi-label">Geschatte jaarwaarde</span><span class="roi-value" id="roi-jaar">—</span></div>
+          </div>
+          <p class="roi-noot">Gebaseerd op gemiddeld 8 min. per vraag à €35/uur — schatting</p>
+        </div>
 
         <!-- Filters -->
         <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px">
@@ -1147,7 +1166,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=12"></script>
+  <script src="js/admin.js?v=13"></script>
 
 </body>
 </html>

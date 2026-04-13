@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
   <link rel="stylesheet" href="css/medewerker.css?v=5">
 </head>
 <body class="medewerker-page">
@@ -30,10 +30,13 @@
       <div class="header-spacer"></div>
       <a href="https://mijnwegwijzer.com/handleiding.html" target="_blank" rel="noopener noreferrer" class="header-icon-btn" id="handleiding-btn" title="Handleiding" aria-label="Handleiding openen">📖</a>
       <button class="header-icon-btn hidden" id="search-toggle-btn" title="Zoeken in gesprekken" aria-label="Zoeken">🔍</button>
+      <button type="button" class="header-icon-btn vc-toggle" id="vc-toggle-btn" title="Wekelijkse check" aria-label="Wekelijkse check aan/uit">🔔</button>
       <button type="button" class="header-icon-btn" id="app-feedback-btn" title="Feedback geven" aria-label="Feedback geven">💬</button>
       <a href="teamleider.html" class="header-btn hidden" id="dashboard-btn">← Terug naar dashboard</a>
       <button class="header-btn" id="logout-btn">Uitloggen</button>
     </header>
+    <!-- Vc toggle bevestigingstekst (zwevend onder header) -->
+    <div id="vc-toggle-bevestiging" style="display:none;position:fixed;top:64px;left:50%;transform:translateX(-50%);background:var(--bg-white);border:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:8px 16px;border-radius:20px;font-size:0.85rem;color:var(--text);z-index:150;white-space:nowrap"></div>
 
     <!-- ===== CONTENT ===== -->
     <main class="page-content">
@@ -236,7 +239,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=2"></script>
-  <script src="js/medewerker.js?v=7"></script>
+  <script src="js/medewerker.js?v=8"></script>
 
 </body>
 </html>

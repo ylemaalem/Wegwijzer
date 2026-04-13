@@ -156,6 +156,16 @@ body {
   background: rgba(255, 255, 255, 0.3);
   text-decoration: none;
 }
+
+/* Vertrouwenscheck toggle — groen = aan, grijs = uit. Filter op de emoji
+   zelf zodat we de bestaande kleur omkleuren zonder extra DOM. */
+.vc-toggle.vc-on {
+  background: rgba(46, 204, 113, 0.35);
+}
+.vc-toggle.vc-off {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
 @media (max-width: 480px) {
   .header-icon-btn {
     padding: 6px 9px;

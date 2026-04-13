@@ -312,25 +312,31 @@
   }
 
   // =============================================
-  // VERTROUWENSCHECK — alleen scores die medewerker expliciet heeft gedeeld
+  // VERTROUWENSCHECK — alle gedeelde scores (inclusief na week 6) van
+  // medewerkers met vertrouwenscheck_actief = true
   // =============================================
   async function loadTeamVertrouwen() {
     var container = document.getElementById('tl-vertrouwen-lijst');
     if (!container) return;
 
-    // Verzamel auth user_ids van mijn teamleden
-    var teamUserIds = teamProfiles.map(function (p) { return p.user_id; }).filter(function (v) { return !!v; });
-    if (teamUserIds.length === 0) {
-      container.innerHTML = '<p class="no-data">Geen gedeelde scores.</p>';
+    // Filter teamProfiles op vertrouwenscheck_actief — geen lege rijen voor
+    // medewerkers die de check zelf hebben uitgeschakeld
+    var actieveProfielen = teamProfiles.filter(function (p) {
+      return p.user_id && p.vertrouwenscheck_actief !== false;
+    });
+    if (actieveProfielen.length === 0) {
+      container.innerHTML = '<p class="no-data">Geen actieve vertrouwenscheck-deelnemers in jouw team.</p>';
       return;
     }
+    var teamUserIds = actieveProfielen.map(function (p) { return p.user_id; });
 
+    // Haal ALLE gedeelde scores op (geen week 1-6 grens)
     var result = await supabaseClient
       .from('vertrouwens_scores')
       .select('user_id, week_nummer, score, created_at')
       .eq('gedeeld', true)
       .in('user_id', teamUserIds)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true }); // chronologisch voor trendlijn
 
     var rows = (result.data || []);
     if (rows.length === 0) {
@@ -338,17 +344,80 @@
       return;
     }
 
-    // Naam-mapping op basis van auth user_id
+    // Naam-mapping
     var naamMap = {};
-    teamProfiles.forEach(function (p) { if (p.user_id) naamMap[p.user_id] = p.naam; });
+    actieveProfielen.forEach(function (p) { naamMap[p.user_id] = p.naam; });
 
-    var html = '<div class="data-table-wrap"><table class="data-table">' +
-      '<thead><tr><th>Medewerker</th><th>Inwerkweek</th><th>Score</th><th>Datum</th></tr></thead><tbody>';
+    // ==== Trendlijn (SVG) — gemiddelde score per week, datum-as ====
+    var perWeek = {}; // sleutel: YYYY-WW
     rows.forEach(function (s) {
+      var d = new Date(s.created_at);
+      // ISO week-key: jaar + weeknummer (simpel — gebruik maandag van die week)
+      var dag = d.getDay();
+      var offset = dag === 0 ? -6 : 1 - dag;
+      var ma = new Date(d);
+      ma.setDate(d.getDate() + offset);
+      ma.setHours(0, 0, 0, 0);
+      var key = ma.toISOString().substring(0, 10);
+      if (!perWeek[key]) perWeek[key] = { datum: ma, scores: [] };
+      perWeek[key].scores.push(s.score);
+    });
+    var weken = Object.keys(perWeek).sort().map(function (k) {
+      var w = perWeek[k];
+      var som = w.scores.reduce(function (a, b) { return a + b; }, 0);
+      return { datum: w.datum, gem: som / w.scores.length, aantal: w.scores.length };
+    });
+
+    var trendHtml = '';
+    if (weken.length >= 2) {
+      var W = 600, H = 160, padL = 36, padR = 12, padT = 14, padB = 32;
+      var plotW = W - padL - padR, plotH = H - padT - padB;
+      var dx = weken.length > 1 ? plotW / (weken.length - 1) : 0;
+      var pts = weken.map(function (w, i) {
+        var x = padL + i * dx;
+        var y = padT + (1 - (w.gem - 1) / 4) * plotH; // score 1..5 → y omgekeerd
+        return { x: x, y: y, w: w };
+      });
+      var path = pts.map(function (p, i) { return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ' ' + p.y.toFixed(1); }).join(' ');
+      // Y-as gridlijnen + labels (1..5)
+      var yLines = '';
+      for (var v = 1; v <= 5; v++) {
+        var y = padT + (1 - (v - 1) / 4) * plotH;
+        yLines += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y + '" stroke="#e5e5e5" stroke-width="1"/>';
+        yLines += '<text x="' + (padL - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="#888" font-family="sans-serif">' + v + '</text>';
+      }
+      // X-as labels (datum)
+      var xLabels = '';
+      var stap = Math.max(1, Math.ceil(weken.length / 6));
+      pts.forEach(function (p, i) {
+        if (i % stap !== 0 && i !== pts.length - 1) return;
+        var lab = p.w.datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+        xLabels += '<text x="' + p.x + '" y="' + (H - 10) + '" text-anchor="middle" font-size="10" fill="#666" font-family="sans-serif">' + lab + '</text>';
+      });
+      var dots = pts.map(function (p) {
+        return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3.5" fill="#0D5C6B"/>';
+      }).join('');
+      trendHtml =
+        '<div style="margin-bottom:16px">' +
+        '<h4 style="font-size:0.9rem;margin:0 0 8px;color:#0D5C6B">Trendlijn — gemiddelde gedeelde score per week</h4>' +
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:var(--bg-white);border:1px solid var(--border);border-radius:6px">' +
+        yLines +
+        '<path d="' + path + '" fill="none" stroke="#0D5C6B" stroke-width="2"/>' +
+        dots +
+        xLabels +
+        '</svg>' +
+        '</div>';
+    }
+
+    // ==== Tabel met details ====
+    var html = trendHtml + '<div class="data-table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Medewerker</th><th>Week</th><th>Score</th><th>Datum</th></tr></thead><tbody>';
+    // Recente eerst in de tabel
+    [].concat(rows).reverse().forEach(function (s) {
       var naam = naamMap[s.user_id] || 'Onbekend';
       var sterren = '';
       for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
-      var datum = new Date(s.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var datum = new Date(s.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
       html += '<tr>' +
         '<td>' + escapeHtml(naam) + '</td>' +
         '<td>Week ' + s.week_nummer + '</td>' +

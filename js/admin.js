@@ -66,7 +66,98 @@
     loadTerugblikLog();
     initVerbeterCollapse();
     initSuggestieDelegation();
+    initRoiWidget();
   });
+
+  // =============================================
+  // ROI WIDGET (Rapporten tab)
+  // =============================================
+  var roiCurrentPeriode = 'maand';
+
+  function initRoiWidget() {
+    var card = document.getElementById('roi-card');
+    if (!card) return;
+    var toggleBtns = card.querySelectorAll('.roi-toggle-btn');
+    toggleBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var periode = btn.getAttribute('data-roi-periode');
+        if (periode === roiCurrentPeriode) return;
+        roiCurrentPeriode = periode;
+        toggleBtns.forEach(function (b) {
+          var actief = b.getAttribute('data-roi-periode') === periode;
+          b.classList.toggle('active', actief);
+          b.setAttribute('aria-selected', actief ? 'true' : 'false');
+        });
+        loadRoiWidget();
+      });
+    });
+    loadRoiWidget();
+  }
+
+  async function loadRoiWidget() {
+    var dagen = roiCurrentPeriode === 'week' ? 7 : 30;
+    var sinds = new Date();
+    sinds.setDate(sinds.getDate() - dagen);
+
+    var convsRes = await supabaseClient
+      .from('conversations')
+      .select('id, user_id, feedback, created_at')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', sinds.toISOString());
+    var convs = convsRes.data || [];
+
+    var profsRes = await supabaseClient
+      .from('profiles')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'medewerker');
+    var totaalMedewerkers = (profsRes.data || []).length;
+
+    var totaalVragen = convs.length;
+    var uren = Math.round(totaalVragen * 8 / 60);
+    var euros = uren * 35;
+    var positief = convs.filter(function (c) { return c.feedback === 'goed'; }).length;
+    var negatief = convs.filter(function (c) { return c.feedback === 'niet_goed'; }).length;
+    var unieke = {};
+    convs.forEach(function (c) { if (c.user_id) unieke[c.user_id] = true; });
+    var actief = Object.keys(unieke).length;
+
+    function setText(id, val) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+
+    if (totaalVragen === 0) {
+      setText('roi-vragen', 'Nog geen data');
+      setText('roi-tijdwinst', 'Nog geen data');
+      setText('roi-feedback', 'Nog geen data');
+      setText('roi-actief', totaalMedewerkers > 0 ? '0 van ' + totaalMedewerkers : 'Nog geen data');
+    } else {
+      setText('roi-vragen', String(totaalVragen));
+      setText('roi-tijdwinst', '~' + uren + ' uur (~€' + euros.toLocaleString('nl-NL') + ' bespaard)');
+      var fbTotaal = positief + negatief;
+      if (fbTotaal === 0) {
+        setText('roi-feedback', 'Nog geen feedback');
+      } else {
+        var pct = Math.round(positief / fbTotaal * 100);
+        setText('roi-feedback', pct + '% (' + positief + ' van ' + fbTotaal + ')');
+      }
+      setText('roi-actief', actief + ' van ' + totaalMedewerkers);
+    }
+
+    // Jaarwaarde alleen bij Maand
+    var jaarMetric = document.getElementById('roi-metric-jaar');
+    if (jaarMetric) {
+      if (roiCurrentPeriode === 'maand' && totaalVragen > 0) {
+        jaarMetric.style.display = '';
+        var jaarUren = uren * 12;
+        var jaarEuros = euros * 12;
+        setText('roi-jaar', '~' + jaarUren + ' uur (~€' + jaarEuros.toLocaleString('nl-NL') + ')');
+      } else {
+        jaarMetric.style.display = 'none';
+      }
+    }
+  }
 
   // =============================================
   // EVENT DELEGATION voor dynamisch gerenderde knoppen in kennissuggesties
