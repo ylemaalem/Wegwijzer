@@ -541,3 +541,59 @@
 @media (max-width: 480px) {
   .roi-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- Organisatie switcher (alleen Wegwijzer Beheer) ---- */
+.org-switcher {
+  background: #0D5C6B;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+.org-switcher-icon { font-size: 1.1rem; }
+.org-switcher-select {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 220px;
+}
+.org-switcher-select option { color: #1f1f1f; background: #ffffff; }
+.org-switcher-label { opacity: 0.85; font-size: 0.8rem; }
+.org-switcher-add {
+  margin-left: auto;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #ffffff;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  width: auto;
+}
+.org-switcher-add:hover { background: rgba(255,255,255,0.28); }
+
+.active-org-badge {
+  background: rgba(255,255,255,0.18);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .org-switcher { padding: 8px 12px; gap: 6px; font-size: 0.78rem; }
+  .org-switcher-select { min-width: 140px; flex: 1; }
+  .org-switcher-label { display: none; }
+  .org-switcher-add { font-size: 0.72rem; padding: 5px 10px; }
+}

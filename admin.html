@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/admin.css?v=3">
+  <link rel="stylesheet" href="css/admin.css?v=4">
 </head>
 <body class="admin-page">
   <div class="page-container">
@@ -21,9 +21,18 @@
     <header class="app-header">
       <div id="admin-logo-container" style="flex-shrink:0"></div>
       <h1 id="admin-header-title">Wegwijzer</h1>
+      <span id="admin-active-org-badge" class="active-org-badge" style="display:none"></span>
       <div class="header-spacer"></div>
       <button class="header-btn" id="logout-btn">Uitloggen</button>
     </header>
+
+    <!-- Organisatie switcher (alleen zichtbaar voor Wegwijzer Beheer) -->
+    <div id="org-switcher-bar" class="org-switcher" style="display:none">
+      <span class="org-switcher-icon" aria-hidden="true">🏢</span>
+      <select id="org-switcher-select" class="org-switcher-select" aria-label="Wisselen tussen organisaties"></select>
+      <span class="org-switcher-label">— Beheer wisselen</span>
+      <button type="button" class="btn btn-secondary org-switcher-add" id="add-org-btn">+ Nieuwe organisatie</button>
+    </div>
 
     <!-- Hoofdtab navigatie (6 groepen, scrollable op mobiel) -->
     <nav class="tab-nav" id="tab-nav">
@@ -1085,6 +1094,36 @@
       </div>
     </div>
 
+    <!-- ========== MODAL: NIEUWE ORGANISATIE (alleen Wegwijzer Beheer) ========== -->
+    <div class="modal-overlay" id="modal-nieuwe-org">
+      <div class="modal">
+        <h3 class="modal-title">Nieuwe organisatie aanmaken</h3>
+        <div id="nieuwe-org-alert" class="alert" role="alert" style="display:none">
+          <span id="nieuwe-org-alert-message"></span>
+        </div>
+        <form id="nieuwe-org-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="nieuwe-org-naam">Naam organisatie *</label>
+            <input class="form-input" type="text" id="nieuwe-org-naam" maxlength="100" placeholder="Bijv. Zorgorganisatie X" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="nieuwe-org-kleur">Primaire kleur</label>
+            <input class="form-input" type="text" id="nieuwe-org-kleur" maxlength="7" placeholder="#0D5C6B" value="#0D5C6B">
+            <p class="section-subtitle" style="margin:4px 0 0;font-size:0.72rem">Hex-kleurcode (optioneel)</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="nieuwe-org-email">Email contactpersoon</label>
+            <input class="form-input" type="email" id="nieuwe-org-email" placeholder="contact@organisatie.nl">
+            <p class="section-subtitle" style="margin:4px 0 0;font-size:0.72rem">Optioneel — wordt bewaard in settings</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="nieuwe-org-cancel">Annuleren</button>
+            <button type="submit" class="btn btn-primary" id="nieuwe-org-submit">Aanmaken</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- ========== MODAL: TEAMLEIDER TOEVOEGEN/BEWERKEN ========== -->
     <div class="modal-overlay" id="modal-teamleider">
       <div class="modal">
@@ -1166,7 +1205,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=14"></script>
+  <script src="js/admin.js?v=15"></script>
 
 </body>
 </html>

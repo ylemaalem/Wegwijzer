@@ -828,7 +828,13 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           );
         }
 
-        const { data: convs } = await supabaseAdmin.from("conversations").select("id, feedback, created_at, user_id").eq("tenant_id", profile.tenant_id);
+        // Maandoverzicht: alleen gesprekken van de laatste 30 dagen
+        const dertigDagenGeleden = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: convs } = await supabaseAdmin
+          .from("conversations")
+          .select("id, feedback, created_at, user_id")
+          .eq("tenant_id", profile.tenant_id)
+          .gte("created_at", dertigDagenGeleden);
         const { data: profs } = await supabaseAdmin.from("profiles").select("id, naam").eq("tenant_id", profile.tenant_id).eq("role", "medewerker");
 
         const totaalVragen = convs ? convs.length : 0;

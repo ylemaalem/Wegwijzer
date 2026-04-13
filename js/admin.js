@@ -29,10 +29,32 @@
     'Team Molenweg', 'Team Gele Weiland', 'Team Manuscript', 'Team VAN', 'Team FAN', 'Team FANMN'
   ];
 
+  // Superadmin = de "Wegwijzer Beheer" admin. Mag wisselen tussen tenants
+  // via de organisatie-switcher in de header. Wanneer een override actief is
+  // (localStorage), wordt tenantId hieronder vervangen door die waarde
+  // — alle bestaande queries die .eq('tenant_id', tenantId) doen profiteren
+  // automatisch zonder per-call wijziging.
+  var isSuperadmin = false;
+  var eigenTenantId = null;
+
   // ---- Wacht op auth ----
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
-    tenantId = e.detail.profile.tenant_id;
+    var profile = e.detail.profile;
+    eigenTenantId = profile.tenant_id;
+    tenantId = eigenTenantId;
     currentUserId = e.detail.user ? e.detail.user.id : null;
+
+    isSuperadmin = profile.naam === 'Wegwijzer Beheer' && profile.role === 'admin';
+    if (isSuperadmin) {
+      var override = localStorage.getItem('wegwijzer_active_tenant_id');
+      if (override && override !== eigenTenantId) {
+        tenantId = override;
+        console.log('[Superadmin] tenantId override actief:', override);
+      }
+      initOrgSwitcher();
+      initNieuweOrgModal();
+    }
+
     initTabs();
     initLogout();
     await loadFunctiegroepen();
@@ -352,6 +374,150 @@
     document.getElementById('logout-btn').addEventListener('click', async function () {
       await supabaseClient.auth.signOut();
       window.location.href = appUrl('index.html');
+    });
+  }
+
+  // =============================================
+  // ORGANISATIE SWITCHER (alleen Wegwijzer Beheer)
+  // =============================================
+  async function initOrgSwitcher() {
+    var bar = document.getElementById('org-switcher-bar');
+    var select = document.getElementById('org-switcher-select');
+    var badge = document.getElementById('admin-active-org-badge');
+    if (!bar || !select) return;
+
+    // Tenants ophalen — dankzij is_superadmin() RLS policy ziet superadmin alle rijen
+    var result = await supabaseClient.from('tenants').select('id, naam').order('naam');
+    console.log('[OrgSwitcher] Tenants geladen:', result.data ? result.data.length : 0, result.error);
+    if (result.error) {
+      bar.style.display = 'none';
+      return;
+    }
+    var tenants = result.data || [];
+
+    // Vul dropdown
+    select.innerHTML = tenants.map(function (t) {
+      var sel = t.id === tenantId ? ' selected' : '';
+      return '<option value="' + t.id + '"' + sel + '>' + escapeHtml(t.naam) + '</option>';
+    }).join('');
+
+    bar.style.display = '';
+
+    // Active-org badge in header (toont waar de superadmin nu zit)
+    if (badge) {
+      var actief = tenants.find(function (t) { return t.id === tenantId; });
+      if (actief) {
+        badge.textContent = '🏢 ' + actief.naam;
+        badge.style.display = '';
+      }
+    }
+
+    select.addEventListener('change', function () {
+      var nieuw = select.value;
+      if (!nieuw) return;
+      if (nieuw === eigenTenantId) {
+        // Terug naar eigen tenant — wis override
+        localStorage.removeItem('wegwijzer_active_tenant_id');
+      } else {
+        localStorage.setItem('wegwijzer_active_tenant_id', nieuw);
+      }
+      // Reload zodat alle queries opnieuw met de nieuwe tenantId draaien
+      window.location.reload();
+    });
+  }
+
+  function initNieuweOrgModal() {
+    var addBtn = document.getElementById('add-org-btn');
+    var modal = document.getElementById('modal-nieuwe-org');
+    var form = document.getElementById('nieuwe-org-form');
+    var cancelBtn = document.getElementById('nieuwe-org-cancel');
+    var submitBtn = document.getElementById('nieuwe-org-submit');
+    var alertBox = document.getElementById('nieuwe-org-alert');
+    var alertMsg = document.getElementById('nieuwe-org-alert-message');
+    if (!addBtn || !modal) return;
+
+    function showAlert(type, msg) {
+      alertBox.className = 'alert alert-' + type + ' show';
+      alertBox.style.display = '';
+      alertMsg.textContent = msg;
+    }
+    function clearAlert() {
+      alertBox.className = 'alert';
+      alertBox.style.display = 'none';
+      alertMsg.textContent = '';
+    }
+
+    addBtn.addEventListener('click', function () {
+      form.reset();
+      document.getElementById('nieuwe-org-kleur').value = '#0D5C6B';
+      clearAlert();
+      modal.classList.add('show');
+    });
+
+    cancelBtn.addEventListener('click', function () { modal.classList.remove('show'); });
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      clearAlert();
+      var naam = document.getElementById('nieuwe-org-naam').value.trim();
+      var kleur = document.getElementById('nieuwe-org-kleur').value.trim() || '#0D5C6B';
+      var email = document.getElementById('nieuwe-org-email').value.trim();
+      if (!naam) { showAlert('error', 'Naam is verplicht.'); return; }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Aanmaken...';
+
+      // Stap 1: nieuwe tenant
+      var tenantInsert = await supabaseClient
+        .from('tenants')
+        .insert({ naam: naam })
+        .select('id, naam')
+        .single();
+      console.log('[NieuweOrg] Tenant insert:', tenantInsert.error, tenantInsert.data);
+      if (tenantInsert.error || !tenantInsert.data) {
+        showAlert('error', 'Aanmaken mislukt: ' + (tenantInsert.error ? tenantInsert.error.message : 'geen rij teruggekregen'));
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Aanmaken';
+        return;
+      }
+      var newTenantId = tenantInsert.data.id;
+
+      // Stap 2: settings rijen (organisatienaam altijd, kleur + email indien gegeven)
+      var settingsRows = [
+        { tenant_id: newTenantId, sleutel: 'organisatienaam', waarde: naam }
+      ];
+      if (kleur && /^#?[0-9a-fA-F]{3,8}$/.test(kleur)) {
+        settingsRows.push({ tenant_id: newTenantId, sleutel: 'primaire_kleur', waarde: kleur.startsWith('#') ? kleur : '#' + kleur });
+      }
+      if (email) {
+        settingsRows.push({ tenant_id: newTenantId, sleutel: 'contact_email', waarde: email });
+      }
+      var settingsInsert = await supabaseClient.from('settings').insert(settingsRows).select();
+      console.log('[NieuweOrg] Settings insert:', settingsInsert.error, settingsInsert.data ? settingsInsert.data.length : 0, 'rijen');
+      if (settingsInsert.error) {
+        // tenant is wel aangemaakt — laat de gebruiker toch weten dat het deels gelukt is
+        showAlert('error', 'Tenant aangemaakt maar settings mislukt: ' + settingsInsert.error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Aanmaken';
+        return;
+      }
+
+      showAlert('success', 'Organisatie aangemaakt. Schakel ernaar via de dropdown om accounts en documenten toe te voegen.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Aanmaken';
+
+      // Refresh switcher dropdown om de nieuwe org te tonen
+      var refreshResult = await supabaseClient.from('tenants').select('id, naam').order('naam');
+      var select = document.getElementById('org-switcher-select');
+      if (select && refreshResult.data) {
+        select.innerHTML = refreshResult.data.map(function (t) {
+          var sel = t.id === tenantId ? ' selected' : '';
+          return '<option value="' + t.id + '"' + sel + '>' + escapeHtml(t.naam) + '</option>';
+        }).join('');
+      }
     });
   }
 
