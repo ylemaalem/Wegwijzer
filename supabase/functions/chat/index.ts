@@ -1294,7 +1294,31 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
       : "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de leidinggevende voor organisatiespecifieke informatie.";
 
-    const systemPrompt = `${basisPrompt}${profielInfo}${geheugenContext}${weekContext}
+    // ---- Sparring modus: speciale instructieblok voor het advies ----
+    const isSparring = body.sparring === true
+      && Array.isArray(body.sparring_context)
+      && body.sparring_context.length === 3;
+    let sparringBlock = "";
+    if (isSparring) {
+      const ctx = body.sparring_context as string[];
+      sparringBlock = `
+
+SPARRING MODUS — DEZE VRAAG IS EEN SPARRING-SESSIE.
+De medewerker heeft een cliëntsituatie beschreven via 3 vragen. Hier zijn de antwoorden:
+
+1. Om welke cliënt en wat is er aan de hand:
+${(ctx[0] || "").substring(0, 1500)}
+
+2. Wat heeft de medewerker al geprobeerd:
+${(ctx[1] || "").substring(0, 1500)}
+
+3. Wat is voor de medewerker het moeilijkste:
+${(ctx[2] || "").substring(0, 1500)}
+
+GEEF NU EEN CONCREET, PRAKTISCH ADVIES op basis van deze 3 antwoorden en de KENNISBRONNEN hieronder. Verwijs naar relevante protocollen of documenten waar van toepassing. STEL GEEN VRAGEN MEER. Geef direct een handelingsadvies in 3 tot 5 concrete stappen of bullets. Houd de privacy van de cliënt strikt in acht — gebruik geen namen, ook als de medewerker er per ongeluk eentje noemde.`;
+    }
+
+    const systemPrompt = `${basisPrompt}${profielInfo}${geheugenContext}${weekContext}${sparringBlock}
 
 INSTRUCTIES:
 - Antwoord ALTIJD in het Nederlands.

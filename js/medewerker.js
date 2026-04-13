@@ -15,6 +15,16 @@
   var historieGeladen = false;
   var conversatieHistorie = []; // {role: 'user'|'assistant', content: string}
 
+  // ---- Sparring modus state ----
+  var sparringModus = false;
+  var sparringStap = 0;
+  var sparringContext = [];
+  var SPARRING_VRAGEN = [
+    'Om je goed te kunnen helpen, wil ik eerst de situatie beter begrijpen. Vertel me: om welke cliënt gaat het (geen naam nodig) en wat is er aan de hand?',
+    'Wat heb je al geprobeerd of gedaan in deze situatie?',
+    'Wat is voor jou het moeilijkste aan deze situatie — de cliënt, de samenwerking, of iets anders?'
+  ];
+
   // ---- DOM ----
   var welcomeScreen = document.getElementById('welcome-screen');
   var chatScreen = document.getElementById('chat-screen');
@@ -408,7 +418,7 @@
         { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
         { emoji: '❓', vraag: 'Leg zorgplan, indicatie en WMO uit' },
         { emoji: '👤', vraag: 'Wie is mijn leidinggevende?' },
-        { emoji: '🤝', vraag: 'Sparren over een cliëntsituatie' }
+        { emoji: '🤝', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' }
       ];
     }
 
@@ -417,7 +427,7 @@
       return [
         { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
         { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
-        { emoji: '💬', vraag: 'Sparren over een cliëntsituatie' },
+        { emoji: '💬', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' },
         { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
         { emoji: '🎯', vraag: 'Wat verwacht de organisatie van mij?' }
       ];
@@ -427,7 +437,7 @@
     // (toekomstige startdatum) — kennisassistent modus
     return [
       { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
-      { emoji: '💬', vraag: 'Sparren over een cliëntsituatie' },
+      { emoji: '💬', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' },
       { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
       { emoji: '📎', vraag: 'Zoek een protocol op' },
       { emoji: '💶', vraag: 'Hoe declareer ik reiskosten?' }
@@ -441,6 +451,7 @@
       var btn = document.createElement('button');
       btn.className = 'chip';
       btn.dataset.vraag = c.vraag;
+      if (c.action) btn.dataset.action = c.action;
       btn.textContent = c.emoji + ' ' + c.vraag;
       chipsBar.appendChild(btn);
     });
@@ -448,8 +459,14 @@
     // Klik-handlers
     chipsBar.querySelectorAll('.chip').forEach(function (chip) {
       chip.addEventListener('click', function () {
+        if (isSending) return;
+        // Sparring chip: aparte gespreksflow, GEEN edge function call
+        if (chip.dataset.action === 'sparring') {
+          startSparring();
+          return;
+        }
         var vraag = chip.dataset.vraag;
-        if (vraag && !isSending) {
+        if (vraag) {
           chatInput.value = vraag;
           sendBtn.disabled = false;
           verstuurVraag();
@@ -485,11 +502,125 @@
   }
 
   // =============================================
+  // SPARRING MODUS — 3-staps dialoog client-side, advies via 1 edge call
+  // =============================================
+  function startSparring() {
+    sparringModus = true;
+    sparringStap = 1;
+    sparringContext = [];
+    renderGebruikersBericht('💬 Sparren over een cliëntsituatie', null);
+    toonSparringBadge();
+    renderBotBericht(SPARRING_VRAGEN[0], null, null, null);
+    chatInput.focus();
+    scrollNaarOnder();
+  }
+
+  function toonSparringBadge() {
+    var bestaand = document.getElementById('sparring-badge');
+    if (bestaand) return;
+    var badge = document.createElement('div');
+    badge.id = 'sparring-badge';
+    badge.style.cssText = 'background:#EEF2F4;color:#0D5C6B;font-size:0.78rem;font-weight:600;padding:6px 16px;border-bottom:1px solid var(--border);text-align:center;flex-shrink:0';
+    badge.textContent = '💭 Sparring modus actief';
+    var chatScreen = document.getElementById('chat-screen');
+    var chatMessages = document.getElementById('chat-messages');
+    if (chatScreen && chatMessages) chatScreen.insertBefore(badge, chatMessages);
+  }
+  function verbergSparringBadge() {
+    var badge = document.getElementById('sparring-badge');
+    if (badge) badge.remove();
+  }
+
+  function bouwSparringSamenvatting(ctx) {
+    return 'Sparring over cliëntsituatie:\n' +
+      '1. Situatie: ' + (ctx[0] || '') + '\n' +
+      '2. Wat al geprobeerd: ' + (ctx[1] || '') + '\n' +
+      '3. Moeilijkste: ' + (ctx[2] || '');
+  }
+
+  async function voltooiSparring() {
+    typingIndicator.classList.remove('hidden');
+    scrollNaarOnder();
+    var samenvatting = bouwSparringSamenvatting(sparringContext);
+
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          sparring: true,
+          sparring_context: sparringContext.slice(),
+          vraag: samenvatting,
+          functiegroep: profile.functiegroep,
+          weeknummer: weekNummer
+        })
+      });
+
+      var data = await response.json();
+      typingIndicator.classList.add('hidden');
+
+      if (data.soft_limit) {
+        toonRateLimitPopup(token);
+      } else if (data.hard_limit || response.status === 429 || data.rate_limited) {
+        renderBotBericht(data.error || 'Je hebt het dagelijkse maximum bereikt.', null, null, null);
+      } else if (!response.ok || data.error) {
+        renderBotBericht('Sorry, er ging iets mis bij het verwerken van je sparring-sessie. Probeer het opnieuw.', null, null, null);
+      } else {
+        renderBotBericht(data.antwoord, data.conversation_id, null, null);
+        // Voeg toe aan conversatiehistorie zodat opvolgvragen context hebben
+        conversatieHistorie.push({ role: 'user', content: samenvatting });
+        conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
+      }
+    } catch (err) {
+      typingIndicator.classList.add('hidden');
+      renderBotBericht('Verbindingsfout. Probeer het opnieuw.', null, null, null);
+    }
+
+    // Reset sparring state — nieuwe vragen gaan weer normaal
+    sparringModus = false;
+    sparringStap = 0;
+    sparringContext = [];
+    verbergSparringBadge();
+  }
+
+  // =============================================
   // VRAAG VERSTUREN
   // =============================================
   async function verstuurVraag() {
     var vraag = chatInput.value.trim();
     if (!vraag || isSending) return;
+
+    // SPARRING modus — stap 1-3 lokaal afhandelen (geen edge function call,
+    // telt niet voor rate limit). Alleen stap 4 (advies) gaat naar de server.
+    if (sparringModus) {
+      isSending = true;
+      sendBtn.disabled = true;
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+      renderGebruikersBericht(vraag, null);
+      sparringContext.push(vraag);
+
+      if (sparringContext.length < 3) {
+        // Volgende vraag lokaal renderen
+        sparringStap = sparringContext.length + 1;
+        renderBotBericht(SPARRING_VRAGEN[sparringStap - 1], null, null, null);
+        isSending = false;
+        sendBtn.disabled = chatInput.value.trim().length === 0;
+        scrollNaarOnder();
+        return;
+      }
+
+      // Alle 3 antwoorden binnen → vraag advies aan edge function
+      sparringStap = 4;
+      await voltooiSparring();
+      isSending = false;
+      sendBtn.disabled = chatInput.value.trim().length === 0;
+      scrollNaarOnder();
+      return;
+    }
 
     isSending = true;
     sendBtn.disabled = true;
