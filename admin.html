@@ -1061,6 +1061,22 @@
             <textarea class="form-input" id="edit-doc-notitie" rows="3" maxlength="500" placeholder="Optionele instructie of waarschuwing die de chatbot meekrijgt naast de documentinhoud — bv. 'gebruik versie van januari 2026' of 'verouderd, vraag aan HR'"></textarea>
           </div>
 
+          <div class="form-group" id="edit-doc-zoektermen-group" style="display:none">
+            <label class="form-label">Gegenereerde zoektermen</label>
+            <div id="edit-doc-zoektermen-lijst" style="padding:8px 10px;background:var(--bg);border-radius:6px;font-size:0.78rem;color:var(--text-muted);line-height:1.6;max-height:100px;overflow-y:auto"></div>
+          </div>
+
+          <div class="form-group" id="edit-doc-synoniemen-huidig-group" style="display:none">
+            <label class="form-label">Handmatig toegevoegde zoektermen</label>
+            <div id="edit-doc-synoniemen-huidig-lijst" style="padding:8px 10px;background:var(--bg);border-radius:6px;font-size:0.78rem;color:var(--text);line-height:1.6;max-height:100px;overflow-y:auto"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-doc-extra-synoniemen">Extra zoektermen toevoegen</label>
+            <textarea class="form-input" id="edit-doc-extra-synoniemen" rows="2" placeholder="Voeg zoektermen toe die medewerkers zouden gebruiken, gescheiden door komma's.&#10;Voorbeeld: beroepscode, gedragscode, beroepsethiek, professionele standaard"></textarea>
+            <p class="section-subtitle" style="margin:4px 0 0;font-size:0.72rem">Worden samengevoegd met bestaande, niet overschreven</p>
+          </div>
+
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="edit-doc-cancel-btn">Annuleren</button>
             <button type="submit" class="btn btn-primary" id="edit-doc-submit-btn">Opslaan</button>
@@ -1210,7 +1226,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=19"></script>
+  <script src="js/admin.js?v=20"></script>
 
 </body>
 </html>

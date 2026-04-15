@@ -2074,7 +2074,7 @@
     var doc = allDocuments.find(function (d) { return d.id === docId; });
     if (!doc) return;
     var huidige = (doc.synoniemen || []).join(', ');
-    var nieuwe = prompt('Synoniemen & afkortingen voor "' + doc.naam + '"\n\nVoeg synoniemen toe, gescheiden door komma\'s.\nVoorbeeld: O&O, Ontwikkelingstraject, OenO', huidige);
+    var nieuwe = prompt('Synoniemen & afkortingen voor "' + doc.naam + '"\n\nVoeg zoektermen toe die medewerkers zouden gebruiken, gescheiden door komma\'s.\nVoorbeeld: beroepscode, gedragscode, beroepsethiek, professionele standaard', huidige);
     if (nieuwe === null) return;
 
     var arr = nieuwe.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
@@ -2099,6 +2099,38 @@
     if (editMapEl) editMapEl.value = doc.map || '';
     var editNotitieEl = document.getElementById('edit-doc-notitie');
     if (editNotitieEl) editNotitieEl.value = doc.notitie || '';
+
+    // Gegenereerde zoektermen (readonly) — door generate_zoektermen gevuld
+    var zgroup = document.getElementById('edit-doc-zoektermen-group');
+    var zlijst = document.getElementById('edit-doc-zoektermen-lijst');
+    var zoek = Array.isArray(doc.zoektermen) ? doc.zoektermen : [];
+    if (zgroup && zlijst) {
+      if (zoek.length > 0) {
+        zlijst.textContent = zoek.join(', ');
+        zgroup.style.display = '';
+      } else {
+        zlijst.textContent = '';
+        zgroup.style.display = 'none';
+      }
+    }
+
+    // Handmatig toegevoegde zoektermen (readonly overzicht van bestaande synoniemen)
+    var sgroup = document.getElementById('edit-doc-synoniemen-huidig-group');
+    var slijst = document.getElementById('edit-doc-synoniemen-huidig-lijst');
+    var syn = Array.isArray(doc.synoniemen) ? doc.synoniemen : [];
+    if (sgroup && slijst) {
+      if (syn.length > 0) {
+        slijst.textContent = syn.join(', ');
+        sgroup.style.display = '';
+      } else {
+        slijst.textContent = '';
+        sgroup.style.display = 'none';
+      }
+    }
+
+    // Extra textarea leeg bij elke open (input is cumulatief, wordt merged bij save)
+    var extraEl = document.getElementById('edit-doc-extra-synoniemen');
+    if (extraEl) extraEl.value = '';
 
     var alertBox = document.getElementById('edit-doc-alert');
     if (alertBox) alertBox.className = 'alert';
@@ -2139,6 +2171,22 @@
       var editNotitieVal = document.getElementById('edit-doc-notitie');
       var notitieValue = editNotitieVal ? (editNotitieVal.value.trim() || null) : null;
 
+      // Extra zoektermen (synoniemen) — merge met bestaande ipv overschrijven
+      var extraEl = document.getElementById('edit-doc-extra-synoniemen');
+      var extraInput = extraEl ? extraEl.value : '';
+      var huidigDoc = allDocuments.find(function (d) { return d.id === docId; });
+      var bestaandeSyn = (huidigDoc && Array.isArray(huidigDoc.synoniemen)) ? huidigDoc.synoniemen : [];
+      var nieuweSyn = extraInput.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+      var mergedSyn = null;
+      if (nieuweSyn.length > 0 || bestaandeSyn.length > 0) {
+        var seen = {};
+        mergedSyn = [];
+        bestaandeSyn.concat(nieuweSyn).forEach(function (t) {
+          var key = t.toLowerCase();
+          if (!seen[key]) { seen[key] = true; mergedSyn.push(t); }
+        });
+      }
+
       if (!naam) {
         alertBox.className = 'alert alert-error show';
         alertMsg.textContent = 'Documentnaam is verplicht.';
@@ -2148,15 +2196,20 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Opslaan...';
 
+      var updatePayload = {
+        naam: naam,
+        documenttype: documenttype,
+        revisiedatum: revisiedatum,
+        map: mapValue,
+        notitie: notitieValue
+      };
+      // Synoniemen alleen meesturen als er nieuwe zijn toegevoegd of bestaande zijn
+      // (voorkomt dat we bestaande lijst per ongeluk leegmaken bij een lege set)
+      if (nieuweSyn.length > 0) updatePayload.synoniemen = mergedSyn;
+
       var result = await supabaseClient
         .from('documents')
-        .update({
-          naam: naam,
-          documenttype: documenttype,
-          revisiedatum: revisiedatum,
-          map: mapValue,
-          notitie: notitieValue
-        })
+        .update(updatePayload)
         .eq('id', docId);
 
       if (result.error) {
