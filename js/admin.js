@@ -1348,7 +1348,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1476,6 +1476,7 @@
           '<button class="btn-icon" onclick="window.previewDocument(\'' + escapeHtml(doc.bestandspad) + '\')" title="Bekijken">👁️</button>' +
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon" onclick="window.editSynoniemen(\'' + doc.id + '\')" title="' + synTitle + '">🏷️' + (synCount ? '<sup style="font-size:0.6rem">' + synCount + '</sup>' : '') + '</button>' +
+          '<button class="btn-icon doc-zoektermen-btn" data-doc-id="' + doc.id + '" onclick="window.regenerateZoektermenDoc(this)" title="Zoektermen herindexeren">🔄</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
@@ -1642,6 +1643,48 @@
     }
 
     window.open(result.data.signedUrl, '_blank');
+  };
+
+  // Per-document zoektermen herindexering — roept dezelfde generate_zoektermen
+  // edge function aan die al bestaat, maar voor 1 document.
+  window.regenerateZoektermenDoc = async function (btn) {
+    if (!btn) return;
+    var docId = btn.getAttribute('data-doc-id');
+    if (!docId) return;
+    var origineelLabel = btn.innerHTML;
+    var origineelTitle = btn.title;
+    btn.disabled = true;
+    btn.innerHTML = '⏳';
+    btn.title = 'Bezig...';
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ generate_zoektermen: true, document_id: docId })
+      });
+      var data = await resp.json();
+      console.log('[ZoektermenDoc] Response:', resp.status, data);
+      if (!resp.ok || data.error) {
+        btn.innerHTML = '✗';
+        btn.title = 'Fout: ' + (data.error || resp.status);
+        console.error('[ZoektermenDoc] Fout voor', docId, data.error || resp.status);
+      } else {
+        btn.innerHTML = '✓';
+        btn.title = 'Klaar — ' + (data.count || 0) + ' zoektermen';
+        // Refresh documenten zodat de nieuwe zoekterm-count zichtbaar wordt
+        setTimeout(function () { loadDocuments(); }, 1200);
+      }
+    } catch (err) {
+      btn.innerHTML = '✗';
+      btn.title = 'Fout: ' + (err.message || err);
+      console.error('[ZoektermenDoc] Exception:', err);
+    }
+    setTimeout(function () {
+      btn.disabled = false;
+      btn.innerHTML = origineelLabel;
+      btn.title = origineelTitle;
+    }, 2000);
   };
 
   window.deleteDocument = async function (id, bestandspad) {
@@ -2054,6 +2097,8 @@
     document.getElementById('edit-doc-revisie').value = doc.revisiedatum || '';
     var editMapEl = document.getElementById('edit-doc-map');
     if (editMapEl) editMapEl.value = doc.map || '';
+    var editNotitieEl = document.getElementById('edit-doc-notitie');
+    if (editNotitieEl) editNotitieEl.value = doc.notitie || '';
 
     var alertBox = document.getElementById('edit-doc-alert');
     if (alertBox) alertBox.className = 'alert';
@@ -2091,6 +2136,8 @@
       var revisiedatum = document.getElementById('edit-doc-revisie').value || null;
       var editMapVal = document.getElementById('edit-doc-map');
       var mapValue = editMapVal ? editMapVal.value || null : null;
+      var editNotitieVal = document.getElementById('edit-doc-notitie');
+      var notitieValue = editNotitieVal ? (editNotitieVal.value.trim() || null) : null;
 
       if (!naam) {
         alertBox.className = 'alert alert-error show';
@@ -2107,7 +2154,8 @@
           naam: naam,
           documenttype: documenttype,
           revisiedatum: revisiedatum,
-          map: mapValue
+          map: mapValue,
+          notitie: notitieValue
         })
         .eq('id', docId);
 

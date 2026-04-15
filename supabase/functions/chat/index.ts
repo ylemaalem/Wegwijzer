@@ -1093,8 +1093,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     }
 
     // ---- 6d. Organisatie documenten ----
-    const { data: orgDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
-    const { data: persDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
+    const { data: orgDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
+    const { data: persDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
     const allDocs = [...(orgDocs || []), ...(persDocs || [])];
     console.log(`[Chat] Gebruiker: ${profile.naam}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0}, Pers docs: ${persDocs?.length || 0}`);
 
@@ -1131,7 +1131,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     if (allDocs.length > 0) {
       const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
-        .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[] }) => {
+        .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
           const lowerContent = d.content.toLowerCase();
           const lowerNaam = d.naam.toLowerCase();
           const indexTerms: string[] = [...((d.zoektermen || []) as string[]), ...((d.synoniemen || []) as string[])].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
@@ -1146,7 +1146,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
               if (stam !== kw) { pos = 0; while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; } }
             }
           }
-          return { naam: d.naam, content: d.content, score };
+          return { naam: d.naam, content: d.content, notitie: d.notitie || null, score };
         })
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
         .slice(0, 5);
@@ -1158,7 +1158,12 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           const beschikbaar = 40000 - totaalLengte;
           if (beschikbaar <= 0) break;
           const trimmed = doc.content.trim().substring(0, Math.min(beschikbaar, 8000));
-          docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}`);
+          // Voeg notitie van organisatie toe als die er is — admin kan zo de
+          // chatbot waarschuwen ("verouderd", "gebruik versie X", etc.)
+          const notitieRegel = doc.notitie && doc.notitie.trim()
+            ? `\n⚠️ Notitie van de organisatie: ${doc.notitie.trim().substring(0, 500)}`
+            : "";
+          docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}${notitieRegel}`);
           totaalLengte += trimmed.length;
         }
         documentContext = docTexts.join("\n\n");
@@ -1358,6 +1363,12 @@ ALGEMEEN:
 - Als de medewerker vraagt naar zijn/haar leidinggevende: geef direct de naam en het telefoonnummer.
 - ONZEKERHEID: Als je niet volledig zeker bent, zeg dit expliciet. Verzin NOOIT informatie.
 - GESPREKSGEHEUGEN: Je hebt toegang tot de laatste 3 vragen die deze medewerker in eerdere sessies heeft gesteld. Gebruik dit ALLEEN als de nieuwe vraag er direct op aansluit. Verwijs er subtiel naar: 'Je vroeg hier eerder ook naar' of 'Dit sluit aan bij wat je vroeg over...' Zeg NOOIT letterlijk 'vorige sessie' of 'ik heb je gegevens opgeslagen'.
+- NOOIT zeggen dat je iets "geleerd hebt" of "voortaan beter zult doen". Je leert niets bij — je antwoordt enkel op basis van de huidige kennisbronnen.
+- NOOIT beloftes maken over toekomstig gedrag of toekomstige updates van je antwoorden.
+- NOOIT je verontschuldigen voor een gemist document of een eerder onvolledig antwoord.
+- Als iets niet in de kennisbank staat: zeg eerlijk en zakelijk "Dit vind ik niet terug in de kennisbank — vraag het na bij je leidinggevende" zonder drama, zelfkritiek of overdreven excuses.
+- Probeer bij elke vraag MEERDERE INVALSHOEKEN: zoek op synoniemen, afkortingen en gerelateerde termen (bv. "ziekteverzuim" ↔ "verzuim" ↔ "ziekmelden") voordat je concludeert dat iets niet in de kennisbank staat.
+- Als een document een "⚠️ Notitie van de organisatie" bevat: behandel die als hoge prioriteit en verwerk de waarschuwing zichtbaar in je antwoord.
 
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
