@@ -2302,9 +2302,7 @@
       var deleteBtn = p.role !== 'admin'
         ? '<button class="btn-icon btn-icon-danger" onclick="window.deleteMedewerker(\'' + p.id + '\', \'' + p.user_id + '\')" title="Verwijderen">🗑️</button>'
         : '';
-      var docsBtn = p.role !== 'admin'
-        ? '<button class="btn-icon" onclick="window.showPersoonlijkeDocs(\'' + p.id + '\', \'' + escapeHtml(p.naam || p.email) + '\')" title="Persoonlijke documenten">📄</button>'
-        : '';
+      var docsBtn = '';
       var inwerkBtn = (p.role === 'medewerker' && !p.inwerken_afgerond)
         ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
         : '';
@@ -2380,18 +2378,21 @@
   // =============================================
   // PERSOONLIJKE DOCUMENTEN
   // =============================================
-  window.showPersoonlijkeDocs = function (profileId, naam) {
-    var section = document.getElementById('persoonlijke-docs-section');
-    if (section) {
-      section.style.display = 'block';
-      var titleEl = section.querySelector('.section-title');
-      if (titleEl) titleEl.textContent = 'Persoonlijke documenten — ' + naam;
-      section.dataset.profileId = profileId;
-      loadPersoonlijkeDocs(profileId);
-      initPersoonlijkeDocsUpload(profileId);
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function setPersoonlijkeUploadStatus(msg, kind) {
+    var el = document.getElementById('persoonlijke-upload-status');
+    if (!el) return;
+    if (!msg) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
     }
-  };
+    var color = 'var(--text-muted)';
+    if (kind === 'error') color = 'var(--danger, #c0392b)';
+    else if (kind === 'success') color = 'var(--success, #28A745)';
+    el.style.color = color;
+    el.innerHTML = msg;
+    el.style.display = 'block';
+  }
 
   async function loadPersoonlijkeDocs(profileId) {
     var listEl = document.getElementById('persoonlijke-docs-list');
@@ -2459,6 +2460,9 @@
   }
 
   async function handlePersoonlijkeUpload(files, profileId) {
+    var zone = document.getElementById('persoonlijke-upload-zone');
+    if (zone) zone.classList.add('uploading');
+
     var uploaderProfileResult = await supabaseClient
       .from('profiles')
       .select('id')
@@ -2466,12 +2470,25 @@
       .single();
     var uploaderProfileId = uploaderProfileResult.data ? uploaderProfileResult.data.id : null;
 
-    for (var i = 0; i < files.length; i++) {
+    var totaal = files.length;
+    var gelukt = 0;
+    var mislukt = [];
+    var genegeerd = [];
+
+    for (var i = 0; i < totaal; i++) {
       var file = files[i];
       var ext = file.name.split('.').pop().toLowerCase();
 
-      if (!['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx'].includes(ext)) continue;
-      if (file.size > 20 * 1024 * 1024) continue;
+      if (!['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx'].includes(ext)) {
+        genegeerd.push(file.name + ' (bestandstype niet ondersteund)');
+        continue;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        genegeerd.push(file.name + ' (> 20 MB)');
+        continue;
+      }
+
+      setPersoonlijkeUploadStatus('⏳ Uploaden ' + (i + 1) + ' / ' + totaal + ': <strong>' + escapeHtml(file.name) + '</strong>');
 
       var extractedText = '';
       try {
@@ -2488,9 +2505,13 @@
           .from('documents')
           .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-        if (uploadResult.error) continue;
+        if (uploadResult.error) {
+          console.error('[Pers. upload] Storage fout:', uploadResult.error.message);
+          mislukt.push(file.name + ' — ' + uploadResult.error.message);
+          continue;
+        }
 
-        await supabaseClient
+        var insertResult = await supabaseClient
           .from('documents')
           .insert({
             tenant_id: tenantId,
@@ -2500,10 +2521,30 @@
             content: extractedText || null,
             user_id: profileId
           });
+
+        if (insertResult.error) {
+          console.error('[Pers. upload] DB insert fout:', insertResult.error.message);
+          mislukt.push(file.name + ' — ' + insertResult.error.message);
+          await supabaseClient.storage.from('documents').remove([filePath]);
+          continue;
+        }
+
+        gelukt++;
       } catch (err) {
-        console.error('Persoonlijke upload fout:', err);
+        console.error('[Pers. upload] Onverwachte fout:', err);
+        mislukt.push(file.name + ' — ' + (err.message || err));
       }
     }
+
+    if (zone) zone.classList.remove('uploading');
+
+    var lines = [];
+    if (gelukt > 0) lines.push('✅ ' + gelukt + ' bestand' + (gelukt === 1 ? '' : 'en') + ' geüpload');
+    if (mislukt.length > 0) lines.push('❌ Mislukt: ' + mislukt.map(escapeHtml).join('; '));
+    if (genegeerd.length > 0) lines.push('⚠️ Overgeslagen: ' + genegeerd.map(escapeHtml).join('; '));
+
+    var kind = mislukt.length > 0 ? 'error' : (gelukt > 0 ? 'success' : 'error');
+    setPersoonlijkeUploadStatus(lines.join('<br>'), kind);
 
     loadPersoonlijkeDocs(profileId);
   }
@@ -2796,6 +2837,11 @@
     editAlert.className = 'alert';
 
     document.getElementById('modal-edit-medewerker').classList.add('show');
+
+    // Persoonlijke documenten sectie wiren voor deze medewerker
+    setPersoonlijkeUploadStatus('');
+    loadPersoonlijkeDocs(p.id);
+    initPersoonlijkeDocsUpload(p.id);
   };
 
   (function initEditModal() {

@@ -280,7 +280,6 @@
       .from('trendanalyse_rapporten')
       .select('id, tekst, aangemaakt_op')
       .eq('tenant_id', tenantId)
-      .eq('teamleider_id', profile.id)
       .order('aangemaakt_op', { ascending: false });
 
     if (result.error) {

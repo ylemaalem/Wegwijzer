@@ -195,19 +195,6 @@
           </table>
         </div>
 
-        <!-- Persoonlijke documenten sectie -->
-        <div id="persoonlijke-docs-section" style="display:none;margin-top:24px">
-          <h3 class="section-title" style="font-size:1rem">Persoonlijke documenten</h3>
-          <div class="upload-zone" id="persoonlijke-upload-zone">
-            <div class="upload-zone-icon">📎</div>
-            <div class="upload-zone-text">
-              <strong>Klik hier</strong> of sleep bestanden hierheen<br>
-              Persoonlijke documenten voor deze medewerker
-            </div>
-            <input type="file" id="persoonlijke-file-input" accept=".pdf,.doc,.docx,.txt" multiple>
-          </div>
-          <div id="persoonlijke-docs-list" style="margin-top:12px"></div>
-        </div>
       </section>
 
       <!-- ========== TAB: GESPREKKEN ========== -->
@@ -1005,6 +992,22 @@
               Optioneel. Google Docs export URL specifiek voor deze medewerker.
             </p>
             <input class="form-input" type="url" id="edit-inwerktraject-url" placeholder="https://docs.google.com/...">
+          </div>
+
+          <!-- Persoonlijke documenten sectie — zichtbaar bij openen modal -->
+          <div id="persoonlijke-docs-section" style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border)">
+            <h3 class="section-title" style="font-size:0.95rem;margin-bottom:8px">Persoonlijke documenten</h3>
+            <p class="section-subtitle" style="margin-bottom:10px;font-size:0.78rem">Alleen deze medewerker kan deze documenten raadplegen via de chatbot.</p>
+            <div class="upload-zone" id="persoonlijke-upload-zone">
+              <div class="upload-zone-icon">📎</div>
+              <div class="upload-zone-text">
+                <strong>Klik hier</strong> of sleep bestanden hierheen<br>
+                <span style="font-size:0.78rem;color:var(--text-muted)">PDF, Word, TXT — max 20 MB</span>
+              </div>
+              <input type="file" id="persoonlijke-file-input" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx" multiple>
+            </div>
+            <div id="persoonlijke-upload-status" style="margin-top:8px;font-size:0.82rem;display:none"></div>
+            <div id="persoonlijke-docs-list" style="margin-top:12px"></div>
           </div>
 
           <div class="modal-actions">
