@@ -2384,16 +2384,17 @@
     var section = document.getElementById('persoonlijke-docs-section');
     if (section) {
       section.style.display = 'block';
-      var titleEl = document.getElementById('pers-docs-title');
+      var titleEl = section.querySelector('.section-title');
       if (titleEl) titleEl.textContent = 'Persoonlijke documenten — ' + naam;
       section.dataset.profileId = profileId;
       loadPersoonlijkeDocs(profileId);
       initPersoonlijkeDocsUpload(profileId);
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
   async function loadPersoonlijkeDocs(profileId) {
-    var listEl = document.getElementById('pers-docs-list');
+    var listEl = document.getElementById('persoonlijke-docs-list');
     if (!listEl) return;
 
     var result = await supabaseClient
@@ -2420,16 +2421,17 @@
   }
 
   function initPersoonlijkeDocsUpload(profileId) {
-    var zone = document.getElementById('pers-docs-upload');
-    var input = document.getElementById('pers-docs-input');
+    var zone = document.getElementById('persoonlijke-upload-zone');
+    var input = document.getElementById('persoonlijke-file-input');
     if (!zone || !input) return;
 
-    // Clone to remove old listeners
     var newZone = zone.cloneNode(true);
     zone.parentNode.replaceChild(newZone, zone);
-    var newInput = newZone.querySelector('#pers-docs-input') || document.getElementById('pers-docs-input');
+    var newInput = newZone.querySelector('#persoonlijke-file-input');
 
-    newZone.addEventListener('click', function () { newInput.click(); });
+    newZone.addEventListener('click', function (e) {
+      if (e.target !== newInput) newInput.click();
+    });
 
     newZone.addEventListener('dragover', function (e) {
       e.preventDefault();
