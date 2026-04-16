@@ -2422,6 +2422,7 @@
   }
 
   function initPersoonlijkeDocsUpload(profileId) {
+    console.log('[PersDocs] init aangeroepen');
     console.log('[PersDocs] initPersoonlijkeDocsUpload aangeroepen voor profileId:', profileId);
 
     var zone = document.getElementById('persoonlijke-upload-zone');
@@ -2439,21 +2440,23 @@
     // Zone wordt positioning context; input wordt onzichtbaar bovenop geplaatst.
     // Hierdoor is elke klik op de zone een NATIEVE user-gesture op de file input,
     // zonder programmatische .click() die door sommige browsers geblokkeerd wordt.
+    // setProperty met 'important' om '.upload-zone input[type="file"] { display: none }'
+    // uit admin.css hard te overrulen.
     newZone.style.position = 'relative';
     newZone.style.cursor = 'pointer';
 
-    newInput.style.position = 'absolute';
-    newInput.style.top = '0';
-    newInput.style.left = '0';
-    newInput.style.width = '100%';
-    newInput.style.height = '100%';
-    newInput.style.opacity = '0';
-    newInput.style.cursor = 'pointer';
-    newInput.style.display = 'block';
-    newInput.style.zIndex = '2';
-    newInput.style.padding = '0';
-    newInput.style.margin = '0';
-    newInput.style.border = '0';
+    newInput.style.setProperty('display', 'block', 'important');
+    newInput.style.setProperty('opacity', '0', 'important');
+    newInput.style.setProperty('position', 'absolute', 'important');
+    newInput.style.setProperty('top', '0', 'important');
+    newInput.style.setProperty('left', '0', 'important');
+    newInput.style.setProperty('width', '100%', 'important');
+    newInput.style.setProperty('height', '100%', 'important');
+    newInput.style.setProperty('cursor', 'pointer', 'important');
+    newInput.style.setProperty('z-index', '2', 'important');
+    newInput.style.setProperty('padding', '0', 'important');
+    newInput.style.setProperty('margin', '0', 'important');
+    newInput.style.setProperty('border', '0', 'important');
 
     // Debug: zien of klik doorkomt (target is normaliter de file input zelf)
     newZone.addEventListener('click', function (e) {
