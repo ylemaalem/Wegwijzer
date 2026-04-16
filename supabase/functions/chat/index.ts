@@ -1247,6 +1247,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     if (profile.werkuren) profielInfo += `\n- Werkuren per week: ${profile.werkuren}`;
     if (profile.afdeling) profielInfo += `\n- Afdeling: ${profile.afdeling}`;
     if (profile.teams && profile.teams.length > 0) profielInfo += `\n- Team(s): ${profile.teams.join(", ")}`;
+    if (regio) profielInfo += `\n- Regio: ${regio} — gebruik ALLEEN kennis en informatie die van toepassing is op de regio ${regio}. Gebruik NOOIT informatie van andere regio's zoals Almere of Veluwe door elkaar.`;
     if (profile.startdatum) profielInfo += `\n- Startdatum: ${profile.startdatum}`;
     profielInfo += `\n- Weeknummer inwerktraject: ${wk}${wk > 6 ? " (inwerktraject afgerond)" : " van 6"}`;
     if (profile.teamleider_naam) {
@@ -1380,6 +1381,7 @@ ALGEMEEN:
 - Probeer bij elke vraag MEERDERE INVALSHOEKEN: zoek op synoniemen, afkortingen en gerelateerde termen (bv. "ziekteverzuim" ↔ "verzuim" ↔ "ziekmelden") voordat je concludeert dat iets niet in de kennisbank staat.
 - Als een document een "⚠️ Notitie van de organisatie" bevat: behandel die als hoge prioriteit en verwerk de waarschuwing zichtbaar in je antwoord.
 - Bij getallen, bedragen, tijden en hoeveelheden: herhaal ALTIJD de exacte waarde uit het document. Maak NOOIT zelf rekenvoorbeelden of vertalingen van getallen. Als het document '30 minuten' zegt, zeg dan '30 minuten' — niet 'een half uur' of andere omschrijvingen.
+- De regio van de medewerker staat vermeld in de persoonlijke gegevens. Houd je STRIKT aan die regio. Gebruik NOOIT WMO-trajecten, procedures of afspraken die gelden voor een andere regio dan de regio van deze medewerker.
 
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
