@@ -2728,9 +2728,21 @@
   // =============================================
   // EDIT MODAL
   // =============================================
-  window.editMedewerker = function (profileId) {
+  window.editMedewerker = async function (profileId) {
     var p = allProfiles.find(function (pr) { return pr.id === profileId; });
     if (!p) return;
+
+    // Haal verse profieldata op — voorkomt stale werkuren/afdeling/etc.
+    var freshResult = await supabaseClient
+      .from('profiles')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, inwerktraject_actief, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond')
+      .eq('id', profileId)
+      .single();
+    if (freshResult.data) {
+      p = freshResult.data;
+      var idx = allProfiles.findIndex(function (pr) { return pr.id === profileId; });
+      if (idx >= 0) allProfiles[idx] = Object.assign({}, allProfiles[idx], freshResult.data);
+    }
 
     document.getElementById('edit-profile-id').value = p.id;
     document.getElementById('edit-naam').value = p.naam || '';
@@ -2744,7 +2756,8 @@
       editFgSelect.appendChild(tempOpt);
       editFgSelect.value = p.functiegroep;
     }
-    document.getElementById('edit-werkuren').value = p.werkuren || '';
+    var werkurenEl = document.getElementById('edit-werkuren');
+    if (werkurenEl) werkurenEl.value = (p.werkuren != null ? String(p.werkuren) : '');
     document.getElementById('edit-afdeling').value = p.afdeling || '';
     document.getElementById('edit-startdatum').value = p.startdatum || '';
     document.getElementById('edit-inwerktraject-actief').checked = p.inwerktraject_actief === true;
