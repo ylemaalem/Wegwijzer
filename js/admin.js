@@ -2407,6 +2407,7 @@
 
     if (result.error || !result.data || result.data.length === 0) {
       listEl.innerHTML = '<p class="no-data">Geen persoonlijke documenten.</p>';
+      initPersoonlijkeDocsUpload(profileId);
       return;
     }
 
@@ -2419,6 +2420,8 @@
         '<button class="btn-icon btn-icon-danger" onclick="window.deletePersoonlijkDoc(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\', \'' + profileId + '\')" title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
+
+    initPersoonlijkeDocsUpload(profileId);
   }
 
   function initPersoonlijkeDocsUpload(profileId) {
@@ -2852,9 +2855,10 @@
     document.getElementById('modal-edit-medewerker').classList.add('show');
 
     // Persoonlijke documenten sectie wiren voor deze medewerker
+    // initPersoonlijkeDocsUpload draait aan het einde van loadPersoonlijkeDocs,
+    // zodat binding pas gebeurt nadat de lijst-DOM volledig is opgebouwd.
     setPersoonlijkeUploadStatus('');
     loadPersoonlijkeDocs(p.id);
-    initPersoonlijkeDocsUpload(p.id);
   };
 
   (function initEditModal() {
