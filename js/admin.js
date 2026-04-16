@@ -2481,7 +2481,7 @@
     });
 
     newInput.addEventListener('change', function () {
-      console.log('[PersDocs] change event — aantal bestanden:', newInput.files.length);
+      console.log('[PersDocs] change event — aantal bestanden:', newInput.files.length, 'profileId:', profileId);
       if (newInput.files.length > 0) {
         handlePersoonlijkeUpload(newInput.files, profileId);
         newInput.value = '';
@@ -2490,6 +2490,7 @@
   }
 
   async function handlePersoonlijkeUpload(files, profileId) {
+    console.log('[PersDocs] handlePersoonlijkeUpload start — profileId:', profileId, 'tenantId:', tenantId, 'aantal:', files.length);
     var zone = document.getElementById('persoonlijke-upload-zone');
     if (zone) zone.classList.add('uploading');
 
@@ -2499,6 +2500,7 @@
       .eq('user_id', window.wegwijzerUser.id)
       .single();
     var uploaderProfileId = uploaderProfileResult.data ? uploaderProfileResult.data.id : null;
+    console.log('[PersDocs] Uploader profile resolve — uploaderProfileId:', uploaderProfileId, 'error:', uploaderProfileResult.error && uploaderProfileResult.error.message);
 
     var totaal = files.length;
     var gelukt = 0;
@@ -2509,11 +2511,15 @@
       var file = files[i];
       var ext = file.name.split('.').pop().toLowerCase();
 
+      console.log('[PersDocs] Upload gestart voor:', file.name, file.size);
+
       if (!['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx'].includes(ext)) {
+        console.warn('[PersDocs] Overgeslagen — bestandstype niet ondersteund:', file.name, ext);
         genegeerd.push(file.name + ' (bestandstype niet ondersteund)');
         continue;
       }
       if (file.size > 20 * 1024 * 1024) {
+        console.warn('[PersDocs] Overgeslagen — te groot:', file.name, file.size);
         genegeerd.push(file.name + ' (> 20 MB)');
         continue;
       }
@@ -2523,50 +2529,62 @@
       var extractedText = '';
       try {
         extractedText = await extractTextFromFile(file);
+        console.log('[PersDocs] Tekstextractie — ' + file.name + ': ' + (extractedText ? extractedText.length + ' chars' : 'leeg'));
       } catch (err) {
-        console.error('Extractie fout:', err);
+        console.error('[PersDocs] Extractie fout voor ' + file.name + ':', err);
       }
 
       var fileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       var filePath = tenantId + '/persoonlijk/' + profileId + '/' + fileName;
+      console.log('[PersDocs] Bestand ingelezen, start Supabase upload — pad:', filePath);
 
       try {
         var uploadResult = await supabaseClient.storage
           .from('documents')
           .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
+        console.log('[PersDocs] Supabase storage upload resultaat:', uploadResult.error || 'OK', uploadResult.data);
+
         if (uploadResult.error) {
-          console.error('[Pers. upload] Storage fout:', uploadResult.error.message);
+          console.error('[PersDocs] Storage fout:', uploadResult.error.message);
           mislukt.push(file.name + ' — ' + uploadResult.error.message);
           continue;
         }
 
+        var insertPayload = {
+          tenant_id: tenantId,
+          naam: file.name,
+          bestandspad: filePath,
+          geupload_door: uploaderProfileId,
+          content: extractedText || null,
+          user_id: profileId
+        };
+        console.log('[PersDocs] Documents insert payload — user_id:', insertPayload.user_id, 'tenant_id:', insertPayload.tenant_id, 'naam:', insertPayload.naam);
+
         var insertResult = await supabaseClient
           .from('documents')
-          .insert({
-            tenant_id: tenantId,
-            naam: file.name,
-            bestandspad: filePath,
-            geupload_door: uploaderProfileId,
-            content: extractedText || null,
-            user_id: profileId
-          });
+          .insert(insertPayload);
+
+        console.log('[PersDocs] Supabase documents insert resultaat:', insertResult.error || 'OK');
 
         if (insertResult.error) {
-          console.error('[Pers. upload] DB insert fout:', insertResult.error.message);
+          console.error('[PersDocs] DB insert fout:', insertResult.error.message);
           mislukt.push(file.name + ' — ' + insertResult.error.message);
           await supabaseClient.storage.from('documents').remove([filePath]);
           continue;
         }
 
+        console.log('[PersDocs] Upload voltooid voor:', file.name);
         gelukt++;
       } catch (err) {
-        console.error('[Pers. upload] Onverwachte fout:', err);
+        console.error('[PersDocs] Upload fout:', err);
         mislukt.push(file.name + ' — ' + (err.message || err));
       }
     }
 
     if (zone) zone.classList.remove('uploading');
+    console.log('[PersDocs] Batch klaar — gelukt:', gelukt, 'mislukt:', mislukt.length, 'genegeerd:', genegeerd.length);
+    console.log('[PersDocs] Upload voltooid, refresh lijst voor profileId:', profileId);
 
     var lines = [];
     if (gelukt > 0) lines.push('✅ ' + gelukt + ' bestand' + (gelukt === 1 ? '' : 'en') + ' geüpload');
