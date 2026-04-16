@@ -1093,10 +1093,20 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     }
 
     // ---- 6d. Organisatie documenten ----
-    const { data: orgDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
+    // Regio bepalen op basis van teams; documenten uit de ANDERE regio-map uitsluiten.
+    const teamsVanMedewerker: string[] = profile.teams || [];
+    const heeftVeluweTeam = teamsVanMedewerker.some((t: string) => ["Veluwe", "Gele Weiland", "Middelste Wei", "Molenweg"].includes(t));
+    const heeftAlmereTeam = teamsVanMedewerker.some((t: string) => ["Almere", "Manuscript", "VAN", "FAN", "FANMN"].includes(t));
+    const regio: "Veluwe" | "Almere" | null = heeftVeluweTeam ? "Veluwe" : heeftAlmereTeam ? "Almere" : null;
+    const uitgeslotenMappen: string[] = regio === "Veluwe" ? ["Almere", "Manuscript"] : regio === "Almere" ? ["Veluwe"] : [];
+
+    const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
+    const orgDocs = uitgeslotenMappen.length > 0
+      ? (ruweOrgDocs || []).filter((d: { map: string | null }) => !uitgeslotenMappen.includes(d.map || ""))
+      : (ruweOrgDocs || []);
     const { data: persDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
     const allDocs = [...(orgDocs || []), ...(persDocs || [])];
-    console.log(`[Chat] Gebruiker: ${profile.naam}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0}, Pers docs: ${persDocs?.length || 0}`);
+    console.log(`[Chat] Gebruiker: ${profile.naam}, Regio: ${regio || "alle"}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0} (van ${ruweOrgDocs?.length || 0}), Pers docs: ${persDocs?.length || 0}`);
 
     let keywords = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
 
