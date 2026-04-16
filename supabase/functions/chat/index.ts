@@ -528,8 +528,27 @@ ${vraagLijst}`;
         });
         const trendResult = await trendResp.json();
         const tekst = trendResult.content?.[0]?.text || "";
+
+        let savedRapport: Record<string, unknown> | null = null;
+        if (tekst.trim().length > 0) {
+          const { data: inserted, error: insertErr } = await supabaseAdmin
+            .from("trendanalyse_rapporten")
+            .insert({
+              tenant_id: profile.tenant_id,
+              teamleider_id: profile.id,
+              tekst: tekst,
+            })
+            .select("id, tekst, aangemaakt_op")
+            .single();
+          if (insertErr) {
+            console.error("[Trendanalyse] DB insert fout:", insertErr.message);
+          } else {
+            savedRapport = inserted;
+          }
+        }
+
         return new Response(
-          JSON.stringify({ trendanalyse: tekst }),
+          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {

@@ -25,6 +25,7 @@
     loadTeamQuiz();
     initAanvraagModal();
     initTrendanalyse();
+    loadTrendanalyseGeschiedenis();
   });
 
   function initTabs() {
@@ -258,16 +259,69 @@
     btn.addEventListener('click', handleTrendanalyse);
   }
 
+  function setTrendStatus(msg, isError) {
+    var el = document.getElementById('tl-trendanalyse-status');
+    if (!el) return;
+    if (!msg) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--danger, #c0392b)' : 'var(--text-muted)';
+    el.style.display = 'block';
+  }
+
+  async function loadTrendanalyseGeschiedenis() {
+    var lijst = document.getElementById('tl-trendanalyse-lijst');
+    if (!lijst) return;
+
+    var result = await supabaseClient
+      .from('trendanalyse_rapporten')
+      .select('id, tekst, aangemaakt_op')
+      .eq('tenant_id', tenantId)
+      .eq('teamleider_id', profile.id)
+      .order('aangemaakt_op', { ascending: false });
+
+    if (result.error) {
+      console.error('[Trendanalyse] Geschiedenis ophalen mislukt:', result.error.message);
+      lijst.innerHTML = '<p class="no-data">Kon geschiedenis niet laden: ' + escapeHtml(result.error.message) + '</p>';
+      return;
+    }
+
+    var rapporten = result.data || [];
+    var btn = document.getElementById('tl-trendanalyse-btn');
+    if (btn) {
+      btn.textContent = rapporten.length > 0 ? '🔄 Vernieuwen' : '📊 Trendanalyse opvragen';
+    }
+
+    if (rapporten.length === 0) {
+      lijst.innerHTML = '<p class="no-data" style="font-style:italic">Nog geen rapporten. Klik op "Trendanalyse opvragen" om er één te genereren.</p>';
+      return;
+    }
+
+    lijst.innerHTML = rapporten.map(function (r) {
+      var ts = new Date(r.aangemaakt_op).toLocaleString('nl-NL', {
+        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+      return '<div class="trend-rapport" style="margin-bottom:16px;padding:16px 20px;border:1px solid #0d9488;border-left-width:4px;border-radius:8px;background:var(--bg)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px">' +
+        '<span style="font-size:0.78rem;color:var(--text-muted);font-style:italic">Gegenereerd op ' + escapeHtml(ts) + '</span>' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteTrendanalyse(\'' + r.id + '\')" title="Verwijder rapport">🗑️</button>' +
+        '</div>' +
+        '<div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.55;color:var(--text)">' + escapeHtml(r.tekst || '') + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
   async function handleTrendanalyse() {
     var btn = document.getElementById('tl-trendanalyse-btn');
-    var resultBox = document.getElementById('tl-trendanalyse-resultaat');
-    var tekstEl = document.getElementById('tl-trendanalyse-tekst');
-    var tsEl = document.getElementById('tl-trendanalyse-tijdstempel');
-    if (!btn || !resultBox || !tekstEl || !tsEl) return;
+    if (!btn) return;
 
     var originalLabel = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Analyseren...';
+    setTrendStatus('Vragen verzamelen en naar AI versturen...', false);
 
     try {
       // Team IDs: teamleden met overlappende teams + eigen profiel (al gefilterd in loadTeamMedewerkers)
@@ -275,9 +329,7 @@
       teamIds.push(profile.id);
 
       if (teamIds.length <= 1) {
-        tekstEl.textContent = 'Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.';
-        tsEl.textContent = '';
-        resultBox.style.display = 'block';
+        setTrendStatus('Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.', true);
         return;
       }
 
@@ -295,9 +347,7 @@
 
       if (convResult.error) {
         console.error('[Trendanalyse] DB fout:', convResult.error.message);
-        tekstEl.textContent = 'Kon gesprekken niet ophalen: ' + convResult.error.message;
-        tsEl.textContent = '';
-        resultBox.style.display = 'block';
+        setTrendStatus('Kon gesprekken niet ophalen: ' + convResult.error.message, true);
         return;
       }
 
@@ -321,27 +371,39 @@
 
       var data = await response.json();
       if (data.error) {
-        tekstEl.textContent = 'Fout bij trendanalyse: ' + data.error;
-        tsEl.textContent = '';
-      } else {
-        tekstEl.textContent = data.trendanalyse || 'Geen analyse ontvangen.';
-        var nu = new Date().toLocaleString('nl-NL', {
-          day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        });
-        tsEl.textContent = 'Gegenereerd op ' + nu;
+        setTrendStatus('Fout bij trendanalyse: ' + data.error, true);
+        return;
       }
-      resultBox.style.display = 'block';
+
+      if (!data.rapport) {
+        setTrendStatus('Analyse ontvangen maar kon niet worden opgeslagen. Probeer het opnieuw.', true);
+        return;
+      }
+
+      setTrendStatus('');
       btn.textContent = '🔄 Vernieuwen';
+      await loadTrendanalyseGeschiedenis();
     } catch (err) {
       console.error('[Trendanalyse] Onverwachte fout:', err);
-      tekstEl.textContent = 'Onverwachte fout: ' + err.message;
-      tsEl.textContent = '';
-      resultBox.style.display = 'block';
+      setTrendStatus('Onverwachte fout: ' + (err && err.message ? err.message : err), true);
       btn.textContent = originalLabel;
     } finally {
       btn.disabled = false;
     }
   }
+
+  window.deleteTrendanalyse = async function (id) {
+    if (!confirm('Weet je zeker dat je dit rapport wilt verwijderen?')) return;
+    var delResult = await supabaseClient
+      .from('trendanalyse_rapporten')
+      .delete()
+      .eq('id', id);
+    if (delResult.error) {
+      alert('Verwijderen mislukt: ' + delResult.error.message);
+      return;
+    }
+    await loadTrendanalyseGeschiedenis();
+  };
 
   // =============================================
   // STATISTIEKEN
