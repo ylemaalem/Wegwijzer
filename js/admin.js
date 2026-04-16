@@ -2422,36 +2422,63 @@
   }
 
   function initPersoonlijkeDocsUpload(profileId) {
+    console.log('[PersDocs] initPersoonlijkeDocsUpload aangeroepen voor profileId:', profileId);
+
     var zone = document.getElementById('persoonlijke-upload-zone');
     var input = document.getElementById('persoonlijke-file-input');
-    if (!zone || !input) return;
+    if (!zone || !input) {
+      console.warn('[PersDocs] Zone of input niet gevonden', { zone: !!zone, input: !!input });
+      return;
+    }
 
+    // Clone om oude listeners kwijt te raken bij heropenen modal
     var newZone = zone.cloneNode(true);
     zone.parentNode.replaceChild(newZone, zone);
     var newInput = newZone.querySelector('#persoonlijke-file-input');
 
+    // Zone wordt positioning context; input wordt onzichtbaar bovenop geplaatst.
+    // Hierdoor is elke klik op de zone een NATIEVE user-gesture op de file input,
+    // zonder programmatische .click() die door sommige browsers geblokkeerd wordt.
+    newZone.style.position = 'relative';
+    newZone.style.cursor = 'pointer';
+
+    newInput.style.position = 'absolute';
+    newInput.style.top = '0';
+    newInput.style.left = '0';
+    newInput.style.width = '100%';
+    newInput.style.height = '100%';
+    newInput.style.opacity = '0';
+    newInput.style.cursor = 'pointer';
+    newInput.style.display = 'block';
+    newInput.style.zIndex = '2';
+    newInput.style.padding = '0';
+    newInput.style.margin = '0';
+    newInput.style.border = '0';
+
+    // Debug: zien of klik doorkomt (target is normaliter de file input zelf)
     newZone.addEventListener('click', function (e) {
-      if (e.target !== newInput) newInput.click();
+      console.log('[PersDocs] Klik op zone gedetecteerd — target:', e.target && e.target.tagName, 'id:', e.target && e.target.id);
     });
 
+    // Visuele drag-over feedback; drop-events worden native door de file input afgehandeld
+    // waarna het change-event vuurt.
     newZone.addEventListener('dragover', function (e) {
       e.preventDefault();
       newZone.classList.add('drag-over');
     });
-
     newZone.addEventListener('dragleave', function () {
       newZone.classList.remove('drag-over');
     });
-
-    newZone.addEventListener('drop', function (e) {
-      e.preventDefault();
+    newZone.addEventListener('drop', function () {
       newZone.classList.remove('drag-over');
-      if (e.dataTransfer.files.length > 0) {
-        handlePersoonlijkeUpload(e.dataTransfer.files, profileId);
-      }
+    });
+
+    newInput.addEventListener('click', function () {
+      console.log('[PersDocs] native click op file input — browser opent file picker');
     });
 
     newInput.addEventListener('change', function () {
+      console.log('[PersDocs] change event — aantal bestanden:', newInput.files.length);
       if (newInput.files.length > 0) {
         handlePersoonlijkeUpload(newInput.files, profileId);
         newInput.value = '';
