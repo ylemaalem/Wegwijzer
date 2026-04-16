@@ -174,27 +174,26 @@
 
     console.log('[TL] Gesprekken ophalen voor profiel IDs:', JSON.stringify(teamIds));
 
-    // Probeer eerst alle tenant gesprekken (als RLS policy bestaat)
+    // Privacy: selecteer alleen metadata — geen vraag- of antwoordtekst
     var result = await supabaseClient
       .from('conversations')
-      .select('id, vraag, feedback, created_at, user_id')
+      .select('id, feedback, created_at, user_id')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(500);
 
     console.log('[TL] Tenant query:', result.data ? result.data.length + ' gesprekken' : 'FOUT: ' + (result.error ? result.error.message : 'geen data'));
 
-    // Als tenant query geen resultaat geeft, probeer per user_id
     if (!result.data || result.data.length === 0) {
       var teamIds2 = teamProfiles.map(function (p) { return p.id; });
       teamIds2.push(profile.id);
       if (teamIds2.length > 0) {
         result = await supabaseClient
           .from('conversations')
-          .select('id, vraag, feedback, created_at, user_id')
+          .select('id, feedback, created_at, user_id')
           .in('user_id', teamIds2)
           .order('created_at', { ascending: false })
-          .limit(200);
+          .limit(500);
         console.log('[TL] Fallback per user_id:', result.data ? result.data.length + ' gesprekken' : 'FOUT');
       }
     }
@@ -217,21 +216,33 @@
       return;
     }
 
-    tbody.innerHTML = filtered.map(function (c) {
-      var datum = new Date(c.created_at).toLocaleDateString('nl-NL', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-      });
-      var p = teamProfiles.find(function (pr) { return pr.id === c.user_id; });
-      var naam = p ? (p.naam || p.email) : (c.user_id === profile.id ? profile.naam : 'Onbekend');
-      var fb = '';
-      if (c.feedback === 'goed') fb = '<span class="badge badge-goed">👍</span>';
-      else if (c.feedback === 'niet_goed') fb = '<span class="badge badge-niet-goed">👎</span>';
-      else fb = '<span class="badge badge-geen">—</span>';
+    // Groepeer per (dag, user_id) zodat leidinggevende alleen aantallen ziet
+    var groups = {};
+    filtered.forEach(function (c) {
+      var d = new Date(c.created_at);
+      var dagKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      var key = dagKey + '|' + c.user_id;
+      if (!groups[key]) {
+        groups[key] = { datum: d, dagKey: dagKey, aantal: 0, positief: 0, negatief: 0 };
+      }
+      groups[key].aantal++;
+      if (c.feedback === 'goed') groups[key].positief++;
+      else if (c.feedback === 'niet_goed') groups[key].negatief++;
+    });
 
+    var rows = Object.keys(groups).map(function (k) { return groups[k]; });
+    rows.sort(function (a, b) { return b.datum - a.datum; });
+
+    tbody.innerHTML = rows.map(function (g) {
+      var datum = g.datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var fbParts = [];
+      if (g.positief > 0) fbParts.push('<span class="badge badge-goed">👍 ' + g.positief + '</span>');
+      if (g.negatief > 0) fbParts.push('<span class="badge badge-niet-goed">👎 ' + g.negatief + '</span>');
+      var fb = fbParts.length > 0 ? fbParts.join(' ') : '<span class="badge badge-geen">—</span>';
       return '<tr>' +
         '<td style="white-space:nowrap">' + datum + '</td>' +
-        '<td>' + escapeHtml(naam) + '</td>' +
-        '<td><div class="answer-preview">' + escapeHtml(c.vraag) + '</div></td>' +
+        '<td style="color:var(--text-muted);font-style:italic">Anoniem</td>' +
+        '<td>' + g.aantal + '</td>' +
         '<td>' + fb + '</td>' +
         '</tr>';
     }).join('');
