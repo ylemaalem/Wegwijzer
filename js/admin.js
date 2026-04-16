@@ -16,8 +16,6 @@
   var allFunctiegroepen = [];
   // Cache van geladen kennissuggesties voor lookup vanuit notitie-handler.
   var suggestiesCache = {};
-  // Huidig geopende profiel in de persoonlijke docs sectie — handlers lezen dit dynamisch
-  var currentPersoonlijkeProfileId = null;
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
@@ -2424,73 +2422,36 @@
   }
 
   function initPersoonlijkeDocsUpload(profileId) {
-    console.log('[PersDocs] init aangeroepen voor profileId:', profileId);
-
-    // Bewaar het huidige profiel id; alle event handlers lezen dit dynamisch,
-    // zodat ze ook bij heropenen van het modal de juiste medewerker treffen.
-    currentPersoonlijkeProfileId = profileId;
-
-    var input = document.getElementById('persoonlijke-file-input');
-    var zone = document.getElementById('persoonlijke-upload-zone');
+    console.log('[PersDocs] init voor profileId:', profileId);
+    const input = document.getElementById('persoonlijke-file-input');
+    const zone = document.getElementById('persoonlijke-upload-zone');
     if (!input || !zone) {
-      console.warn('[PersDocs] Zone of input niet gevonden', { zone: !!zone, input: !!input });
+      console.log('[PersDocs] input of zone niet gevonden');
       return;
     }
 
-    // Overlay-truc: input onzichtbaar over de zone zodat een klik een NATIEVE
-    // user-gesture op de file input is. setProperty met 'important' overruled
-    // '.upload-zone input[type="file"] { display: none }' uit admin.css.
-    zone.style.setProperty('position', 'relative', 'important');
-    zone.style.setProperty('cursor', 'pointer', 'important');
-
-    input.style.setProperty('display', 'block', 'important');
-    input.style.setProperty('opacity', '0', 'important');
+    // Positioneer input over zone
+    zone.style.position = 'relative';
+    zone.style.cursor = 'pointer';
     input.style.setProperty('position', 'absolute', 'important');
     input.style.setProperty('top', '0', 'important');
     input.style.setProperty('left', '0', 'important');
     input.style.setProperty('width', '100%', 'important');
     input.style.setProperty('height', '100%', 'important');
+    input.style.setProperty('opacity', '0', 'important');
+    input.style.setProperty('display', 'block', 'important');
     input.style.setProperty('cursor', 'pointer', 'important');
     input.style.setProperty('z-index', '2', 'important');
-    input.style.setProperty('padding', '0', 'important');
-    input.style.setProperty('margin', '0', 'important');
-    input.style.setProperty('border', '0', 'important');
 
-    // Idempotent binden — bij elke heropening van het modal liepen de oude
-    // listeners nog en werd er een duplicaat gemaakt.
-    if (input.dataset.bound === '1') {
-      console.log('[PersDocs] Listeners al gebonden, alleen profileId bijgewerkt:', profileId);
-      return;
-    }
-    input.dataset.bound = '1';
-
-    zone.addEventListener('click', function (e) {
-      console.log('[PersDocs] Klik op zone — target:', e.target && e.target.tagName, 'id:', e.target && e.target.id);
-    });
-
-    // Visuele drag-over feedback; native drop op de file input vuurt change.
-    zone.addEventListener('dragover', function (e) {
-      e.preventDefault();
-      zone.classList.add('drag-over');
-    });
-    zone.addEventListener('dragleave', function () {
-      zone.classList.remove('drag-over');
-    });
-    zone.addEventListener('drop', function () {
-      zone.classList.remove('drag-over');
-    });
-
-    input.addEventListener('click', function () {
-      console.log('[PersDocs] native click op file input — browser opent file picker');
-    });
-
-    input.addEventListener('change', function () {
-      console.log('[PersDocs] change event — bestanden:', input.files.length, 'profileId:', currentPersoonlijkeProfileId);
-      if (input.files.length > 0 && currentPersoonlijkeProfileId) {
-        handlePersoonlijkeUpload(input.files, currentPersoonlijkeProfileId);
+    // Vervang change handler via onchange (overschrijft altijd)
+    input.onchange = function() {
+      console.log('[PersDocs] change - bestanden:',
+        input.files.length, 'profileId:', profileId);
+      if (input.files && input.files.length > 0) {
+        handlePersoonlijkeUpload(input.files, profileId);
         input.value = '';
       }
-    });
+    };
   }
 
   async function handlePersoonlijkeUpload(files, profileId) {
