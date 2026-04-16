@@ -24,6 +24,7 @@
     loadTeamVertrouwen();
     loadTeamQuiz();
     initAanvraagModal();
+    initTrendanalyse();
   });
 
   function initTabs() {
@@ -246,6 +247,100 @@
         '<td>' + fb + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  // =============================================
+  // TRENDANALYSE
+  // =============================================
+  function initTrendanalyse() {
+    var btn = document.getElementById('tl-trendanalyse-btn');
+    if (!btn) return;
+    btn.addEventListener('click', handleTrendanalyse);
+  }
+
+  async function handleTrendanalyse() {
+    var btn = document.getElementById('tl-trendanalyse-btn');
+    var resultBox = document.getElementById('tl-trendanalyse-resultaat');
+    var tekstEl = document.getElementById('tl-trendanalyse-tekst');
+    var tsEl = document.getElementById('tl-trendanalyse-tijdstempel');
+    if (!btn || !resultBox || !tekstEl || !tsEl) return;
+
+    var originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Analyseren...';
+
+    try {
+      // Team IDs: teamleden met overlappende teams + eigen profiel (al gefilterd in loadTeamMedewerkers)
+      var teamIds = teamProfiles.map(function (p) { return p.id; });
+      teamIds.push(profile.id);
+
+      if (teamIds.length <= 1) {
+        tekstEl.textContent = 'Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.';
+        tsEl.textContent = '';
+        resultBox.style.display = 'block';
+        return;
+      }
+
+      // Haal anonieme vragen op van laatste 30 dagen voor teamleden
+      var sinds = new Date();
+      sinds.setDate(sinds.getDate() - 30);
+
+      var convResult = await supabaseClient
+        .from('conversations')
+        .select('vraag, user_id, created_at')
+        .eq('tenant_id', tenantId)
+        .gte('created_at', sinds.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      if (convResult.error) {
+        console.error('[Trendanalyse] DB fout:', convResult.error.message);
+        tekstEl.textContent = 'Kon gesprekken niet ophalen: ' + convResult.error.message;
+        tsEl.textContent = '';
+        resultBox.style.display = 'block';
+        return;
+      }
+
+      // Filter op teamleden — privacy: geen user_id mapping naar naam
+      var vragen = (convResult.data || [])
+        .filter(function (c) { return teamIds.indexOf(c.user_id) !== -1; })
+        .map(function (c) { return c.vraag; })
+        .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
+
+      console.log('[Trendanalyse] Stuur', vragen.length, 'anonieme vragen naar edge function');
+
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ generate_trendanalyse: true, vragen: vragen })
+      });
+
+      var data = await response.json();
+      if (data.error) {
+        tekstEl.textContent = 'Fout bij trendanalyse: ' + data.error;
+        tsEl.textContent = '';
+      } else {
+        tekstEl.textContent = data.trendanalyse || 'Geen analyse ontvangen.';
+        var nu = new Date().toLocaleString('nl-NL', {
+          day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        tsEl.textContent = 'Gegenereerd op ' + nu;
+      }
+      resultBox.style.display = 'block';
+      btn.textContent = '🔄 Vernieuwen';
+    } catch (err) {
+      console.error('[Trendanalyse] Onverwachte fout:', err);
+      tekstEl.textContent = 'Onverwachte fout: ' + err.message;
+      tsEl.textContent = '';
+      resultBox.style.display = 'block';
+      btn.textContent = originalLabel;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // =============================================

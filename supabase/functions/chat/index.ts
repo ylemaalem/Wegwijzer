@@ -483,6 +483,64 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       );
     }
 
+    // ---- Teamleider: trendanalyse op anonieme vraaglijst ----
+    if (body.generate_trendanalyse === true) {
+      if (profile.role !== "teamleider" && profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Alleen teamleiders" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const vragen: string[] = Array.isArray(body.vragen)
+        ? body.vragen.filter((v: unknown) => typeof v === "string" && v.trim().length > 0)
+        : [];
+
+      if (vragen.length === 0) {
+        return new Response(
+          JSON.stringify({ trendanalyse: "Er zijn de afgelopen 30 dagen geen vragen gesteld binnen jouw team. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const gebruikteVragen = vragen.slice(0, 200);
+      const vraagLijst = gebruikteVragen.map((v, i) => `${i + 1}. ${v}`).join("\n");
+
+      const trendPrompt = `Analyseer deze lijst vragen van een zorgteam en geef een overzicht van:
+1) De meest gestelde onderwerpen (top 5).
+2) Onderwerpen waar medewerkers moeite mee lijken te hebben.
+3) Één concrete aanbeveling voor de leidinggevende.
+
+Wees bondig, maximaal 200 woorden. Nederlands.
+
+Vragen (${gebruikteVragen.length}):
+${vraagLijst}`;
+
+      try {
+        const trendResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 600,
+            messages: [{ role: "user", content: trendPrompt }],
+          }),
+        });
+        const trendResult = await trendResp.json();
+        const tekst = trendResult.content?.[0]?.text || "";
+        return new Response(
+          JSON.stringify({ trendanalyse: tekst }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        console.error("[Trendanalyse] Fout:", err);
+        return new Response(
+          JSON.stringify({ error: "Trendanalyse genereren mislukt." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ---- 5. Rate limiting per rol ----
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
