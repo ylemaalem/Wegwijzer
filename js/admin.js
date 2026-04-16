@@ -2407,7 +2407,6 @@
 
     if (result.error || !result.data || result.data.length === 0) {
       listEl.innerHTML = '<p class="no-data">Geen persoonlijke documenten.</p>';
-      initPersoonlijkeDocsUpload(profileId);
       return;
     }
 
@@ -2420,44 +2419,11 @@
         '<button class="btn-icon btn-icon-danger" onclick="window.deletePersoonlijkDoc(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\', \'' + profileId + '\')" title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
-
-    initPersoonlijkeDocsUpload(profileId);
-  }
-
-  function initPersoonlijkeDocsUpload(profileId) {
-    console.log('[PersDocs] init voor profileId:', profileId);
-    const input = document.getElementById('persoonlijke-file-input');
-    const zone = document.getElementById('persoonlijke-upload-zone');
-    if (!input || !zone) {
-      console.log('[PersDocs] input of zone niet gevonden');
-      return;
-    }
-
-    // Positioneer input over zone
-    zone.style.position = 'relative';
-    zone.style.cursor = 'pointer';
-    input.style.setProperty('position', 'absolute', 'important');
-    input.style.setProperty('top', '0', 'important');
-    input.style.setProperty('left', '0', 'important');
-    input.style.setProperty('width', '100%', 'important');
-    input.style.setProperty('height', '100%', 'important');
-    input.style.setProperty('opacity', '0', 'important');
-    input.style.setProperty('display', 'block', 'important');
-    input.style.setProperty('cursor', 'pointer', 'important');
-    input.style.setProperty('z-index', '2', 'important');
-
-    // Vervang change handler via onchange (overschrijft altijd)
-    input.onchange = function() {
-      console.log('[PersDocs] change - bestanden:',
-        input.files.length, 'profileId:', profileId);
-      if (input.files && input.files.length > 0) {
-        handlePersoonlijkeUpload(input.files, profileId);
-        input.value = '';
-      }
-    };
   }
 
   async function handlePersoonlijkeUpload(files, profileId) {
+    console.log('[Upload] handlePersoonlijkeUpload start',
+      files ? files.length : 0, profileId);
     console.log('[PersDocs] handlePersoonlijkeUpload start — profileId:', profileId, 'tenantId:', tenantId, 'aantal:', files.length);
     var zone = document.getElementById('persoonlijke-upload-zone');
     if (zone) zone.classList.add('uploading');
@@ -2854,9 +2820,29 @@
 
     document.getElementById('modal-edit-medewerker').classList.add('show');
 
-    // Persoonlijke documenten sectie wiren voor deze medewerker
-    // initPersoonlijkeDocsUpload draait aan het einde van loadPersoonlijkeDocs,
-    // zodat binding pas gebeurt nadat de lijst-DOM volledig is opgebouwd.
+    const _persInput = document.getElementById(
+      'persoonlijke-file-input');
+    const _persProfileId = p.id;
+    if (_persInput) {
+      _persInput.onchange = async function(e) {
+        console.log('[Upload] change fired, files:',
+          _persInput.files.length, 'profile:', _persProfileId);
+        if (!_persInput.files || _persInput.files.length === 0)
+          return;
+        const file = _persInput.files[0];
+        console.log('[Upload] bestand:', file.name, file.size);
+        try {
+          await handlePersoonlijkeUpload(
+            _persInput.files, _persProfileId);
+        } catch(err) {
+          console.error('[Upload] FOUT:', err);
+          alert('Upload mislukt: ' + err.message);
+        }
+        _persInput.value = '';
+      };
+      console.log('[Upload] onchange gekoppeld voor:', _persProfileId);
+    }
+
     setPersoonlijkeUploadStatus('');
     loadPersoonlijkeDocs(p.id);
   };

@@ -996,18 +996,23 @@
 
           <!-- Persoonlijke documenten sectie — zichtbaar bij openen modal -->
           <div id="persoonlijke-docs-section" style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border)">
-            <h3 class="section-title" style="font-size:0.95rem;margin-bottom:8px">Persoonlijke documenten</h3>
-            <p class="section-subtitle" style="margin-bottom:10px;font-size:0.78rem">Alleen deze medewerker kan deze documenten raadplegen via de chatbot.</p>
-            <div class="upload-zone" id="persoonlijke-upload-zone">
-              <div class="upload-zone-icon">📎</div>
-              <div class="upload-zone-text">
-                <strong>Klik hier</strong> of sleep bestanden hierheen<br>
-                <span style="font-size:0.78rem;color:var(--text-muted)">PDF, Word, TXT — max 20 MB</span>
-              </div>
-              <input type="file" id="persoonlijke-file-input" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx" multiple>
-            </div>
+            <h4>Persoonlijke documenten</h4>
+            <p style="font-size:13px;color:#666">
+              Alleen deze medewerker kan deze documenten raadplegen.
+            </p>
+            <label for="persoonlijke-file-input"
+              id="persoonlijke-upload-zone"
+              style="display:block;border:2px dashed #ccc;
+              border-radius:8px;padding:32px;text-align:center;
+              cursor:pointer;background:#fafafa">
+              📎 <strong>Klik hier</strong> of sleep bestanden hierheen<br>
+              <small style="color:#999">PDF, Word, TXT — max 20 MB</small>
+            </label>
+            <input type="file" id="persoonlijke-file-input"
+              accept=".pdf,.docx,.txt" style="display:none">
             <div id="persoonlijke-upload-status" style="margin-top:8px;font-size:0.82rem;display:none"></div>
-            <div id="persoonlijke-docs-list" style="margin-top:12px"></div>
+            <div id="persoonlijke-docs-list"
+              style="margin-top:12px"></div>
           </div>
 
           <div class="modal-actions">
@@ -1229,7 +1234,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=26"></script>
+  <script src="js/admin.js?v=27"></script>
 
 </body>
 </html>
