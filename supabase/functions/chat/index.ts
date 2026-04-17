@@ -1282,6 +1282,21 @@ ${vraagLijst}`;
       }
     }
 
+    // ---- 6h. Functiegroepen ophalen ----
+    const { data: functiegroepen } = await supabaseAdmin
+      .from('functiegroepen')
+      .select('naam, beschrijving')
+      .eq('tenant_id', profile.tenant_id)
+      .order('naam');
+
+    let functiegroepContext = '';
+    if (functiegroepen && functiegroepen.length > 0) {
+      functiegroepContext = '--- FUNCTIES EN ROLLEN BINNEN DE ORGANISATIE ---\n'
+        + functiegroepen
+          .map((f: { naam: string; beschrijving: string | null }) => `${f.naam}: ${f.beschrijving || ''}`)
+          .join('\n');
+    }
+
     // ---- 7. System prompt bouwen ----
     const naam = profile.naam || "medewerker";
     const org = organisatienaam || "de organisatie";
@@ -1382,6 +1397,7 @@ ${vraagLijst}`;
     if (websitesContext) bronnen.push(websitesContext);
     if (persoonlijkContext) bronnen.push(persoonlijkContext);
     if (teamleiderContext) bronnen.push(teamleiderContext);
+    if (functiegroepContext) bronnen.push(functiegroepContext);
 
     const alleKennisbronnen = bronnen.length > 0
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
