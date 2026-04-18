@@ -53,6 +53,8 @@
       }
       initOrgSwitcher();
       initNieuweOrgModal();
+      var superadminBtn = document.getElementById('superadmin-link-btn');
+      if (superadminBtn) superadminBtn.style.display = '';
     }
 
     initTabs();
