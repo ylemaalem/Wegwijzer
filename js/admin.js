@@ -3012,18 +3012,30 @@
     }
   }
 
-  // Vul team-dropdown met distincte teams uit profiles.teams
-  function updateTeamFilter() {
+  // Vul team-dropdown via directe query op profiles.teams (geen auth.users join).
+  async function updateTeamFilter() {
     var select = document.getElementById('filter-team');
     if (!select) return;
     var current = select.value;
-    var alleTeams = {};
-    (allProfiles || []).forEach(function (p) {
-      if (Array.isArray(p.teams)) {
-        p.teams.forEach(function (t) { if (t) alleTeams[t] = true; });
-      }
+
+    var teamRes = await supabaseClient
+      .from('profiles')
+      .select('teams')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'medewerker')
+      .not('teams', 'is', null);
+
+    if (teamRes.error) {
+      console.error('[updateTeamFilter] profiles query fout:', teamRes.error.message);
+      return;
+    }
+
+    var alleTeams = new Set();
+    (teamRes.data || []).forEach(function (p) {
+      (p.teams || []).forEach(function (t) { if (t) alleTeams.add(t); });
     });
-    var teams = Object.keys(alleTeams).sort();
+    var teams = Array.from(alleTeams).sort();
+
     select.innerHTML = '<option value="">Alle teams</option>' +
       teams.map(function (t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
     if (current && teams.indexOf(current) !== -1) select.value = current;
