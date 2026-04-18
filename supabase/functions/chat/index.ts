@@ -1215,6 +1215,7 @@ ${vraagLijst}`;
     }
 
     let documentContext = "";
+    let HEEFT_KENNISBANK_MATCH = false;
     if (allDocs.length > 0) {
       const scored = allDocs
         .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
@@ -1237,6 +1238,10 @@ ${vraagLijst}`;
         })
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
         .slice(0, 5);
+
+      const MAX_SCORE = scored.length > 0 ? scored[0].score : 0;
+      HEEFT_KENNISBANK_MATCH = MAX_SCORE >= 5;
+      console.log(`[Chat] Kennisbank match: MAX_SCORE=${MAX_SCORE}, heeftMatch=${HEEFT_KENNISBANK_MATCH}`);
 
       if (scored.length > 0) {
         const docTexts: string[] = [];
@@ -1399,9 +1404,39 @@ ${vraagLijst}`;
     if (teamleiderContext) bronnen.push(teamleiderContext);
     if (functiegroepContext) bronnen.push(functiegroepContext);
 
-    const alleKennisbronnen = bronnen.length > 0
+    let alleKennisbronnen = bronnen.length > 0
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
       : "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de leidinggevende voor organisatiespecifieke informatie.";
+
+    if (!HEEFT_KENNISBANK_MATCH) {
+      alleKennisbronnen = `KENNISBANK STATUS: GEEN MATCH.
+
+Er zijn geen relevante organisatiedocumenten gevonden.
+
+INSTRUCTIE — twee gevallen:
+
+1. Als de vraag gaat over AHMN-specifieke informatie
+   (afdelingen, procedures, personen, locaties,
+   werkwijze, beleid, systemen):
+   Antwoord ALLEEN: "Ik vind dit niet terug in de
+   AHMN-documenten. Vraag het na bij je leidinggevende
+   of vraag de admin om dit toe te voegen aan de
+   kennisbank."
+
+2. Als de vraag gaat over ALGEMENE vakkennis
+   (theorie, wetenschappelijke begrippen,
+   begeleidingsmethodieken, doelgroepinformatie
+   zoals rouw, autisme, GGZ, hechting):
+   Geef een behulpzaam antwoord op basis van
+   algemene vakkennis. Sluit altijd af met:
+   "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"
+
+Gebruik dit criterium:
+Gaat de vraag over HOE iets werkt BINNEN de organisatie?
+→ Geval 1 (niet beantwoorden)
+Gaat de vraag over WAT iets IS als concept of theorie?
+→ Geval 2 (wel beantwoorden met label)`;
+    }
 
     // ---- Sparring modus: speciale instructieblok voor het advies ----
     const isSparring = body.sparring === true
