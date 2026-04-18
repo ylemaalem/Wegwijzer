@@ -64,6 +64,10 @@
       initDocIndienen();
       loadDocIngediend();
     }
+
+    if (tlRol === 'hr') {
+      loadOnboardingChecklist();
+    }
   });
 
   // =============================================
@@ -1095,6 +1099,97 @@
         '<td>' + status + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  // =============================================
+  // ONBOARDING CHECKLIST (HR)
+  // =============================================
+  async function loadOnboardingChecklist() {
+    var listEl = document.getElementById('tl-onb-list');
+    if (!listEl) return;
+
+    var result = await supabaseClient
+      .from('onboarding_checklist')
+      .select('id, stap_naam, afgerond, afgerond_op, afgerond_door')
+      .eq('tenant_id', tenantId)
+      .order('stap_naam', { ascending: true });
+
+    if (result.error) {
+      listEl.innerHTML = '<p class="no-data">Kon checklist niet laden: ' + escapeHtml(result.error.message) + '</p>';
+      return;
+    }
+    var rows = result.data || [];
+    if (rows.length === 0) {
+      listEl.innerHTML = '<p class="no-data">Nog geen checklist beschikbaar. Vraag de beheerder om deze te initialiseren.</p>';
+      updateOnbProgress(0, 0);
+      return;
+    }
+
+    // Haal namen op voor afgerond_door
+    var byIds = rows.map(function (r) { return r.afgerond_door; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    var naamMap = {};
+    if (byIds.length > 0) {
+      var naamRes = await supabaseClient.from('profiles').select('id, naam').in('id', byIds);
+      (naamRes.data || []).forEach(function (p) { naamMap[p.id] = p.naam; });
+    }
+
+    // Originele volgorde handhaven via createdAt desc? Hier: houd de 9 vaste stappen in vaste volgorde.
+    // De seed function inserteert ze in volgorde — sorteer op id creation is niet gegarandeerd, dus gebruik
+    // de naam zoals gedefinieerd in de seed. Voor nu sorteren we op stap_naam alfabetisch voor consistentie.
+    // (De seed maakt ze met gelijktijdige inserts, dus geen betrouwbare volgorde-kolom.)
+
+    var afgerondAantal = rows.filter(function (r) { return r.afgerond; }).length;
+    updateOnbProgress(afgerondAantal, rows.length);
+
+    listEl.innerHTML = rows.map(function (r) {
+      var afgerondInfo = '';
+      if (r.afgerond && r.afgerond_op) {
+        var ts = new Date(r.afgerond_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+        var naam = naamMap[r.afgerond_door] || '';
+        afgerondInfo = '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Afgerond op ' + ts + (naam ? ' door ' + escapeHtml(naam) : '') + '</div>';
+      }
+      return '<label class="kennisbank-item" style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;cursor:pointer' + (r.afgerond ? ';background:rgba(22,163,74,0.06)' : '') + '">' +
+        '<input type="checkbox" class="tl-onb-cb" data-id="' + r.id + '" ' + (r.afgerond ? 'checked' : '') + ' style="margin-top:3px;accent-color:var(--primary)">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:0.92rem;' + (r.afgerond ? 'text-decoration:line-through;color:var(--text-muted)' : 'color:var(--text)') + '">' + escapeHtml(r.stap_naam) + '</div>' +
+          afgerondInfo +
+        '</div>' +
+        '</label>';
+    }).join('');
+
+    listEl.querySelectorAll('.tl-onb-cb').forEach(function (cb) {
+      cb.addEventListener('change', async function () {
+        var id = cb.getAttribute('data-id');
+        var nieuwAfgerond = cb.checked;
+        var upd = await supabaseClient
+          .from('onboarding_checklist')
+          .update({
+            afgerond: nieuwAfgerond,
+            afgerond_op: nieuwAfgerond ? new Date().toISOString() : null,
+            afgerond_door: nieuwAfgerond ? profile.id : null
+          })
+          .eq('id', id);
+        if (upd.error) {
+          alert('Bijwerken mislukt: ' + upd.error.message);
+          cb.checked = !nieuwAfgerond;
+          return;
+        }
+        await loadOnboardingChecklist();
+      });
+    });
+  }
+
+  function updateOnbProgress(afgerond, totaal) {
+    var label = document.getElementById('tl-onb-progress-label');
+    var pctEl = document.getElementById('tl-onb-progress-pct');
+    var bar = document.getElementById('tl-onb-progress-bar');
+    var pct = totaal > 0 ? Math.round((afgerond / totaal) * 100) : 0;
+    if (label) label.textContent = afgerond + '/' + totaal;
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (bar) {
+      bar.style.width = pct + '%';
+      bar.style.background = pct === 100 ? 'var(--success, #16a34a)' : 'var(--primary, #0D5C6B)';
+    }
   }
 
   // =============================================

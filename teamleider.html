@@ -32,6 +32,7 @@
       <button class="tab-btn" data-tab="gesprekken" data-tl-roles="teamleider,manager,hr">Gesprekken</button>
       <button class="tab-btn" data-tab="statistieken" data-tl-roles="teamleider,manager,hr">Statistieken</button>
       <button class="tab-btn" data-tab="aanvragen" data-tl-roles="teamleider,hr">Aanvragen</button>
+      <button class="tab-btn" data-tab="onboarding" data-tl-roles="hr">📋 Onboarding</button>
       <button class="tab-btn" data-tab="tl-vertrouwen" data-tl-roles="teamleider">Vertrouwen</button>
       <button class="tab-btn" data-tab="meldingen" data-tl-roles="teamleider">Meldingen</button>
     </nav>
@@ -172,6 +173,26 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- TAB: ONBOARDING CHECKLIST (HR) -->
+      <section class="tab-content" id="tab-onboarding">
+        <h2 class="section-title">📋 Onboarding checklist</h2>
+        <p class="section-subtitle">Voortgang van de basisinrichting van de kennisbank. Vink af zodra je een stap hebt aangeleverd of afgerond.</p>
+
+        <div style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:0.9rem">
+            <span><strong id="tl-onb-progress-label">0/0</strong> stappen afgerond</span>
+            <span id="tl-onb-progress-pct" style="color:var(--text-muted);font-size:0.85rem">0%</span>
+          </div>
+          <div style="background:var(--border);height:8px;border-radius:4px;overflow:hidden">
+            <div id="tl-onb-progress-bar" style="background:var(--primary, #0D5C6B);height:100%;width:0%;transition:width 0.3s"></div>
+          </div>
+        </div>
+
+        <div id="tl-onb-list" style="display:flex;flex-direction:column;gap:8px">
+          <p class="no-data">Laden...</p>
         </div>
       </section>
 
@@ -316,7 +337,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/teamleider.js?v=8"></script>
+  <script src="js/teamleider.js?v=9"></script>
 
 </body>
 </html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="nl" data-required-role="admin" data-superadmin-only="true">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E8720C">
+  <title>Wegwijzer — Superadmin overzicht</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/wegwijzer-app-icon-192.png">
+  <link rel="apple-touch-icon" href="icons/wegwijzer-app-icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/admin.css?v=4">
+</head>
+<body class="admin-page">
+  <div class="page-container">
+
+    <header class="app-header">
+      <h1>Wegwijzer — Superadmin</h1>
+      <div class="header-spacer"></div>
+      <a href="admin.html" class="header-btn">← Beheerpaneel</a>
+      <button class="header-btn" id="logout-btn">Uitloggen</button>
+    </header>
+
+    <main class="page-content">
+
+      <!-- Totaaloverzicht -->
+      <section style="margin-bottom:28px">
+        <h2 class="section-title">Totaaloverzicht</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="sa-stat-orgs">–</div>
+            <div class="stat-label">Organisaties</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="sa-stat-medewerkers">–</div>
+            <div class="stat-label">Actieve medewerkers</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="sa-stat-doc-aanvragen">–</div>
+            <div class="stat-label">Openstaande documentaanvragen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="sa-stat-mw-aanvragen">–</div>
+            <div class="stat-label">Openstaande medewerkeraanvragen</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Per organisatie -->
+      <section>
+        <h2 class="section-title">Organisaties</h2>
+        <p class="section-subtitle">Organisaties met openstaande aanvragen staan bovenaan.</p>
+        <div id="sa-org-list" style="display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">
+          <p class="no-data">Laden...</p>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="powered-by">Mogelijk gemaakt door Wegwijzer</footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/base-path.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/route-guard.js"></script>
+  <script src="js/superadmin.js?v=1"></script>
+
+</body>
+</html>
