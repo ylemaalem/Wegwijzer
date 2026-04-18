@@ -2258,7 +2258,9 @@
       }
     });
 
-    updateMedewerkerFilter();
+    updateTeamFilter();
+    // Rerender gesprekken omdat namen/teams nu beschikbaar zijn (loadGesprekken kan eerder klaar zijn geweest)
+    if (allConversations.length > 0) renderGesprekken();
 
     if (result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="9" class="no-data">Nog geen medewerkers.</td></tr>';
@@ -2321,21 +2323,6 @@
         '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
-  }
-
-  function updateMedewerkerFilter() {
-    var select = document.getElementById('filter-medewerker');
-    var current = select.value;
-    select.innerHTML = '<option value="">Alle medewerkers</option>';
-    allProfiles
-      .filter(function (p) { return p.role === 'medewerker'; })
-      .forEach(function (p) {
-        var opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = p.naam || p.email;
-        select.appendChild(opt);
-      });
-    select.value = current;
   }
 
   window.sluitInwerktrajectAf = async function (profileId, naam) {
@@ -2992,37 +2979,78 @@
   // =============================================
   async function loadGesprekken() {
     var tbody = document.getElementById('gesprekken-body');
+    if (!tbody) { console.warn('[loadGesprekken] tbody niet gevonden'); return; }
 
+    console.log('[loadGesprekken] start — tenantId:', tenantId);
     var result = await supabaseClient
       .from('conversations')
       .select('id, vraag, antwoord, feedback, created_at, user_id')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
-    if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon gesprekken niet laden.</td></tr>';
+    if (result.error) {
+      console.error('[loadGesprekken] query fout:', result.error.message);
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Kon gesprekken niet laden: ' + escapeHtml(result.error.message) + '</td></tr>';
       return;
     }
 
-    allConversations = result.data;
+    allConversations = result.data || [];
+    console.log('[loadGesprekken] opgehaald:', allConversations.length, 'gesprekken');
+
+    updateTeamFilter();
     renderGesprekken();
 
-    document.getElementById('filter-medewerker').addEventListener('change', renderGesprekken);
-    document.getElementById('filter-feedback').addEventListener('change', renderGesprekken);
+    var teamFilterEl = document.getElementById('filter-team');
+    var feedbackFilterEl = document.getElementById('filter-feedback');
+    if (teamFilterEl && !teamFilterEl.dataset.bound) {
+      teamFilterEl.addEventListener('change', renderGesprekken);
+      teamFilterEl.dataset.bound = 'true';
+    }
+    if (feedbackFilterEl && !feedbackFilterEl.dataset.bound) {
+      feedbackFilterEl.addEventListener('change', renderGesprekken);
+      feedbackFilterEl.dataset.bound = 'true';
+    }
+  }
+
+  // Vul team-dropdown met distincte teams uit profiles.teams
+  function updateTeamFilter() {
+    var select = document.getElementById('filter-team');
+    if (!select) return;
+    var current = select.value;
+    var alleTeams = {};
+    (allProfiles || []).forEach(function (p) {
+      if (Array.isArray(p.teams)) {
+        p.teams.forEach(function (t) { if (t) alleTeams[t] = true; });
+      }
+    });
+    var teams = Object.keys(alleTeams).sort();
+    select.innerHTML = '<option value="">Alle teams</option>' +
+      teams.map(function (t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
+    if (current && teams.indexOf(current) !== -1) select.value = current;
   }
 
   function renderGesprekken() {
     var tbody = document.getElementById('gesprekken-body');
-    var filterUser = document.getElementById('filter-medewerker').value;
+    if (!tbody) return;
+    var teamEl = document.getElementById('filter-team');
+    var filterTeam = teamEl ? teamEl.value : '';
     var filterFeedback = document.getElementById('filter-feedback').value;
 
+    // Map profileId → teams (voor snelle lookup)
+    var teamsById = {};
+    (allProfiles || []).forEach(function (p) { teamsById[p.id] = Array.isArray(p.teams) ? p.teams : []; });
+
     var filtered = allConversations.filter(function (c) {
-      if (filterUser && c.user_id !== filterUser) return false;
+      if (filterTeam) {
+        var teams = teamsById[c.user_id] || [];
+        if (teams.indexOf(filterTeam) === -1) return false;
+      }
       if (filterFeedback === 'goed' && c.feedback !== 'goed') return false;
       if (filterFeedback === 'niet_goed' && c.feedback !== 'niet_goed') return false;
       if (filterFeedback === 'geen' && c.feedback !== null) return false;
       return true;
     });
+    console.log('[renderGesprekken] filter team:', filterTeam || '-', 'feedback:', filterFeedback || '-', '→', filtered.length, 'van', allConversations.length);
 
     if (filtered.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen gesprekken gevonden.</td></tr>';
