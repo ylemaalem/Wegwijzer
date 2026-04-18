@@ -3014,57 +3014,89 @@
     }
   }
 
-  // Vul team-dropdown via directe query op profiles.teams (geen auth.users join).
+  // Vul filter-dropdown met ALLE teams (profiles.teams) én ALLE afdelingen
+  // (profiles.afdeling) van de tenant. Optie-values gebruiken prefix
+  // 't:' voor teams en 'a:' voor afdelingen zodat renderGesprekken weet
+  // welke kolom te vergelijken.
   async function updateTeamFilter() {
     var select = document.getElementById('filter-team');
     if (!select) return;
     var current = select.value;
 
-    // Alle teams binnen tenant — onafhankelijk van role of of er gesprekken zijn
-    var teamRes = await supabaseClient
+    var res = await supabaseClient
       .from('profiles')
-      .select('teams')
-      .eq('tenant_id', tenantId)
-      .not('teams', 'is', null);
+      .select('teams, afdeling')
+      .eq('tenant_id', tenantId);
 
-    if (teamRes.error) {
-      console.error('[updateTeamFilter] profiles query fout:', teamRes.error.message);
+    if (res.error) {
+      console.error('[updateTeamFilter] profiles query fout:', res.error.message);
       return;
     }
 
-    var alleTeams = new Set();
-    (teamRes.data || []).forEach(function (p) {
-      (p.teams || []).forEach(function (t) { if (t) alleTeams.add(t); });
+    var teamSet = new Set();
+    var afdelingSet = new Set();
+    (res.data || []).forEach(function (p) {
+      if (Array.isArray(p.teams)) {
+        p.teams.forEach(function (t) { if (t && t.trim()) teamSet.add(t.trim()); });
+      }
+      if (p.afdeling && p.afdeling.trim()) afdelingSet.add(p.afdeling.trim());
     });
-    var teams = Array.from(alleTeams).sort();
 
-    select.innerHTML = '<option value="">Alle teams</option>' +
-      teams.map(function (t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
-    if (current && teams.indexOf(current) !== -1) select.value = current;
+    var teams = Array.from(teamSet).sort();
+    var afdelingen = Array.from(afdelingSet).sort();
+
+    var html = '<option value="">Alle teams</option>';
+    if (teams.length > 0) {
+      html += '<option value="" disabled>── Teams ──</option>';
+      html += teams.map(function (t) { return '<option value="t:' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
+    }
+    if (afdelingen.length > 0) {
+      html += '<option value="" disabled>── Afdelingen ──</option>';
+      html += afdelingen.map(function (a) { return '<option value="a:' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>'; }).join('');
+    }
+    select.innerHTML = html;
+
+    // Herstel selectie als die nog bestaat
+    if (current) {
+      var opties = Array.prototype.map.call(select.options, function (o) { return o.value; });
+      if (opties.indexOf(current) !== -1) select.value = current;
+    }
   }
 
   function renderGesprekken() {
     var tbody = document.getElementById('gesprekken-body');
     if (!tbody) return;
     var teamEl = document.getElementById('filter-team');
-    var filterTeam = teamEl ? teamEl.value : '';
+    var filterValue = teamEl ? teamEl.value : '';
     var filterFeedback = document.getElementById('filter-feedback').value;
 
-    // Map profileId → teams (voor snelle lookup)
+    // Decodeer filter: prefix 't:' = team, 'a:' = afdeling, leeg = geen filter
+    var filterType = '';
+    var filterNaam = '';
+    if (filterValue.indexOf('t:') === 0) { filterType = 'team'; filterNaam = filterValue.substring(2); }
+    else if (filterValue.indexOf('a:') === 0) { filterType = 'afdeling'; filterNaam = filterValue.substring(2); }
+
+    // Map profileId → teams / afdeling (voor snelle lookup)
     var teamsById = {};
-    (allProfiles || []).forEach(function (p) { teamsById[p.id] = Array.isArray(p.teams) ? p.teams : []; });
+    var afdelingById = {};
+    (allProfiles || []).forEach(function (p) {
+      teamsById[p.id] = Array.isArray(p.teams) ? p.teams : [];
+      afdelingById[p.id] = p.afdeling || '';
+    });
 
     var filtered = allConversations.filter(function (c) {
-      if (filterTeam) {
+      if (filterType === 'team') {
         var teams = teamsById[c.user_id] || [];
-        if (teams.indexOf(filterTeam) === -1) return false;
+        if (teams.indexOf(filterNaam) === -1) return false;
+      } else if (filterType === 'afdeling') {
+        if ((afdelingById[c.user_id] || '') !== filterNaam) return false;
       }
       if (filterFeedback === 'goed' && c.feedback !== 'goed') return false;
       if (filterFeedback === 'niet_goed' && c.feedback !== 'niet_goed') return false;
       if (filterFeedback === 'geen' && c.feedback !== null) return false;
       return true;
     });
-    console.log('[renderGesprekken] filter team:', filterTeam || '-', 'feedback:', filterFeedback || '-', '→', filtered.length, 'van', allConversations.length);
+    console.log('[renderGesprekken] filter:', filterType || '-', filterNaam || '-', 'feedback:', filterFeedback || '-', '→', filtered.length, 'van', allConversations.length);
 
     if (filtered.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen gesprekken gevonden.</td></tr>';
