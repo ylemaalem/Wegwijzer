@@ -278,24 +278,20 @@
   async function loadTeamGesprekken() {
     var tbody = document.getElementById('tl-gesprekken-body');
 
-    // Haal alleen gesprekken op van teamleden
+    var eigenProfileId = profile.id;
+
+    // Haal alleen gesprekken op van teamleden — eigen vragen horen niet in teammonitoring
     var teamIds = teamProfiles.map(function (p) { return p.id; });
-    // Voeg eigen profiel ID toe
-    teamIds.push(profile.id);
-    console.log('[TL] Gesprekken ophalen voor', teamIds.length, 'profielen');
-
-    if (teamIds.length <= 1) {
-      // Alleen eigen profiel ID, geen teamleden gevonden
-      console.log('[TL] Geen teamleden gevonden, probeer alle tenant gesprekken');
-    }
-
+    console.log('[TL] Gesprekken ophalen voor', teamIds.length, 'teamleden (eigen id uitgesloten)');
     console.log('[TL] Gesprekken ophalen voor profiel IDs:', JSON.stringify(teamIds));
 
     // Privacy: selecteer alleen metadata — geen vraag- of antwoordtekst
+    // .neq('user_id', eigenProfileId) → server-side filter: eigen vragen nooit ophalen
     var result = await supabaseClient
       .from('conversations')
       .select('id, feedback, created_at, user_id')
       .eq('tenant_id', tenantId)
+      .neq('user_id', eigenProfileId)
       .order('created_at', { ascending: false })
       .limit(500);
 
@@ -303,12 +299,12 @@
 
     if (!result.data || result.data.length === 0) {
       var teamIds2 = teamProfiles.map(function (p) { return p.id; });
-      teamIds2.push(profile.id);
       if (teamIds2.length > 0) {
         result = await supabaseClient
           .from('conversations')
           .select('id, feedback, created_at, user_id')
           .in('user_id', teamIds2)
+          .neq('user_id', eigenProfileId)
           .order('created_at', { ascending: false })
           .limit(500);
         console.log('[TL] Fallback per user_id:', result.data ? result.data.length + ' gesprekken' : 'FOUT');
@@ -320,11 +316,10 @@
       return;
     }
 
-    // Filter client-side op teamleden + eigen profiel
-    var teamIds = teamProfiles.map(function (p) { return p.id; });
-    teamIds.push(profile.id);
+    // Filter client-side uitsluitend op teamleden (eigen id zit er al uit via .neq)
+    var teamIdsSet = teamProfiles.map(function (p) { return p.id; });
     var filtered = result.data.filter(function (c) {
-      return teamIds.indexOf(c.user_id) !== -1;
+      return teamIdsSet.indexOf(c.user_id) !== -1;
     });
     console.log('[TL] Na team-filter:', filtered.length, 'van', result.data.length, 'gesprekken');
 
@@ -530,23 +525,26 @@
   // STATISTIEKEN
   // =============================================
   async function loadTeamStatistieken() {
+    var eigenProfileId = profile.id;
+
+    // Eigen vragen uitsluiten — teamleider/manager/hr monitoren hun team, niet zichzelf
     var result = await supabaseClient
       .from('conversations')
       .select('id, feedback, created_at, user_id')
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .neq('user_id', eigenProfileId);
 
     if (result.error || !result.data) return;
 
     var data;
     if (tlRol === 'teamleider') {
       var teamIds = teamProfiles.map(function (p) { return p.id; });
-      teamIds.push(profile.id);
       data = result.data.filter(function (c) {
         return teamIds.indexOf(c.user_id) !== -1;
       });
       console.log('[TL Stats] Gesprekken voor team:', data.length, 'van', result.data.length);
     } else {
-      // Manager/HR: hele tenant
+      // Manager/HR: hele tenant (zonder eigen vragen)
       data = result.data;
       console.log('[TL Stats] Gesprekken voor tenant:', data.length);
     }
