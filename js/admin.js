@@ -84,6 +84,7 @@
     loadPrivacyVerzoeken();
     initFunctiegroepFormToggle();
     loadDocumentAanvragen();
+    loadTerBeoordeling();
     loadVertrouwensData();
     loadTerugblikLog();
     initVerbeterCollapse();
@@ -238,7 +239,8 @@
   // sub-tab .key komt overeen met de bestaande tab-content id (zonder "tab-" prefix).
   var tabGroups = {
     documenten: [
-      { key: 'documenten', label: '📄 Documenten' }
+      { key: 'documenten', label: '📄 Documenten' },
+      { key: 'ter-beoordeling', label: '📥 Ter beoordeling' }
     ],
     medewerkers: [
       { key: 'medewerkers', label: '👥 Mijn team' },
@@ -5407,6 +5409,126 @@
   window.afwijsDocAanvraag = async function (id) {
     await supabaseClient.from('document_aanvragen').update({ status: 'afgewezen' }).eq('id', id);
     loadDocumentAanvragen();
+  };
+
+  // =============================================
+  // TER BEOORDELING — documenten ingediend door teamleider/hr
+  // =============================================
+  async function loadTerBeoordeling() {
+    var tbody = document.getElementById('ter-beoordeling-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('document_aanvragen_beheer')
+      .select('id, bestandsnaam, bestandspad, toelichting, status, aangemaakt_op, ingediend_door')
+      .order('aangemaakt_op', { ascending: false });
+
+    if (result.error) {
+      console.error('[TerBeoordeling] ophalen mislukt:', result.error.message);
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon aanvragen niet laden.</td></tr>';
+      return;
+    }
+
+    var rows = result.data || [];
+    var inAfwachting = rows.filter(function (r) { return r.status === 'in_afwachting'; }).length;
+    updateTabBadge('ter-beoordeling', inAfwachting);
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Geen documenten ter beoordeling.</td></tr>';
+      return;
+    }
+
+    // Namen ophalen via profiles (in één keer)
+    var profielIds = rows.map(function (r) { return r.ingediend_door; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    var naamMap = {};
+    if (profielIds.length > 0) {
+      var profielResult = await supabaseClient
+        .from('profiles')
+        .select('id, naam, email')
+        .in('id', profielIds);
+      (profielResult.data || []).forEach(function (p) {
+        naamMap[p.id] = p.naam || p.email || '(onbekend)';
+      });
+    }
+
+    tbody.innerHTML = rows.map(function (r) {
+      var datum = new Date(r.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var statusBadge = r.status === 'in_afwachting' ? '<span class="badge badge-open">In afwachting</span>'
+        : r.status === 'goedgekeurd' ? '<span class="badge badge-goed">Goedgekeurd</span>'
+        : '<span class="badge badge-niet-goed">Afgewezen</span>';
+      var acties = '';
+      if (r.status === 'in_afwachting') {
+        acties = '<button class="btn btn-primary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-bottom:4px;background:var(--success)" onclick="window.goedkeurTerBeoordeling(\'' + r.id + '\')" title="Goedkeuren en toevoegen aan kennisbank">✅ Goedkeuren</button>' +
+          '<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.7rem;width:auto" onclick="window.afwijsTerBeoordeling(\'' + r.id + '\')" title="Afwijzen">❌ Afwijzen</button>';
+      }
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + datum + '</td>' +
+        '<td>' + escapeHtml(r.bestandsnaam) + '</td>' +
+        '<td><div style="white-space:pre-wrap;font-size:0.85rem">' + escapeHtml(r.toelichting) + '</div></td>' +
+        '<td>' + escapeHtml(naamMap[r.ingediend_door] || '-') + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td><div style="display:flex;flex-direction:column;gap:2px">' + acties + '</div></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  window.goedkeurTerBeoordeling = async function (id) {
+    var haal = await supabaseClient
+      .from('document_aanvragen_beheer')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (haal.error || !haal.data) {
+      alert('Kon aanvraag niet ophalen: ' + (haal.error ? haal.error.message : ''));
+      return;
+    }
+    var aanvraag = haal.data;
+
+    if (!confirm('Document "' + aanvraag.bestandsnaam + '" goedkeuren en toevoegen aan de kennisbank?')) return;
+
+    // Stap 1: insert in documents tabel (hergebruik bestandspad)
+    var docInsert = await supabaseClient
+      .from('documents')
+      .insert({
+        tenant_id: aanvraag.tenant_id,
+        naam: aanvraag.bestandsnaam,
+        bestandspad: aanvraag.bestandspad,
+        documenttype: 'overig',
+        geupload_door: aanvraag.ingediend_door,
+        content: null
+      })
+      .select('id')
+      .single();
+    if (docInsert.error) {
+      alert('Toevoegen aan documents mislukt: ' + docInsert.error.message);
+      return;
+    }
+
+    // Stap 2: status bijwerken
+    var upd = await supabaseClient
+      .from('document_aanvragen_beheer')
+      .update({ status: 'goedgekeurd' })
+      .eq('id', id);
+    if (upd.error) {
+      alert('Status bijwerken mislukt: ' + upd.error.message);
+      return;
+    }
+
+    await loadTerBeoordeling();
+    await loadDocuments();
+  };
+
+  window.afwijsTerBeoordeling = async function (id) {
+    if (!confirm('Deze aanvraag afwijzen?')) return;
+    var upd = await supabaseClient
+      .from('document_aanvragen_beheer')
+      .update({ status: 'afgewezen' })
+      .eq('id', id);
+    if (upd.error) {
+      alert('Afwijzen mislukt: ' + upd.error.message);
+      return;
+    }
+    await loadTerBeoordeling();
   };
 
   // =============================================

@@ -8,35 +8,146 @@
   var tenantId = null;
   var profile = null;
   var teamProfiles = [];
+  var tlRol = 'teamleider';       // 'teamleider' | 'manager' | 'hr'
+  var tlTeams = null;
+  var heeftTeams = false;
 
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
     profile = e.detail.profile;
+    var user = e.detail.user;
     tenantId = profile.tenant_id;
+
+    // Haal rol en teams op uit teamleiders-tabel
+    try {
+      var tlResult = await supabaseClient
+        .from('teamleiders')
+        .select('rol, teams, naam, titel')
+        .eq('tenant_id', tenantId)
+        .eq('email', user.email)
+        .maybeSingle();
+      if (tlResult.data) {
+        tlRol = tlResult.data.rol || 'teamleider';
+        tlTeams = tlResult.data.teams || null;
+        heeftTeams = !!(tlTeams && tlTeams.length > 0);
+      }
+    } catch (err) {
+      console.warn('[TL] Kon teamleiders rol niet ophalen:', err);
+    }
+    // Fallbacks: als iemand manager/hr is en per ongeluk teams heeft, beschouw als teamleider-modus
+    if (tlRol !== 'manager' && tlRol !== 'hr') tlRol = 'teamleider';
+    console.log('[TL] Rol:', tlRol, 'heeftTeams:', heeftTeams, 'teams:', tlTeams);
+
+    applyRoleVisibility();
     initTabs();
     initLogout();
     loadHeaderLogo();
     await loadTlaFunctiegroepen();
-    await loadTeamMedewerkers();
-    loadTeamGesprekken();
+
+    if (tlRol === 'teamleider') {
+      await loadTeamMedewerkers();
+      loadTeamGesprekken();
+      loadTeamMeldingen();
+      loadTeamVertrouwen();
+      loadTeamQuiz();
+    } else if (tlRol === 'hr') {
+      // HR heeft geen team-lijst maar heeft wel medewerkers nodig voor team-dropdown
+      await loadAllTenantMedewerkers();
+    }
+
     loadTeamStatistieken();
     loadMijnAanvragen();
-    loadTeamMeldingen();
-    loadTeamVertrouwen();
-    loadTeamQuiz();
     initAanvraagModal();
     initTrendanalyse();
     loadTrendanalyseGeschiedenis();
+
+    if (tlRol === 'teamleider' || tlRol === 'hr') {
+      initDocIndienen();
+      loadDocIngediend();
+    }
   });
+
+  // =============================================
+  // ROL-GEBASEERDE ZICHTBAARHEID
+  // =============================================
+  function applyRoleVisibility() {
+    document.body.setAttribute('data-tl-role', tlRol);
+
+    // Verberg tabs die niet bij deze rol horen
+    document.querySelectorAll('[data-tl-roles]').forEach(function (el) {
+      var toegestaan = (el.getAttribute('data-tl-roles') || '').split(',').map(function (s) { return s.trim(); });
+      if (toegestaan.indexOf(tlRol) === -1) {
+        el.style.display = 'none';
+      }
+    });
+    // Verberg secties die expliciet data-tl-show hebben
+    document.querySelectorAll('[data-tl-show]').forEach(function (el) {
+      var toegestaan = (el.getAttribute('data-tl-show') || '').split(',').map(function (s) { return s.trim(); });
+      if (toegestaan.indexOf(tlRol) === -1) {
+        el.style.display = 'none';
+      }
+    });
+
+    // Activeer de eerste zichtbare tab
+    var firstVisible = document.querySelector('.tab-btn:not([style*="display: none"])');
+    if (firstVisible) {
+      var targetTab = firstVisible.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      firstVisible.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
+      var sec = document.getElementById('tab-' + targetTab);
+      if (sec) sec.classList.add('active');
+    }
+
+    // Pas titels/labels aan per rol
+    var statsTitle = document.getElementById('tl-stats-title');
+    var gesprekkenTitle = document.getElementById('tl-gesprekken-title');
+    var gesprekkenSub = document.getElementById('tl-gesprekken-subtitle');
+    var trendSub = document.getElementById('tl-trendanalyse-sub');
+    if (tlRol === 'manager') {
+      if (statsTitle) statsTitle.textContent = 'Organisatieoverzicht';
+      if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
+      if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
+      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de afgelopen 30 dagen — hele organisatie.';
+    } else if (tlRol === 'hr') {
+      if (statsTitle) statsTitle.textContent = 'HR — Organisatieoverzicht';
+      if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
+      if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
+      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de afgelopen 30 dagen — hele organisatie.';
+    }
+  }
+
+  // HR: haal alle medewerkers van tenant op (voor team-dropdown in aanvraagmodal)
+  async function loadAllTenantMedewerkers() {
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ get_team_medewerkers: true })
+      });
+      var data = await response.json();
+      if (data && data.medewerkers) {
+        teamProfiles = data.medewerkers;
+      }
+    } catch (err) {
+      console.warn('[TL HR] Kon medewerkers niet ophalen:', err);
+    }
+  }
 
   function initTabs() {
     var buttons = document.querySelectorAll('.tab-btn');
     buttons.forEach(function (btn) {
       btn.addEventListener('click', function () {
+        if (btn.style.display === 'none') return;
         var tab = btn.dataset.tab;
         buttons.forEach(function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
         document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
-        document.getElementById('tab-' + tab).classList.add('active');
+        var target = document.getElementById('tab-' + tab);
+        if (target) target.classList.add('active');
       });
     });
   }
@@ -323,16 +434,7 @@
     setTrendStatus('Vragen verzamelen en naar AI versturen...', false);
 
     try {
-      // Team IDs: teamleden met overlappende teams + eigen profiel (al gefilterd in loadTeamMedewerkers)
-      var teamIds = teamProfiles.map(function (p) { return p.id; });
-      teamIds.push(profile.id);
-
-      if (teamIds.length <= 1) {
-        setTrendStatus('Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.', true);
-        return;
-      }
-
-      // Haal anonieme vragen op van laatste 30 dagen voor teamleden
+      // Haal anonieme vragen op van laatste 30 dagen
       var sinds = new Date();
       sinds.setDate(sinds.getDate() - 30);
 
@@ -350,11 +452,27 @@
         return;
       }
 
-      // Filter op teamleden — privacy: geen user_id mapping naar naam
-      var vragen = (convResult.data || [])
-        .filter(function (c) { return teamIds.indexOf(c.user_id) !== -1; })
-        .map(function (c) { return c.vraag; })
-        .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
+      var alleVragen = convResult.data || [];
+      var vragen;
+
+      if (tlRol === 'teamleider') {
+        // Teamleider: alleen vragen van teamleden (profile.teams overlap met tlTeams — via teamProfiles)
+        var teamIds = teamProfiles.map(function (p) { return p.id; });
+        teamIds.push(profile.id);
+        if (teamIds.length <= 1) {
+          setTrendStatus('Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.', true);
+          return;
+        }
+        vragen = alleVragen
+          .filter(function (c) { return teamIds.indexOf(c.user_id) !== -1; })
+          .map(function (c) { return c.vraag; })
+          .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
+      } else {
+        // Manager/HR: alle vragen van tenant (geen teamfilter)
+        vragen = alleVragen
+          .map(function (c) { return c.vraag; })
+          .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
+      }
 
       console.log('[Trendanalyse] Stuur', vragen.length, 'anonieme vragen naar edge function');
 
@@ -408,9 +526,6 @@
   // STATISTIEKEN
   // =============================================
   async function loadTeamStatistieken() {
-    var teamIds = teamProfiles.map(function (p) { return p.id; });
-    teamIds.push(profile.id);
-
     var result = await supabaseClient
       .from('conversations')
       .select('id, feedback, created_at, user_id')
@@ -418,11 +533,19 @@
 
     if (result.error || !result.data) return;
 
-    // Filter client-side op teamleden
-    var data = result.data.filter(function (c) {
-      return teamIds.indexOf(c.user_id) !== -1;
-    });
-    console.log('[TL Stats] Gesprekken voor team:', data.length, 'van', result.data.length);
+    var data;
+    if (tlRol === 'teamleider') {
+      var teamIds = teamProfiles.map(function (p) { return p.id; });
+      teamIds.push(profile.id);
+      data = result.data.filter(function (c) {
+        return teamIds.indexOf(c.user_id) !== -1;
+      });
+      console.log('[TL Stats] Gesprekken voor team:', data.length, 'van', result.data.length);
+    } else {
+      // Manager/HR: hele tenant
+      data = result.data;
+      console.log('[TL Stats] Gesprekken voor tenant:', data.length);
+    }
     var now = new Date();
     var dayOfWeek = now.getDay();
     var mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -759,13 +882,32 @@
       tlSelect.appendChild(opt);
     }
 
+    // HR: vervang team-checkbox door dropdown met alle teams van tenant
+    var teamsCheckboxGroup = document.getElementById('tla-teams-checkbox-group');
+    var teamDropdownGroup = document.getElementById('tla-team-dropdown-group');
+    var teamDropdown = document.getElementById('tla-team-dropdown');
+    if (tlRol === 'hr' && teamsCheckboxGroup && teamDropdownGroup && teamDropdown) {
+      teamsCheckboxGroup.style.display = 'none';
+      teamDropdownGroup.style.display = '';
+      // Vul dropdown met unieke teams uit alle medewerkers van tenant
+      var alleTeams = {};
+      teamProfiles.forEach(function (p) {
+        if (p.teams && Array.isArray(p.teams)) {
+          p.teams.forEach(function (t) { if (t) alleTeams[t] = true; });
+        }
+      });
+      var teamsList = Object.keys(alleTeams).sort();
+      teamDropdown.innerHTML = '<option value="">Kies een team</option>' +
+        teamsList.map(function (t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
+    }
+
     btn.addEventListener('click', function () {
       form.reset();
       alertBox.className = 'alert';
       updateTlaFormFields('');
       if (einddatumGroup) einddatumGroup.style.display = 'none';
-      // Pre-select eigen teams
-      if (profile.teams && profile.teams.length > 0) {
+      // Teamleider: pre-select eigen teams. HR: geen pre-select (kiest zelf).
+      if (tlRol === 'teamleider' && profile.teams && profile.teams.length > 0) {
         var checkboxes = document.querySelectorAll('input[name="tla-teams"]');
         checkboxes.forEach(function (cb) {
           cb.checked = profile.teams.indexOf(cb.value) !== -1;
@@ -791,11 +933,17 @@
       var startdatum = document.getElementById('tl-aanvraag-startdatum') ? document.getElementById('tl-aanvraag-startdatum').value : '';
       var werkuren = document.getElementById('tl-aanvraag-werkuren').value.trim();
 
-      // Teams ophalen uit checkboxes
-      var teamCheckboxes = document.querySelectorAll('input[name="tla-teams"]:checked');
-      var teams = [];
-      teamCheckboxes.forEach(function (cb) { teams.push(cb.value); });
-      var team = teams.join(', ');
+      // Teams ophalen: teamleider gebruikt checkboxes, HR gebruikt dropdown
+      var team = '';
+      if (tlRol === 'hr') {
+        var dd = document.getElementById('tla-team-dropdown');
+        team = dd ? dd.value : '';
+      } else {
+        var teamCheckboxes = document.querySelectorAll('input[name="tla-teams"]:checked');
+        var teams = [];
+        teamCheckboxes.forEach(function (cb) { teams.push(cb.value); });
+        team = teams.join(', ');
+      }
 
       if (!naam || !email || !fg) {
         alertBox.className = 'alert alert-error show';
@@ -832,6 +980,121 @@
       submitBtn.disabled = false;
       submitBtn.textContent = 'Aanvraag indienen';
     });
+  }
+
+  // =============================================
+  // DOCUMENT INDIENEN (teamleider + hr)
+  // =============================================
+  function initDocIndienen() {
+    var form = document.getElementById('tl-doc-indienen-form');
+    var fileInput = document.getElementById('tl-doc-indienen-file');
+    var toelichtingEl = document.getElementById('tl-doc-indienen-toelichting');
+    var submitBtn = document.getElementById('tl-doc-indienen-submit');
+    var alertBox = document.getElementById('tl-doc-indienen-alert');
+    var alertMsg = document.getElementById('tl-doc-indienen-alert-message');
+    if (!form) return;
+
+    function setAlert(type, msg) {
+      if (!alertBox) return;
+      alertBox.className = 'alert alert-' + type + ' show';
+      if (alertMsg) alertMsg.textContent = msg;
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      alertBox.className = 'alert';
+
+      var file = fileInput.files[0];
+      var toelichting = (toelichtingEl.value || '').trim();
+
+      if (!file) { setAlert('error', 'Selecteer een bestand.'); return; }
+      if (!toelichting) { setAlert('error', 'Toelichting is verplicht.'); return; }
+
+      // Controleer extensie
+      var ext = file.name.split('.').pop().toLowerCase();
+      if (['pdf', 'docx', 'txt'].indexOf(ext) === -1) {
+        setAlert('error', 'Alleen PDF, Word (.docx) of tekst (.txt) toegestaan.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Bezig met uploaden...';
+
+      try {
+        // Stap 1: upload naar storage onder pad <tenant_id>/aanvragen/<timestamp>_<bestand>
+        var veiligeNaam = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        var filePath = tenantId + '/aanvragen/' + Date.now() + '_' + veiligeNaam;
+
+        var upload = await supabaseClient.storage
+          .from('documents')
+          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+        if (upload.error) {
+          setAlert('error', 'Upload mislukt: ' + upload.error.message);
+          return;
+        }
+
+        // Stap 2: rij in document_aanvragen_beheer
+        var insert = await supabaseClient
+          .from('document_aanvragen_beheer')
+          .insert({
+            tenant_id: tenantId,
+            ingediend_door: profile.id,
+            bestandsnaam: file.name,
+            bestandspad: filePath,
+            toelichting: toelichting,
+            status: 'in_afwachting'
+          });
+        if (insert.error) {
+          // Opruimen: verwijder het bestand als de metadata-rij faalt
+          await supabaseClient.storage.from('documents').remove([filePath]);
+          setAlert('error', 'Indienen mislukt: ' + insert.error.message);
+          return;
+        }
+
+        setAlert('success', 'Document ingediend! De beheerder ontvangt bericht.');
+        form.reset();
+        await loadDocIngediend();
+      } catch (err) {
+        console.error('[DocIndienen] fout:', err);
+        setAlert('error', 'Onverwachte fout: ' + (err && err.message ? err.message : err));
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Indienen ter beoordeling';
+      }
+    });
+  }
+
+  async function loadDocIngediend() {
+    var tbody = document.getElementById('tl-doc-ingediend-body');
+    if (!tbody) return;
+
+    var result = await supabaseClient
+      .from('document_aanvragen_beheer')
+      .select('id, bestandsnaam, toelichting, status, aangemaakt_op')
+      .order('aangemaakt_op', { ascending: false });
+
+    if (result.error) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Kon ingediende documenten niet laden.</td></tr>';
+      return;
+    }
+    var rows = result.data || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Nog geen documenten ingediend.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(function (r) {
+      var datum = new Date(r.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var status = r.status === 'in_afwachting' ? '<span class="badge badge-open">In afwachting ⏳</span>'
+        : r.status === 'goedgekeurd' ? '<span class="badge badge-goed">Goedgekeurd ✅</span>'
+        : '<span class="badge badge-niet-goed">Afgewezen ❌</span>';
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + datum + '</td>' +
+        '<td>' + escapeHtml(r.bestandsnaam) + '</td>' +
+        '<td>' + escapeHtml(r.toelichting) + '</td>' +
+        '<td>' + status + '</td>' +
+        '</tr>';
+    }).join('');
   }
 
   // =============================================

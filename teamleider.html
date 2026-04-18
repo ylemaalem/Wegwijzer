@@ -28,12 +28,12 @@
 
     <!-- Tab navigatie -->
     <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="medewerkers">Mijn team</button>
-      <button class="tab-btn" data-tab="gesprekken">Gesprekken</button>
-      <button class="tab-btn" data-tab="statistieken">Statistieken</button>
-      <button class="tab-btn" data-tab="aanvragen">Aanvragen</button>
-      <button class="tab-btn" data-tab="tl-vertrouwen">Vertrouwen</button>
-      <button class="tab-btn" data-tab="meldingen">Meldingen</button>
+      <button class="tab-btn active" data-tab="medewerkers" data-tl-roles="teamleider">Mijn team</button>
+      <button class="tab-btn" data-tab="gesprekken" data-tl-roles="teamleider,manager,hr">Gesprekken</button>
+      <button class="tab-btn" data-tab="statistieken" data-tl-roles="teamleider,manager,hr">Statistieken</button>
+      <button class="tab-btn" data-tab="aanvragen" data-tl-roles="teamleider,hr">Aanvragen</button>
+      <button class="tab-btn" data-tab="tl-vertrouwen" data-tl-roles="teamleider">Vertrouwen</button>
+      <button class="tab-btn" data-tab="meldingen" data-tl-roles="teamleider">Meldingen</button>
     </nav>
 
     <main class="page-content">
@@ -67,9 +67,9 @@
 
       <!-- TAB: GESPREKKEN -->
       <section class="tab-content" id="tab-gesprekken">
-        <h2 class="section-title">Gesprekken</h2>
-        <p class="section-subtitle">Gegevens zijn geanonimiseerd — inhoud van vragen en namen zijn niet zichtbaar.</p>
-        <div class="data-table-wrap">
+        <h2 class="section-title" id="tl-gesprekken-title">Gesprekken</h2>
+        <p class="section-subtitle" id="tl-gesprekken-subtitle">Gegevens zijn geanonimiseerd — inhoud van vragen en namen zijn niet zichtbaar.</p>
+        <div class="data-table-wrap" data-tl-show="teamleider">
           <table class="data-table">
             <thead>
               <tr>
@@ -87,7 +87,7 @@
 
         <div style="margin-top:24px">
           <button class="btn btn-primary" id="tl-trendanalyse-btn" style="max-width:320px">📊 Trendanalyse opvragen</button>
-          <p class="section-subtitle" style="margin-top:6px;font-size:0.78rem">Analyse van anonieme vragen uit de afgelopen 30 dagen. Namen en antwoorden worden niet meegestuurd.</p>
+          <p class="section-subtitle" id="tl-trendanalyse-sub" style="margin-top:6px;font-size:0.78rem">Analyse van anonieme vragen uit de afgelopen 30 dagen. Namen en antwoorden worden niet meegestuurd.</p>
           <div id="tl-trendanalyse-status" style="margin-top:12px;font-size:0.85rem;color:var(--text-muted);display:none"></div>
           <div id="tl-trendanalyse-lijst" style="margin-top:16px"></div>
         </div>
@@ -95,7 +95,7 @@
 
       <!-- TAB: STATISTIEKEN -->
       <section class="tab-content" id="tab-statistieken">
-        <h2 class="section-title">Team statistieken</h2>
+        <h2 class="section-title" id="tl-stats-title">Team statistieken</h2>
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-value" id="tl-stat-totaal">0</div>
@@ -130,6 +130,48 @@
               <tr><td colspan="4" class="no-data">Laden...</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+
+        <!-- Document indienen ter beoordeling -->
+        <div data-tl-show="teamleider,hr">
+          <h3 class="section-title" style="font-size:1.05rem">Document indienen ter beoordeling</h3>
+          <p class="section-subtitle">Upload een document en lichte toelichting. De beheerder beoordeelt jouw voorstel en voegt het (na goedkeuring) toe aan de kennisbank.</p>
+
+          <div id="tl-doc-indienen-alert" class="alert" role="alert">
+            <span id="tl-doc-indienen-alert-message"></span>
+          </div>
+
+          <form id="tl-doc-indienen-form" novalidate style="margin-bottom:20px">
+            <div class="form-group">
+              <label class="form-label" for="tl-doc-indienen-file">Bestand</label>
+              <input class="form-input" type="file" id="tl-doc-indienen-file" accept=".pdf,.docx,.txt" required>
+              <p class="section-subtitle" style="margin:4px 0 0;font-size:0.75rem">Toegestaan: PDF, Word (.docx) of tekst (.txt).</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tl-doc-indienen-toelichting">Toelichting <span style="color:var(--danger)">*</span></label>
+              <textarea class="form-input" id="tl-doc-indienen-toelichting" rows="4" placeholder="Waarom is dit document relevant voor de kennisbank? Welk onderwerp behandelt het?" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" id="tl-doc-indienen-submit" style="max-width:280px">Indienen ter beoordeling</button>
+          </form>
+
+          <h4 class="section-title" style="font-size:0.95rem;margin-top:12px">Ingediende documenten</h4>
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Bestand</th>
+                  <th>Toelichting</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tl-doc-ingediend-body">
+                <tr><td colspan="4" class="no-data">Nog geen documenten ingediend.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -196,7 +238,15 @@
             <input class="form-input" type="date" id="tl-aanvraag-einddatum">
           </div>
 
-          <div class="form-group tla-zorg-field">
+          <!-- HR: dropdown met alle teams van tenant -->
+          <div class="form-group tla-zorg-field" id="tla-team-dropdown-group" style="display:none">
+            <label class="form-label" for="tla-team-dropdown">Team</label>
+            <select class="form-input" id="tla-team-dropdown">
+              <option value="">Kies een team</option>
+            </select>
+          </div>
+
+          <div class="form-group tla-zorg-field" id="tla-teams-checkbox-group">
             <label class="form-label">Teams</label>
             <div id="tla-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Almere"> Team Almere</label>
@@ -266,7 +316,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/teamleider.js?v=7"></script>
+  <script src="js/teamleider.js?v=8"></script>
 
 </body>
 </html>
