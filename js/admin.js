@@ -3020,11 +3020,11 @@
     if (!select) return;
     var current = select.value;
 
+    // Alle teams binnen tenant — onafhankelijk van role of of er gesprekken zijn
     var teamRes = await supabaseClient
       .from('profiles')
       .select('teams')
       .eq('tenant_id', tenantId)
-      .eq('role', 'medewerker')
       .not('teams', 'is', null);
 
     if (teamRes.error) {
@@ -4504,6 +4504,33 @@
     { sleutel: 'disclaimer', elementId: 'disclaimer-text', fallback: 'Deel geen persoonsgegevens of cliëntinformatie in deze chat.' }
   ];
 
+  // Pas de primaire kleur van de (actieve) organisatie toe op CSS-variabelen
+  // zodat de teal header, knoppen en accenten meekleuren met de tenant.
+  function applyOrgKleur(kleur) {
+    if (!kleur || !/^#[0-9A-Fa-f]{6}$/.test(kleur)) return;
+    var root = document.documentElement;
+    root.style.setProperty('--org-kleur', kleur);
+    root.style.setProperty('--primary', kleur);
+
+    var r = parseInt(kleur.substring(1, 3), 16);
+    var g = parseInt(kleur.substring(3, 5), 16);
+    var b = parseInt(kleur.substring(5, 7), 16);
+    var donker = '#' +
+      Math.max(0, Math.round(r * 0.8)).toString(16).padStart(2, '0') +
+      Math.max(0, Math.round(g * 0.8)).toString(16).padStart(2, '0') +
+      Math.max(0, Math.round(b * 0.8)).toString(16).padStart(2, '0');
+    var licht = '#' +
+      Math.min(255, Math.round(r + (255 - r) * 0.4)).toString(16).padStart(2, '0') +
+      Math.min(255, Math.round(g + (255 - g) * 0.4)).toString(16).padStart(2, '0') +
+      Math.min(255, Math.round(b + (255 - b) * 0.4)).toString(16).padStart(2, '0');
+    root.style.setProperty('--primary-dark', donker);
+    root.style.setProperty('--primary-light', licht);
+
+    var themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', kleur);
+    console.log('[Admin] Org-kleur toegepast:', kleur);
+  }
+
   async function loadSettings() {
     var result = await supabaseClient
       .from('settings')
@@ -4514,6 +4541,9 @@
     if (result.data) {
       result.data.forEach(function (s) { waarden[s.sleutel] = s.waarde; });
     }
+
+    // Pas org-kleur direct toe — header, knoppen en accenten volgen meteen
+    if (waarden.primaire_kleur) applyOrgKleur(waarden.primaire_kleur);
 
     settingsFields.forEach(function (field) {
       var el = document.getElementById(field.elementId);
@@ -4601,6 +4631,8 @@
     } else {
       alertBox.className = 'alert alert-success show';
       alertMsg.textContent = 'Instellingen opgeslagen.';
+      // Direct de nieuwe kleur toepassen — geen reload nodig
+      if (kleurVal) applyOrgKleur(kleurVal);
       setTimeout(function () {
         alertBox.className = 'alert';
       }, 3000);
