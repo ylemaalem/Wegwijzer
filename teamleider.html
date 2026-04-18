@@ -64,6 +64,26 @@
             </tbody>
           </table>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:28px 0 20px">
+
+        <h3 class="section-title" style="font-size:1.05rem">Ingediende medewerkeraanvragen</h3>
+        <p class="section-subtitle">Status van jouw ingediende aanvragen voor nieuwe of te verwijderen medewerkers.</p>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Type</th>
+                <th>Naam</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="tl-aanvragen-body">
+              <tr><td colspan="4" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <!-- TAB: GESPREKKEN -->
@@ -113,31 +133,11 @@
         </div>
       </section>
 
-      <!-- TAB: AANVRAGEN -->
+      <!-- TAB: AANVRAGEN — alleen documenten (medewerkeraanvragen staan op 'Mijn team') -->
       <section class="tab-content" id="tab-aanvragen">
-        <h2 class="section-title">Mijn aanvragen</h2>
-        <p class="section-subtitle">Status van jouw ingediende aanvragen.</p>
-        <div class="data-table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Datum</th>
-                <th>Type</th>
-                <th>Naam</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="tl-aanvragen-body">
-              <tr><td colspan="4" class="no-data">Laden...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
-
         <!-- Document indienen ter beoordeling -->
         <div data-tl-show="teamleider,hr">
-          <h3 class="section-title" style="font-size:1.05rem">Document indienen ter beoordeling</h3>
+          <h2 class="section-title">Document indienen ter beoordeling</h2>
           <p class="section-subtitle">Upload een document en lichte toelichting. De beheerder beoordeelt jouw voorstel en voegt het (na goedkeuring) toe aan de kennisbank.</p>
 
           <div id="tl-doc-indienen-alert" class="alert" role="alert">
@@ -337,7 +337,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/teamleider.js?v=9"></script>
+  <script src="js/teamleider.js?v=10"></script>
 
 </body>
 </html>
