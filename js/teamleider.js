@@ -433,7 +433,9 @@
     setTrendStatus('Vragen verzamelen en naar AI versturen...', false);
 
     try {
-      // Haal anonieme vragen op van laatste 30 dagen
+      var eigenProfileId = profile.id;
+
+      // Haal anonieme vragen op van laatste 30 dagen — eigen vragen uitsluiten
       var sinds = new Date();
       sinds.setDate(sinds.getDate() - 30);
 
@@ -441,6 +443,7 @@
         .from('conversations')
         .select('vraag, user_id, created_at')
         .eq('tenant_id', tenantId)
+        .neq('user_id', eigenProfileId)
         .gte('created_at', sinds.toISOString())
         .order('created_at', { ascending: false })
         .limit(500);
@@ -455,10 +458,9 @@
       var vragen;
 
       if (tlRol === 'teamleider') {
-        // Teamleider: alleen vragen van teamleden (profile.teams overlap met tlTeams — via teamProfiles)
+        // Teamleider: alleen vragen van teamleden (eigen id zit er al uit via .neq)
         var teamIds = teamProfiles.map(function (p) { return p.id; });
-        teamIds.push(profile.id);
-        if (teamIds.length <= 1) {
+        if (teamIds.length === 0) {
           setTrendStatus('Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.', true);
           return;
         }
@@ -467,7 +469,7 @@
           .map(function (c) { return c.vraag; })
           .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
       } else {
-        // Manager/HR: alle vragen van tenant (geen teamfilter)
+        // Manager/HR: alle vragen van tenant (geen teamfilter; eigen vragen al uitgesloten via .neq)
         vragen = alleVragen
           .map(function (c) { return c.vraag; })
           .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
