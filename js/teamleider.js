@@ -572,7 +572,9 @@
   // MIJN AANVRAGEN
   // =============================================
   async function loadMijnAanvragen() {
-    var tbody = document.getElementById('tl-aanvragen-body');
+    var tbodyDefault = document.getElementById('tl-aanvragen-body');         // teamleider (Mijn team tab)
+    var tbodyHr = document.getElementById('tl-aanvragen-body-hr');           // hr (Aanvragen tab)
+    if (!tbodyDefault && !tbodyHr) return;
 
     var result = await supabaseClient
       .from('aanvragen')
@@ -580,29 +582,44 @@
       .order('created_at', { ascending: false });
 
     if (result.error || !result.data || result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen aanvragen.</td></tr>';
+      var empty = '<tr><td colspan="4" class="no-data">Geen aanvragen.</td></tr>';
+      if (tbodyDefault) tbodyDefault.innerHTML = empty;
+      if (tbodyHr) tbodyHr.innerHTML = empty;
       return;
     }
 
-    tbody.innerHTML = result.data.map(function (a) {
-      var datum = new Date(a.created_at).toLocaleDateString('nl-NL', {
-        day: 'numeric', month: 'short'
-      });
-      var typeBadge = a.type === 'nieuw'
-        ? '<span class="badge badge-medewerker">Nieuw</span>'
-        : '<span class="badge badge-niet-goed">Verwijder</span>';
-      var statusBadge = '';
-      if (a.status === 'in_afwachting') statusBadge = 'In afwachting ⏳';
-      else if (a.status === 'goedgekeurd') statusBadge = 'Goedgekeurd ✅';
-      else statusBadge = 'Afgekeurd ❌' + (a.afkeurreden ? ' — ' + escapeHtml(a.afkeurreden) : '');
+    function statusBadgeFor(a) {
+      if (a.status === 'in_afwachting') return 'In afwachting ⏳';
+      if (a.status === 'goedgekeurd') return 'Goedgekeurd ✅';
+      return 'Afgekeurd ❌' + (a.afkeurreden ? ' — ' + escapeHtml(a.afkeurreden) : '');
+    }
 
-      return '<tr>' +
-        '<td>' + datum + '</td>' +
-        '<td>' + typeBadge + '</td>' +
-        '<td>' + escapeHtml(a.medewerker_naam || '-') + '</td>' +
-        '<td>' + statusBadge + '</td>' +
-        '</tr>';
-    }).join('');
+    if (tbodyDefault) {
+      tbodyDefault.innerHTML = result.data.map(function (a) {
+        var datum = new Date(a.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+        var typeBadge = a.type === 'nieuw'
+          ? '<span class="badge badge-medewerker">Nieuw</span>'
+          : '<span class="badge badge-niet-goed">Verwijder</span>';
+        return '<tr>' +
+          '<td>' + datum + '</td>' +
+          '<td>' + typeBadge + '</td>' +
+          '<td>' + escapeHtml(a.medewerker_naam || '-') + '</td>' +
+          '<td>' + statusBadgeFor(a) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    if (tbodyHr) {
+      tbodyHr.innerHTML = result.data.map(function (a) {
+        var datum = new Date(a.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+        return '<tr>' +
+          '<td>' + datum + '</td>' +
+          '<td>' + escapeHtml(a.medewerker_naam || '-') + '</td>' +
+          '<td>' + escapeHtml(a.medewerker_team || '-') + '</td>' +
+          '<td>' + statusBadgeFor(a) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
   }
 
   // =============================================
