@@ -307,22 +307,36 @@ Geen uitleg, alleen JSON.`;
 
         const aiJson = await aiResp.json();
         let raw = aiJson.content?.[0]?.text || "[]";
-        raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-        const match = raw.match(/\[[\s\S]*\]/);
-        if (match) raw = match[0];
+        console.log("[KennisScan] Raw response:", raw.substring(0, 500));
+
+        // Strip markdown code blocks (openings- en sluit-fences kunnen overal staan)
+        raw = raw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+
+        // Extraheer array: eerste [ tot laatste ]
+        const startIdx = raw.indexOf("[");
+        const endIdx = raw.lastIndexOf("]");
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+          raw = raw.substring(startIdx, endIdx + 1);
+        }
 
         let suggesties: Array<{ type: string; omschrijving: string; document_a?: string | null; document_b?: string | null }> = [];
         try {
           suggesties = JSON.parse(raw);
-        } catch {
-          console.error("[KennisScan] JSON parse fout:", raw.substring(0, 300));
-          return new Response(
-            JSON.stringify({ error: "Kon AI antwoord niet parsen" }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+        } catch (e) {
+          console.error("[KennisScan] Parse fout:", raw.substring(0, 200));
+          suggesties = [];
         }
 
         if (!Array.isArray(suggesties)) suggesties = [];
+
+        // Geen suggesties gevonden → geen fout, alleen een lege telling.
+        if (suggesties.length === 0) {
+          console.log(`[KennisScan] ${scanType}: 0 suggesties (leeg na parse)`);
+          return new Response(
+            JSON.stringify({ success: true, count: 0, scan_type: scanType }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
 
         let inserted = 0;
         for (const s of suggesties) {
