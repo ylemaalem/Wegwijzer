@@ -1121,6 +1121,65 @@
   // =============================================
   // ONBOARDING CHECKLIST (HR)
   // =============================================
+  // Stap-volgorde + uitleg per stap. 'match' matcht tegen stap_naam
+  // uit de DB (migratie 048) zodat kleine tekstverschillen niet stuk gaan.
+  var ONBOARDING_STAPPEN = [
+    {
+      match: 'Organogram',
+      titel: 'Organogram aangeleverd (als tekst, niet als afbeelding)',
+      uitleg: 'Beschrijf de afdelingsstructuur in een Word-document: welke afdelingen zijn er, wie zijn de managers en welke teams vallen eronder. Een afbeelding werkt niet — alleen tekst wordt gelezen door de chatbot.'
+    },
+    {
+      match: 'Agressieprotocol',
+      titel: 'Agressieprotocol aangeleverd',
+      uitleg: 'Het protocol dat beschrijft hoe medewerkers moeten handelen bij agressie van cliënten of derden. Essentieel voor veilig werken.'
+    },
+    {
+      match: 'Personeelshandboek',
+      titel: 'Personeelshandboek of arbeidsreglement aangeleverd',
+      uitleg: 'Het document met alle arbeidsafspraken: werktijden, verlof, ziekteverzuim, gedragsregels en huisregels. Als dit in meerdere documenten staat, lever ze allemaal aan.'
+    },
+    {
+      match: 'Functieomschrijvingen',
+      titel: 'Functieomschrijvingen aangeleverd',
+      uitleg: 'Een beschrijving per functie van taken, verantwoordelijkheden en bevoegdheden. Minimaal voor de functies die in de app worden gebruikt.'
+    },
+    {
+      match: 'CAO',
+      titel: 'CAO of arbeidsvoorwaarden aangeleverd',
+      uitleg: 'De geldende CAO of een samenvatting van de arbeidsvoorwaarden. Je kunt ook de link naar de officiële CAO-website doorgeven — dan haalt de chatbot de informatie automatisch op.'
+    },
+    {
+      match: 'Inwerkschema',
+      titel: 'Inwerkschema per functie aangeleverd',
+      uitleg: 'Het programma voor nieuwe medewerkers in de eerste weken: welke taken, wie ze begeleiden en wat ze moeten weten per week.'
+    },
+    {
+      match: 'Handleiding registratiesysteem',
+      titel: 'Handleiding registratiesysteem aangeleverd',
+      uitleg: 'De gebruikshandleiding van het systeem waarin medewerkers cliëntgegevens registreren (bijv. ONS, Nedap, Cura). Medewerkers stellen hier veel vragen over.'
+    },
+    {
+      match: 'Kennisitems',
+      titel: 'Kennisitems aangemaakt voor veelgestelde vragen',
+      uitleg: 'Vaste vraag-antwoord combinaties die de beheerder direct invoert — bijvoorbeeld de ziekmeldingsprocedure, declaratiedeadline of contactgegevens van leidinggevenden. Vraag de beheerder (Wegwijzer) om hulp bij het aanmaken hiervan.'
+    },
+    {
+      match: 'Testgesprek',
+      titel: 'Testgesprek chatbot gedaan (minimaal 10 vragen)',
+      uitleg: 'Log in als medewerker en stel minimaal 10 vragen die een nieuwe medewerker zou stellen. Controleer of de antwoorden kloppen. Meld onjuiste antwoorden via de duim omlaag knop.'
+    }
+  ];
+
+  function vindStapUitleg(stapNaam) {
+    for (var i = 0; i < ONBOARDING_STAPPEN.length; i++) {
+      if (stapNaam && stapNaam.indexOf(ONBOARDING_STAPPEN[i].match) !== -1) {
+        return { index: i, entry: ONBOARDING_STAPPEN[i] };
+      }
+    }
+    return { index: 999, entry: null };
+  }
+
   async function loadOnboardingChecklist() {
     var listEl = document.getElementById('tl-onb-list');
     if (!listEl) return;
@@ -1128,8 +1187,7 @@
     var result = await supabaseClient
       .from('onboarding_checklist')
       .select('id, stap_naam, afgerond, afgerond_op, afgerond_door')
-      .eq('tenant_id', tenantId)
-      .order('stap_naam', { ascending: true });
+      .eq('tenant_id', tenantId);
 
     if (result.error) {
       listEl.innerHTML = '<p class="no-data">Kon checklist niet laden: ' + escapeHtml(result.error.message) + '</p>';
@@ -1142,6 +1200,11 @@
       return;
     }
 
+    // Sorteer op de vaste volgorde uit ONBOARDING_STAPPEN
+    rows.sort(function (a, b) {
+      return vindStapUitleg(a.stap_naam).index - vindStapUitleg(b.stap_naam).index;
+    });
+
     // Haal namen op voor afgerond_door
     var byIds = rows.map(function (r) { return r.afgerond_door; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
     var naamMap = {};
@@ -1150,25 +1213,30 @@
       (naamRes.data || []).forEach(function (p) { naamMap[p.id] = p.naam; });
     }
 
-    // Originele volgorde handhaven via createdAt desc? Hier: houd de 9 vaste stappen in vaste volgorde.
-    // De seed function inserteert ze in volgorde — sorteer op id creation is niet gegarandeerd, dus gebruik
-    // de naam zoals gedefinieerd in de seed. Voor nu sorteren we op stap_naam alfabetisch voor consistentie.
-    // (De seed maakt ze met gelijktijdige inserts, dus geen betrouwbare volgorde-kolom.)
-
     var afgerondAantal = rows.filter(function (r) { return r.afgerond; }).length;
     updateOnbProgress(afgerondAantal, rows.length);
 
-    listEl.innerHTML = rows.map(function (r) {
+    listEl.innerHTML = rows.map(function (r, idx) {
+      var uitlegMatch = vindStapUitleg(r.stap_naam).entry;
+      var titelTekst = uitlegMatch ? uitlegMatch.titel : r.stap_naam;
+      var uitlegTekst = uitlegMatch ? uitlegMatch.uitleg : '';
+      var nummer = idx + 1;
+
       var afgerondInfo = '';
       if (r.afgerond && r.afgerond_op) {
         var ts = new Date(r.afgerond_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
         var naam = naamMap[r.afgerond_door] || '';
-        afgerondInfo = '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Afgerond op ' + ts + (naam ? ' door ' + escapeHtml(naam) : '') + '</div>';
+        afgerondInfo = '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px">Afgerond op ' + ts + (naam ? ' door ' + escapeHtml(naam) : '') + '</div>';
       }
-      return '<label class="kennisbank-item" style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;cursor:pointer' + (r.afgerond ? ';background:rgba(22,163,74,0.06)' : '') + '">' +
-        '<input type="checkbox" class="tl-onb-cb" data-id="' + r.id + '" ' + (r.afgerond ? 'checked' : '') + ' style="margin-top:3px;accent-color:var(--primary)">' +
+      var uitlegHtml = uitlegTekst
+        ? '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;line-height:1.45">' + escapeHtml(uitlegTekst) + '</div>'
+        : '';
+
+      return '<label class="kennisbank-item" style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;cursor:pointer' + (r.afgerond ? ';background:rgba(22,163,74,0.06)' : '') + '">' +
+        '<input type="checkbox" class="tl-onb-cb" data-id="' + r.id + '" ' + (r.afgerond ? 'checked' : '') + ' style="margin-top:4px;accent-color:var(--primary)">' +
         '<div style="flex:1">' +
-          '<div style="font-size:0.92rem;' + (r.afgerond ? 'text-decoration:line-through;color:var(--text-muted)' : 'color:var(--text)') + '">' + escapeHtml(r.stap_naam) + '</div>' +
+          '<div style="font-size:0.93rem;font-weight:600;' + (r.afgerond ? 'text-decoration:line-through;color:var(--text-muted)' : 'color:var(--text)') + '">' + nummer + '. ' + escapeHtml(titelTekst) + '</div>' +
+          uitlegHtml +
           afgerondInfo +
         '</div>' +
         '</label>';
