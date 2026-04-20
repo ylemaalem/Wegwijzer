@@ -933,7 +933,7 @@ ${vraagLijst}`;
         const negatief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "niet_goed").length : 0;
         const pct = (positief + negatief) > 0 ? Math.round((positief / (positief + negatief)) * 100) : 0;
         const actiefMedewerkers = profs ? profs.filter((p: {id:string}) => convs?.some((c: {user_id:string}) => c.user_id === p.id)).length : 0;
-        const tijdBespaard = Math.round(totaalVragen * 8 / 60);
+        const tijdBespaard = Math.round(totaalVragen * 6 / 60);
         const kostenBespaard = tijdBespaard * 35;
 
         const ontvangerNamen = metEmail.map((t: {naam:string; email:string}) => t.naam + " (" + t.email + ")");

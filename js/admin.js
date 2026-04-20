@@ -139,7 +139,7 @@
     var totaalMedewerkers = (profsRes.data || []).length;
 
     var totaalVragen = convs.length;
-    var uren = Math.round(totaalVragen * 8 / 60);
+    var uren = Math.round(totaalVragen * 6 / 60);
     var euros = uren * 35;
     var positief = convs.filter(function (c) { return c.feedback === 'goed'; }).length;
     var negatief = convs.filter(function (c) { return c.feedback === 'niet_goed'; }).length;
@@ -5005,8 +5005,8 @@
 
       // Eerlijke tijdwinst
       var aantalVragen = convs.length;
-      var medewerkerMinutenBespaard = aantalVragen * 6; // 8 min - 2 min wegwijzer
-      var teamleiderMinutenVrij = aantalVragen * 8;
+      var medewerkerMinutenBespaard = aantalVragen * 5; // 6 min - 1 min wegwijzer
+      var teamleiderMinutenVrij = aantalVragen * 6;
 
       var rapport = {
         periode: range.label,
@@ -5092,11 +5092,11 @@
         // Backwards-compat: oude rapporten hadden geschatte_minuten
         if (typeof r.tijdwinst.medewerker_minuten_bespaard !== 'undefined') {
           html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst</h4>' +
-            '<p><strong>Teamleider tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 8 min (zonder Wegwijzer) = ' + r.tijdwinst.teamleider_minuten_vrij + ' minuten (' + r.tijdwinst.teamleider_uren + ' uur) vrijgekomen</p>' +
-            '<p><strong>Medewerker tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 6 min (wachten + zoeken − 2 min Wegwijzer gebruik) = ' + r.tijdwinst.medewerker_minuten_bespaard + ' minuten (' + r.tijdwinst.medewerker_uren + ' uur) bespaard</p>' +
+            '<p><strong>Teamleider tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 6 min (zonder Wegwijzer) = ' + r.tijdwinst.teamleider_minuten_vrij + ' minuten (' + r.tijdwinst.teamleider_uren + ' uur) vrijgekomen</p>' +
+            '<p><strong>Medewerker tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 5 min (wachten + zoeken − 1 min Wegwijzer gebruik) = ' + r.tijdwinst.medewerker_minuten_bespaard + ' minuten (' + r.tijdwinst.medewerker_uren + ' uur) bespaard</p>' +
             '<p style="margin-top:8px"><strong>Voordelen:</strong></p>' +
             '<ul style="margin:4px 0 0 18px"><li>Antwoord direct beschikbaar zonder wachten</li><li>Antwoord terug te lezen wanneer nodig</li><li>Brondocument direct zichtbaar</li><li>Beschikbaar buiten kantooruren</li></ul>' +
-            '<p style="font-size:0.72rem;color:var(--text-muted);font-style:italic;margin-top:8px">Disclaimer: schatting op basis van gemiddeld 8 minuten per vraag zonder Wegwijzer vs 2 minuten met Wegwijzer.</p>';
+            '<p style="font-size:0.72rem;color:var(--text-muted);font-style:italic;margin-top:8px">Disclaimer: schatting op basis van gemiddeld 6 minuten per vraag zonder Wegwijzer vs 1 minuut met Wegwijzer.</p>';
         } else {
           html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst (oud rapport)</h4>' +
             '<p>' + (r.tijdwinst.vragen || 0) + ' vragen × 10 min = ' + (r.tijdwinst.geschatte_minuten || 0) + ' minuten</p>';
@@ -5268,7 +5268,7 @@
             '<div>Actieve medewerkers: ' + (s.actieve_medewerkers || 0) + ' van ' + (s.totaal_medewerkers || 0) + '</div>' +
             '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">' +
             '<strong>Tijdwinst (schatting)</strong>' +
-            '<div>' + (s.totaal_vragen || 0) + ' vragen × 8 min = ' + (tw.uren || 0) + ' uur</div>' +
+            '<div>' + (s.totaal_vragen || 0) + ' vragen × 6 min = ' + (tw.uren || 0) + ' uur</div>' +
             '<div>Equivalent: €' + (tw.kosten_euro || 0) + '</div>' +
             '</div>';
         } catch (e) { detailHtml = ''; }
