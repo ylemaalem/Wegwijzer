@@ -5699,7 +5699,7 @@
 
     var gedeeld = (result.data || []);
 
-    // Statistieken: gemiddelde over gedeelde scores
+    // Statistieken: tenant-breed gemiddelde + totaal aantal gedeelde scores
     var gemEl = document.getElementById('vc-gem-score');
     var sigEl = document.getElementById('vc-signalen');
     if (gemEl) {
@@ -5712,7 +5712,6 @@
     }
     if (sigEl) sigEl.textContent = gedeeld.length;
 
-    // Sectie verbergen als er geen gedeelde scores zijn
     var sectie = document.getElementById('vertrouwen-sectie');
     if (sectie) sectie.style.display = gedeeld.length > 0 ? '' : 'none';
 
@@ -5721,23 +5720,51 @@
       return;
     }
 
-    // Zoek namen op
+    // Map user_id → teams via profiles (geen namen ophalen, alleen teams)
     var userIds = gedeeld.map(function (s) { return s.user_id; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
-    var profielResult = await supabaseClient.from('profiles').select('user_id, naam').in('user_id', userIds);
-    var naamMap = {};
+    var profielResult = await supabaseClient.from('profiles').select('user_id, teams').in('user_id', userIds);
+    var teamsByUser = {};
     if (profielResult.data) {
-      profielResult.data.forEach(function (p) { naamMap[p.user_id] = p.naam; });
+      profielResult.data.forEach(function (p) {
+        teamsByUser[p.user_id] = Array.isArray(p.teams) && p.teams.length > 0 ? p.teams : ['(zonder team)'];
+      });
     }
 
-    tbody.innerHTML = gedeeld.map(function (s) {
-      var naam = naamMap[s.user_id] || 'Onbekend';
-      var sterren = '';
-      for (var i = 0; i < 5; i++) sterren += i < s.score ? '⭐' : '☆';
+    // Aggregeer per (team, week_nummer): gemiddelde + uniek aantal medewerkers
+    var groepen = {};
+    gedeeld.forEach(function (s) {
+      var teams = teamsByUser[s.user_id] || ['(zonder team)'];
+      teams.forEach(function (team) {
+        var key = team + '|' + s.week_nummer;
+        if (!groepen[key]) groepen[key] = { team: team, week: s.week_nummer, scores: [], users: {} };
+        groepen[key].scores.push(s.score);
+        groepen[key].users[s.user_id] = true;
+      });
+    });
+
+    var rijen = Object.keys(groepen).map(function (k) {
+      var g = groepen[k];
+      var som = g.scores.reduce(function (a, b) { return a + b; }, 0);
+      return {
+        team: g.team,
+        week: g.week,
+        gemiddelde: som / g.scores.length,
+        aantal: Object.keys(g.users).length
+      };
+    });
+
+    // Sorteer op week desc, dan team alfabetisch
+    rijen.sort(function (a, b) {
+      if (a.week !== b.week) return b.week - a.week;
+      return a.team.localeCompare(b.team);
+    });
+
+    tbody.innerHTML = rijen.map(function (r) {
       return '<tr>' +
-        '<td>' + escapeHtml(naam) + '</td>' +
-        '<td>Week ' + s.week_nummer + '</td>' +
-        '<td>' + sterren + ' (' + s.score + '/5)</td>' +
-        '<td><span class="badge badge-goed">Gedeeld</span></td>' +
+        '<td>' + escapeHtml(r.team) + '</td>' +
+        '<td>Week ' + r.week + '</td>' +
+        '<td>' + r.gemiddelde.toFixed(1) + ' / 5</td>' +
+        '<td>' + r.aantal + ' medewerker' + (r.aantal === 1 ? '' : 's') + '</td>' +
         '</tr>';
     }).join('');
   }

@@ -601,7 +601,7 @@
       <!-- ========== TAB: VERTROUWEN ========== -->
       <section class="tab-content" id="tab-vertrouwen">
         <h2 class="section-title">Vertrouwenscheck</h2>
-        <p class="section-subtitle">Anonieme gemiddelde scores per week van het team.</p>
+        <p class="section-subtitle">Geaggregeerde gemiddelden per team per week — geen individuele scores zichtbaar voor de beheerder.</p>
         <div class="stats-grid" style="margin-bottom:20px">
           <div class="stat-card">
             <div class="stat-value" id="vc-gem-score">-</div>
@@ -609,12 +609,12 @@
           </div>
           <div class="stat-card">
             <div class="stat-value" id="vc-signalen">0</div>
-            <div class="stat-label">Gedeeld met leidinggevende</div>
+            <div class="stat-label">Aantal gedeelde scores</div>
           </div>
         </div>
         <div class="data-table-wrap">
           <table class="data-table">
-            <thead><tr><th>Medewerker</th><th>Week</th><th>Score</th><th>Status</th></tr></thead>
+            <thead><tr><th>Team</th><th>Week</th><th>Gemiddelde</th><th>Aantal medewerkers</th></tr></thead>
             <tbody id="vertrouwen-body">
               <tr><td colspan="4" class="no-data">Laden...</td></tr>
             </tbody>
@@ -1264,7 +1264,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=37"></script>
+  <script src="js/admin.js?v=38"></script>
 
 </body>
 </html>
