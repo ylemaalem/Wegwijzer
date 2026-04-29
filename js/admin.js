@@ -6,7 +6,6 @@
   'use strict';
 
   // ---- State ----
-  var namenZichtbaar = false;
   var tenantId = null;
   var currentUserId = null;
   var allConversations = [];
@@ -3172,15 +3171,12 @@
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
 
+      // Gesprekken in de admin gesprekken-tab blijven volledig geanonimiseerd.
+      // Geen naam-ontsluiting mogelijk vanuit admin (per privacy-spec).
       var profile = allProfiles.find(function (p) { return p.id === c.user_id; });
-      var naam;
-      if (namenZichtbaar) {
-        naam = profile ? (profile.naam || profile.email) : 'Onbekend';
-      } else {
-        var fg = profile ? formatFunctiegroep(profile.functiegroep) : '';
-        var teams = profile && profile.teams ? profile.teams.join(', ') : '';
-        naam = 'Medewerker' + (fg ? ' — ' + fg : '') + (teams ? ' — ' + teams : '');
-      }
+      var fg = profile ? formatFunctiegroep(profile.functiegroep) : '';
+      var teams = profile && profile.teams ? profile.teams.join(', ') : '';
+      var naam = 'Medewerker' + (fg ? ' — ' + fg : '') + (teams ? ' — ' + teams : '');
 
       var feedbackBadge = '';
       if (c.feedback === 'goed') {
@@ -3238,23 +3234,9 @@
     document.getElementById('modal-gesprek').classList.add('show');
   };
 
-  (function initToggleNamen() {
-    var btn = document.getElementById('toggle-namen-btn');
-    if (!btn) return;
-    btn.addEventListener('click', function () {
-      if (namenZichtbaar) {
-        namenZichtbaar = false;
-        btn.textContent = 'Namen tonen 🔒';
-        renderGesprekken();
-      } else {
-        if (confirm('Je staat op het punt namen zichtbaar te maken. Dit is alleen bedoeld bij klachten of incidenten. Doorgaan?')) {
-          namenZichtbaar = true;
-          btn.textContent = 'Namen verbergen 🔓';
-          renderGesprekken();
-        }
-      }
-    });
-  })();
+  // 'Namen tonen' knop verwijderd — admin ziet gesprekken altijd
+  // geanonimiseerd, conform privacy-spec. Naam-ontsluiting (alleen
+  // bij meldingen) is verplaatst naar de teamleider.
 
   // =============================================
   // STATISTIEKEN

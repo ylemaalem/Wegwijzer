@@ -237,7 +237,7 @@
     }
 
     if (teamProfiles.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen medewerkers in jouw team.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Geen medewerkers in jouw team.</td></tr>';
       return;
     }
 
@@ -246,11 +246,23 @@
       var sd = p.startdatum ? new Date(p.startdatum).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       }) : '-';
+
+      // Laatste gebruik Wegwijzer — adoptiesignaal, geen aanwezigheidscontrole
+      var laatsteCel = '<span style="color:var(--text-muted);font-style:italic">Nog niet actief</span>';
+      if (p.laatste_actief) {
+        var laatste = new Date(p.laatste_actief);
+        var dagen = Math.floor((Date.now() - laatste.getTime()) / (1000 * 60 * 60 * 24));
+        var datumTekst = laatste.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+        var indicator = dagen > 14 ? '🟡 ' : '';
+        laatsteCel = indicator + datumTekst;
+      }
+
       return '<tr>' +
         '<td>' + escapeHtml(p.naam || '-') + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
         '<td class="functiegroep-label">' + fg + '</td>' +
         '<td>' + sd + '</td>' +
+        '<td>' + laatsteCel + '</td>' +
         '<td><button class="btn-icon btn-icon-danger" onclick="window.vraagVerwijdering(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Verwijdering aanvragen">🗑️</button></td>' +
         '</tr>';
     }).join('');
@@ -794,7 +806,7 @@
 
     var result = await supabaseClient
       .from('meldingen')
-      .select('*')
+      .select('id, type, bericht, created_at, team, medewerker_profile_id')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(20);
@@ -804,15 +816,76 @@
       return;
     }
 
-    container.innerHTML = result.data.map(function (m) {
+    // Filter op meldingen die bij teams van deze teamleider horen
+    var teams = tlTeams || [];
+    var meldingen = result.data.filter(function (m) {
+      if (!m.team) return false;
+      return teams.indexOf(m.team) !== -1;
+    });
+
+    if (meldingen.length === 0) {
+      container.innerHTML = '<p class="no-data" style="text-align:center;color:var(--text-muted);padding:24px">Geen meldingen voor jouw team(s).</p>';
+      return;
+    }
+
+    container.innerHTML = meldingen.map(function (m) {
       var datum = new Date(m.created_at).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
+      var ontsluitBtn = m.medewerker_profile_id
+        ? '<button class="btn btn-secondary tl-ontsluit-naam-btn" data-melding-id="' + m.id + '" style="width:auto;padding:6px 12px;font-size:0.78rem;margin-top:8px">🔍 Naam inzien</button>'
+        : '';
+      var teamLabel = m.team ? '<span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px">' + escapeHtml(m.team) + '</span>' : '';
       return '<div class="kennisbank-item">' +
-        '<div class="kennisbank-item-vraag">' + datum + '</div>' +
+        '<div class="kennisbank-item-vraag">' + datum + teamLabel + '</div>' +
         '<div class="kennisbank-item-antwoord">' + escapeHtml(m.bericht) + '</div>' +
+        ontsluitBtn +
+        '<div class="tl-ontsluit-result" data-melding-id="' + m.id + '" style="margin-top:6px;font-size:0.85rem;color:var(--text);font-weight:600"></div>' +
         '</div>';
     }).join('');
+
+    // Klikhandler op alle ontsluit-knoppen
+    container.querySelectorAll('.tl-ontsluit-naam-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { ontsluitNaam(btn); });
+    });
+  }
+
+  async function ontsluitNaam(btn) {
+    var meldingId = btn.getAttribute('data-melding-id');
+    if (!confirm('Weet je zeker dat je de naam wilt inzien? Dit wordt geregistreerd.')) return;
+
+    btn.disabled = true;
+    var origineelLabel = btn.textContent;
+    btn.textContent = 'Bezig...';
+
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ ontsluit_naam: true, melding_id: meldingId })
+      });
+      var data = await response.json();
+      if (!response.ok || data.error) {
+        alert('Naam ontsluiten mislukt: ' + (data.error || 'onbekende fout'));
+        btn.textContent = origineelLabel;
+        btn.disabled = false;
+        return;
+      }
+      // Toon naam eenmalig in UI — geen opslag in localStorage
+      var resultEl = document.querySelector('.tl-ontsluit-result[data-melding-id="' + meldingId + '"]');
+      if (resultEl) resultEl.textContent = '👤 ' + data.naam;
+      // Verberg de knop nadat de naam getoond is
+      btn.style.display = 'none';
+    } catch (err) {
+      console.error('[Ontsluit naam] fout:', err);
+      alert('Onverwachte fout: ' + (err && err.message ? err.message : err));
+      btn.textContent = origineelLabel;
+      btn.disabled = false;
+    }
   }
 
   // =============================================

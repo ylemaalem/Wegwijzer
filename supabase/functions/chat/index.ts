@@ -497,6 +497,85 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       );
     }
 
+    // ---- Teamleider: naam ontsluiten bij melding ----
+    // Verifieert: aanvrager is teamleider, melding hoort bij eigen team,
+    // medewerker zit in team van de teamleider. Logt elke ontsluiting.
+    if (body.ontsluit_naam && body.melding_id) {
+      if (profile.role !== "teamleider") {
+        return new Response(
+          JSON.stringify({ error: "Alleen teamleiders kunnen namen ontsluiten" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Teamleider eigen teams ophalen via teamleiders-tabel
+      const { data: tlRow } = await supabaseAdmin
+        .from("teamleiders")
+        .select("teams")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("email", user.email)
+        .maybeSingle();
+      const tlTeams: string[] = (tlRow as { teams: string[] | null } | null)?.teams || [];
+      if (tlTeams.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "Je hebt geen teams toegewezen — naam ontsluiting niet mogelijk" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Melding ophalen
+      const { data: melding } = await supabaseAdmin
+        .from("meldingen")
+        .select("id, tenant_id, team, medewerker_profile_id")
+        .eq("id", body.melding_id)
+        .maybeSingle();
+      if (!melding) {
+        return new Response(JSON.stringify({ error: "Melding niet gevonden" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if ((melding as { tenant_id: string }).tenant_id !== profile.tenant_id) {
+        return new Response(JSON.stringify({ error: "Geen toegang tot deze melding" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const meldingTeam = (melding as { team: string | null }).team;
+      if (!meldingTeam || tlTeams.indexOf(meldingTeam) === -1) {
+        return new Response(JSON.stringify({ error: "Deze melding hoort niet bij een team waar jij teamleider van bent" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const medewerkerProfileId = (melding as { medewerker_profile_id: string | null }).medewerker_profile_id;
+      if (!medewerkerProfileId) {
+        return new Response(JSON.stringify({ error: "Aan deze melding is geen medewerker gekoppeld" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Medewerker ophalen + verifieer team-overlap
+      const { data: medewerker } = await supabaseAdmin
+        .from("profiles")
+        .select("id, naam, teams, tenant_id")
+        .eq("id", medewerkerProfileId)
+        .maybeSingle();
+      if (!medewerker || (medewerker as { tenant_id: string }).tenant_id !== profile.tenant_id) {
+        return new Response(JSON.stringify({ error: "Medewerker niet gevonden" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const medewerkerTeams: string[] = (medewerker as { teams: string[] | null }).teams || [];
+      const heeftOverlap = medewerkerTeams.some((t) => tlTeams.indexOf(t) !== -1);
+      if (!heeftOverlap) {
+        return new Response(JSON.stringify({ error: "Deze medewerker zit niet in jouw team" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const medewerkerNaam = (medewerker as { naam: string | null }).naam || "(onbekend)";
+
+      // Logging — service_role bypasst RLS
+      await supabaseAdmin.from("incident_naam_ontsluiting").insert({
+        tenant_id: profile.tenant_id,
+        teamleider_id: profile.id,
+        melding_id: body.melding_id,
+        medewerker_naam: medewerkerNaam,
+      });
+      console.log("[Ontsluit naam] Teamleider", profile.naam, "ontsloot naam van", medewerkerNaam, "voor melding", body.melding_id);
+
+      return new Response(
+        JSON.stringify({ naam: medewerkerNaam }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ---- Teamleider: trendanalyse op anonieme vraaglijst ----
     if (body.generate_trendanalyse === true) {
       if (profile.role !== "teamleider" && profile.role !== "admin") {
@@ -1136,7 +1215,11 @@ ${vraagLijst}`;
       const userTeams: string[] = profile.teams || [];
       if (userTeams.length > 0) {
         const { data: teamProfiles } = await supabaseAdmin.from("profiles").select("id").eq("tenant_id", profile.tenant_id).overlaps("teams", userTeams);
-        if (teamProfiles && teamProfiles.length > 0) {
+        // MINIMUMDREMPEL: alleen melding genereren als het team minimaal 5
+        // actieve medewerkers heeft. Bij kleinere teams is identiteit
+        // feitelijk niet anoniem ook zonder naam-ontsluiting.
+        const MIN_ACTIEVE_MEDEWERKERS = 5;
+        if (teamProfiles && teamProfiles.length >= MIN_ACTIEVE_MEDEWERKERS) {
           const teamProfileIds = teamProfiles.map((p: { id: string }) => p.id);
           const { data: weekConvs } = await supabaseAdmin.from("conversations").select("vraag").in("user_id", teamProfileIds).gte("created_at", weekStart.toISOString());
           if (weekConvs) {
@@ -1151,12 +1234,25 @@ ${vraagLijst}`;
               else if (gevondenTermen.some(t => t.includes("crisis") || t.includes("nood"))) onderwerp = "crisissituaties";
               else if (gevondenTermen.some(t => t.includes("suicid") || t.includes("suïcid") || t.includes("zelfdoding") || t.includes("zelfmoord"))) onderwerp = "suïcidaliteit";
 
+              // Team voor melding = eerste team van de medewerker (meestal
+              // zit elke medewerker in één team; bij meerdere kiezen we
+              // het eerste — voor weergave bij teamleider).
+              const teamVoorMelding = userTeams[0] || null;
+
               const { data: bestaandeMelding } = await supabaseAdmin.from("meldingen").select("id").eq("tenant_id", profile.tenant_id).eq("type", "patroon_" + onderwerp).gte("created_at", weekStart.toISOString()).limit(1);
               if (!bestaandeMelding || bestaandeMelding.length === 0) {
-                await supabaseAdmin.from("meldingen").insert({ tenant_id: profile.tenant_id, type: "patroon_" + onderwerp, bericht: `Er zijn deze week meerdere vragen gesteld over ${onderwerp} in jouw team. Overweeg dit te bespreken in het teamoverleg.` });
+                await supabaseAdmin.from("meldingen").insert({
+                  tenant_id: profile.tenant_id,
+                  type: "patroon_" + onderwerp,
+                  bericht: `Er zijn deze week meerdere vragen gesteld over ${onderwerp} in jouw team. Overweeg dit te bespreken in het teamoverleg.`,
+                  team: teamVoorMelding,
+                  medewerker_profile_id: profile.id,
+                });
               }
             }
           }
+        } else {
+          console.log("[Patroonherkenning] Team te klein voor melding:", teamProfiles?.length || 0, "<", MIN_ACTIEVE_MEDEWERKERS);
         }
       }
     }
@@ -1605,6 +1701,17 @@ ${alleKennisbronnen}`;
       .single();
 
     if (convError) console.error("Conversation opslaan mislukt:", convError);
+
+    // ---- 9b. Last online — adoptiesignaal voor teamleider ----
+    // Bij elke succesvolle chatbot-vraag laatste_actief bijwerken.
+    // Geen blocking await op het response-pad — best effort.
+    supabaseAdmin
+      .from("profiles")
+      .update({ laatste_actief: new Date().toISOString() })
+      .eq("id", profile.id)
+      .then((r: { error: { message: string } | null }) => {
+        if (r.error) console.error("[laatste_actief] update fout:", r.error.message);
+      });
 
     return new Response(
       JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null }),
