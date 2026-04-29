@@ -590,6 +590,14 @@
           <h3 class="section-title" style="font-size:1rem;color:#2E7D32">🟢 Suggesties</h3>
           <div id="ks-suggesties-lijst"></div>
         </div>
+
+        <div id="ks-archief-sectie" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;display:none">
+          <button type="button" id="ks-archief-toggle" style="background:none;border:none;cursor:pointer;font-size:0.95rem;font-weight:600;color:var(--text-muted);padding:6px 0;display:flex;align-items:center;gap:8px;width:100%;text-align:left">
+            <span id="ks-archief-caret">▶</span>
+            <span id="ks-archief-label">📁 Archief (0 afgehandeld)</span>
+          </button>
+          <div id="ks-archief-lijst" style="display:none;margin-top:12px"></div>
+        </div>
       </section>
 
       <!-- ========== TAB: VERTROUWEN ========== -->
@@ -1258,7 +1266,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=35"></script>
+  <script src="js/admin.js?v=36"></script>
 
 </body>
 </html>

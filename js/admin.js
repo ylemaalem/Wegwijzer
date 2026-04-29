@@ -1739,17 +1739,20 @@
       return;
     }
 
+    // Haal álle suggesties op — afgehandelde (opgepakt + niet_relevant)
+    // gaan naar het archief-blok onderaan i.p.v. helemaal verborgen.
     var result = await supabaseClient
       .from('kennissuggesties')
       .select('*')
       .eq('tenant_id', tenantId)
-      .neq('status', 'niet_relevant')
       .order('aangemaakt_op', { ascending: false });
 
     if (result.error) {
       console.error('[Kennissuggesties] query fout:', result.error);
     }
-    var data = result.data || [];
+    var alleSuggesties = result.data || [];
+    var data = alleSuggesties.filter(function (s) { return s.status !== 'opgepakt' && s.status !== 'niet_relevant'; });
+    var archiefData = alleSuggesties.filter(function (s) { return s.status === 'opgepakt' || s.status === 'niet_relevant'; });
     // Cache vullen voor lookup vanuit notitieSuggestie etc.
     suggestiesCache = {};
     data.forEach(function (s) { suggestiesCache[s.id] = s; });
@@ -1846,6 +1849,67 @@
     renderGroep(data.filter(function (s) { return s.type === 'conflict'; }), conflictenContainer, '🔴');
     renderGroep(data.filter(function (s) { return s.type === 'hiaat'; }), hiatenContainer, '🟡');
     renderGroep(data.filter(function (s) { return s.type === 'suggestie'; }), suggestiesContainer, '🟢');
+
+    renderArchief(archiefData);
+  }
+
+  // Archief: opgepakt + niet_relevant suggesties in inklapbaar blok.
+  // Default ingeklapt; voorkeur in localStorage onthouden.
+  function renderArchief(archief) {
+    var sectie = document.getElementById('ks-archief-sectie');
+    var lijst = document.getElementById('ks-archief-lijst');
+    var label = document.getElementById('ks-archief-label');
+    var caret = document.getElementById('ks-archief-caret');
+    var toggle = document.getElementById('ks-archief-toggle');
+    if (!sectie || !lijst || !label || !toggle) return;
+
+    if (!archief || archief.length === 0) {
+      sectie.style.display = 'none';
+      return;
+    }
+    sectie.style.display = '';
+    label.textContent = '📁 Archief (' + archief.length + ' afgehandeld)';
+
+    var iconenPerType = { conflict: '🔴', hiaat: '🟡', suggestie: '🟢' };
+
+    lijst.innerHTML = archief.map(function (s) {
+      var datum = new Date(s.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var parsed = parseSuggestieOmschrijving(s.omschrijving);
+      var statusBadge = s.status === 'opgepakt'
+        ? '<span class="badge badge-success" style="font-size:0.7rem">Opgepakt</span>'
+        : '<span class="badge" style="font-size:0.7rem;background:#E0E0E0;color:#555">Niet relevant</span>';
+      var icoon = iconenPerType[s.type] || '•';
+      return '<div class="kennisbank-item" style="margin-bottom:8px;opacity:0.7" data-suggestie-id="' + s.id + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.88rem;font-weight:600">' + icoon + ' ' + escapeHtml(parsed.titel) + '</div>' +
+        '<div style="margin-top:6px">' + statusBadge +
+          '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px">' + datum + ' • ' + (s.scan_type === 'grondig' ? 'grondige' : 'snelle') + ' scan</span>' +
+        '</div>' +
+        '</div>' +
+        '<div style="flex-shrink:0">' +
+        '<button class="btn-icon btn-icon-danger" onclick="window.deleteSuggestie(\'' + s.id + '\')" title="Verwijderen">🗑️</button>' +
+        '</div></div></div>';
+    }).join('');
+
+    // localStorage voorkeur — default ingeklapt
+    var key = 'wegwijzer_ks_archief_open';
+    var openBijOpen = localStorage.getItem(key) === '1';
+    function pasToggleStateToe(open) {
+      lijst.style.display = open ? 'block' : 'none';
+      caret.textContent = open ? '▼' : '▶';
+    }
+    pasToggleStateToe(openBijOpen);
+
+    if (!toggle.dataset.bound) {
+      toggle.addEventListener('click', function () {
+        var nu = lijst.style.display !== 'none';
+        var nieuw = !nu;
+        pasToggleStateToe(nieuw);
+        localStorage.setItem(key, nieuw ? '1' : '0');
+      });
+      toggle.dataset.bound = 'true';
+    }
   }
 
   window.markeerSuggestie = async function (id, status) {

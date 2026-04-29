@@ -1400,12 +1400,14 @@ ${vraagLijst}`;
       kennisnotitieContext = "--- KENNISNOTITIES VAN DE ORGANISATIE ---\n" + kennisnotities.map((kn: { originele_vraag: string; notitie: string }) => `📝 Over "${kn.originele_vraag}": ${kn.notitie}`).join("\n");
     }
 
-    // ---- 6j. Gespreksgeheugen ----
+    // ---- 6j. Gespreksgeheugen — laatste 3 vragen van deze medewerker.
+    // Het label hier is intern (alleen voor het model). De model-instructie
+    // verderop verbiedt expliciet om "vorige sessie" te zeggen.
     const { data: recenteGesprekken } = await supabaseAdmin.from("conversations").select("vraag, antwoord").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(3);
     let geheugenContext = "";
     if (recenteGesprekken && recenteGesprekken.length > 0) {
       const recente = [...recenteGesprekken].reverse();
-      geheugenContext = "\n\nRECENTE GESPREKSGESCHIEDENIS (vorige sessies van deze medewerker):\n" + recente.map((g: { vraag: string; antwoord: string }, i: number) => `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`).join("\n\n");
+      geheugenContext = "\n\nGESPREKSGEHEUGEN — eerdere vragen van deze medewerker (chronologisch, oudste eerst):\n" + recente.map((g: { vraag: string; antwoord: string }, i: number) => `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`).join("\n\n");
     }
 
     const bronnen: string[] = [];
@@ -1574,10 +1576,15 @@ ${alleKennisbronnen}`;
       antwoord = antwoord.trimEnd();
     }
 
-    // ---- 9. Gesprek opslaan ----
+    // ---- 9. Gesprek opslaan — naam strippen uit DB-antwoord (privacy)
+    // De medewerker zelf ziet de naam wél in de UI (rawAntwoord/antwoord
+    // worden teruggegeven), maar in conversations.antwoord staat altijd
+    // 'de medewerker' zodat teamleider/admin niet via gesprekslijst
+    // kunnen zien wie wat vroeg.
     const naamInDb = (profile.naam || "").trim();
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const antwoordVoorDb = naamInDb.length > 2
-      ? antwoord.replace(new RegExp(naamInDb, "gi"), "de medewerker")
+      ? antwoord.replace(new RegExp(escapeRegex(naamInDb), "gi"), "de medewerker")
       : antwoord;
 
     const { data: conversation, error: convError } = await supabaseAdmin
