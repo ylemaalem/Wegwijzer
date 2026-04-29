@@ -467,6 +467,206 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
     }
 
+    // ---- Admin: website crawl ----
+    // Fetcht de hoofdpagina, extracteert interne links, fetcht max 50
+    // subpagina's, slaat elk op als is_crawled_page document met zoektermen.
+    if (body.crawl_website && body.url) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const startUrl: string = body.url;
+      if (!startUrl.startsWith("https://")) {
+        return new Response(
+          JSON.stringify({ error: "URL moet beginnen met https://" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const tenantIdForCrawl = profile.tenant_id;
+      const startStartTime = Date.now();
+      const TOTAL_TIMEOUT_MS = 55_000;
+      const PAGE_TIMEOUT_MS = 10_000;
+      const MAX_PAGES = 50;
+      const MIN_TEXT = 200;
+
+      function fetchWithTimeout(u: string, ms: number) {
+        return Promise.race([
+          fetch(u, { headers: { "User-Agent": "WegwijzerCrawler/1.0" } }),
+          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+        ]);
+      }
+
+      function stripHtmlToText(html: string): { titel: string; tekst: string } {
+        const titelMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const titel = titelMatch ? titelMatch[1].replace(/\s+/g, " ").trim() : "";
+        const noScript = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+        const tekst = noScript
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/\s+/g, " ")
+          .trim();
+        return { titel: titel || "(zonder titel)", tekst };
+      }
+
+      function extractLinks(html: string, base: URL, disallow: string[]): string[] {
+        const matches = Array.from(html.matchAll(/href=["']([^"'#]+)["']/gi));
+        const set = new Set<string>();
+        for (const m of matches) {
+          let href = m[1].trim();
+          if (!href || href.startsWith("javascript:") || href.startsWith("mailto:")) continue;
+          // Skip PDFs en andere binaries
+          if (/\.(pdf|jpg|jpeg|png|gif|svg|zip|mp3|mp4|doc|docx|xls|xlsx)(\?|$)/i.test(href)) continue;
+          // Skip login/zoek
+          if (/\/(login|signin|inloggen|search|zoek)(\/|\?|$)/i.test(href)) continue;
+          // Strip querystring + anchor (anchor al weg via regex)
+          const qIndex = href.indexOf("?");
+          if (qIndex !== -1) href = href.substring(0, qIndex);
+          try {
+            const abs = new URL(href, base);
+            if (abs.hostname !== base.hostname) continue;
+            if (disallow.some((d) => abs.pathname.startsWith(d))) continue;
+            set.add(abs.toString());
+          } catch { /* ongeldige URL, skip */ }
+        }
+        return Array.from(set);
+      }
+
+      const baseUrl = new URL(startUrl);
+
+      // robots.txt ophalen
+      const disallow: string[] = [];
+      try {
+        const robotsResp = await fetchWithTimeout(baseUrl.origin + "/robots.txt", 5000);
+        if (robotsResp.ok) {
+          const robotsText = await robotsResp.text();
+          let inGlobalAgent = false;
+          for (const line of robotsText.split("\n")) {
+            const lineTrim = line.trim();
+            if (/^user-agent:\s*\*/i.test(lineTrim)) inGlobalAgent = true;
+            else if (/^user-agent:/i.test(lineTrim)) inGlobalAgent = false;
+            else if (inGlobalAgent && /^disallow:/i.test(lineTrim)) {
+              const p = lineTrim.replace(/^disallow:\s*/i, "").trim();
+              if (p) disallow.push(p);
+            }
+          }
+        }
+      } catch { /* geen robots.txt — toegestaan */ }
+
+      // Hoofdpagina fetchen + links extracten
+      let geslaagd = 0;
+      let mislukt = 0;
+      const verwerktePaginas: string[] = [];
+      const fouten: string[] = [];
+
+      try {
+        const hoofdResp = await fetchWithTimeout(startUrl, PAGE_TIMEOUT_MS);
+        if (!hoofdResp.ok) {
+          return new Response(
+            JSON.stringify({ error: `Hoofdpagina ${hoofdResp.status}` }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const hoofdHtml = await hoofdResp.text();
+        const links = [startUrl, ...extractLinks(hoofdHtml, baseUrl, disallow)].slice(0, MAX_PAGES);
+        const uniekeLinks = Array.from(new Set(links));
+        console.log("[Crawl]", uniekeLinks.length, "unieke links voor", startUrl);
+
+        for (const link of uniekeLinks) {
+          if (Date.now() - startStartTime > TOTAL_TIMEOUT_MS) {
+            console.log("[Crawl] Timeout na", verwerktePaginas.length, "pagina's");
+            break;
+          }
+          try {
+            const resp = await fetchWithTimeout(link, PAGE_TIMEOUT_MS);
+            if (!resp.ok) { mislukt++; continue; }
+            const html = await resp.text();
+            const { titel, tekst } = stripHtmlToText(html);
+            if (tekst.length < MIN_TEXT) { mislukt++; continue; }
+
+            // Insert document
+            const { data: docInserted } = await supabaseAdmin
+              .from("documents")
+              .insert({
+                tenant_id: tenantIdForCrawl,
+                naam: titel.substring(0, 200),
+                bestandspad: "",
+                content: tekst.substring(0, 50_000),
+                documenttype: "overig",
+                parent_url: startUrl,
+                crawled_at: new Date().toISOString(),
+                is_crawled_page: true,
+              })
+              .select("id")
+              .single();
+
+            // Zoektermen genereren via Claude Haiku — best-effort
+            if (docInserted && (docInserted as { id: string }).id) {
+              try {
+                const ztResp = await fetch("https://api.anthropic.com/v1/messages", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": anthropicApiKey,
+                    "anthropic-version": "2023-06-01",
+                  },
+                  body: JSON.stringify({
+                    model: "claude-haiku-4-5-20251001",
+                    max_tokens: 512,
+                    messages: [{ role: "user", content: `Genereer 20 zoektermen in het Nederlands voor dit document. Geef ALLEEN een JSON array, geen uitleg.\n\nTitel: ${titel}\nInhoud: ${tekst.substring(0, 1500)}` }],
+                  }),
+                });
+                if (ztResp.ok) {
+                  const ztJson = await ztResp.json();
+                  let zRaw = ztJson.content?.[0]?.text || "[]";
+                  zRaw = zRaw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+                  const sIdx = zRaw.indexOf("[");
+                  const eIdx = zRaw.lastIndexOf("]");
+                  if (sIdx !== -1 && eIdx !== -1) zRaw = zRaw.substring(sIdx, eIdx + 1);
+                  let zt: unknown[] = [];
+                  try { zt = JSON.parse(zRaw); } catch { /* skip */ }
+                  if (Array.isArray(zt)) {
+                    const finaleZt = zt
+                      .filter((t) => typeof t === "string" && (t as string).trim().length > 0)
+                      .map((t) => (t as string).trim().toLowerCase())
+                      .slice(0, 30);
+                    await supabaseAdmin.from("documents").update({ zoektermen: finaleZt }).eq("id", (docInserted as { id: string }).id);
+                  }
+                }
+              } catch { /* zoektermen mislukt — geen blocker */ }
+            }
+
+            verwerktePaginas.push(titel);
+            geslaagd++;
+          } catch (pageErr) {
+            mislukt++;
+            fouten.push(link + ": " + String(pageErr));
+          }
+        }
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ error: "Crawl mislukt: " + String(err), geslaagd, mislukt }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log("[Crawl] klaar:", geslaagd, "geslaagd,", mislukt, "mislukt");
+
+      return new Response(
+        JSON.stringify({ geslaagd, mislukt, paginas: verwerktePaginas, fouten: fouten.slice(0, 10) }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ---- Teamleider: team medewerkers ophalen (via service role, omzeilt RLS) ----
     if (body.get_team_medewerkers) {
       if (profile.role !== "teamleider" && profile.role !== "admin") {

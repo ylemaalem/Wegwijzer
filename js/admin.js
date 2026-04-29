@@ -1351,7 +1351,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1434,12 +1434,26 @@
       });
     }
 
-    // Groepeer documenten per map
+    // Splits gecrawlde paginas (groeperen per parent_url) van reguliere
+    // documenten (groeperen per map). Gecrawlde paginas verschijnen in
+    // een eigen blok onderaan zodat ze niet de mapindeling verstoren.
+    var crawledDocs = result.data.filter(function (d) { return d.is_crawled_page === true && d.parent_url; });
+    var regularDocs = result.data.filter(function (d) { return !(d.is_crawled_page === true); });
+
+    // Groepeer reguliere documenten per map
     var grouped = {};
-    result.data.forEach(function (doc) {
+    regularDocs.forEach(function (doc) {
       var mapNaam = doc.map || 'Overig';
       if (!grouped[mapNaam]) grouped[mapNaam] = [];
       grouped[mapNaam].push(doc);
+    });
+
+    // Groepeer gecrawlde paginas per parent_url
+    var crawledByUrl = {};
+    crawledDocs.forEach(function (doc) {
+      var key = doc.parent_url;
+      if (!crawledByUrl[key]) crawledByUrl[key] = [];
+      crawledByUrl[key].push(doc);
     });
 
     // Sorteer mappen: benoemde mappen eerst, Overig laatst
@@ -1469,6 +1483,12 @@
       var zoekCount = (doc.zoektermen && doc.zoektermen.length) || 0;
       var synTitle = 'Synoniemen & afkortingen' + (synCount ? ' (' + synCount + ')' : '');
       var zoekIndicator = zoekCount > 0 ? '<span style="color:var(--success);font-size:0.7rem;margin-left:4px" title="' + zoekCount + ' zoektermen geïndexeerd">🔍' + zoekCount + '</span>' : '';
+      // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
+      // alleen via 'website-bron verwijderen' (cascade op parent_url).
+      var deleteBtn = doc.is_crawled_page
+        ? '<span class="btn-icon" title="Verwijder via website-bron" style="opacity:0.3;cursor:not-allowed">🗑️</span>'
+        : '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>';
+
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
         '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + '</td>' +
@@ -1480,7 +1500,7 @@
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon" onclick="window.editSynoniemen(\'' + doc.id + '\')" title="' + synTitle + '">🏷️' + (synCount ? '<sup style="font-size:0.6rem">' + synCount + '</sup>' : '') + '</button>' +
           '<button class="btn-icon doc-zoektermen-btn" data-doc-id="' + doc.id + '" onclick="window.regenerateZoektermenDoc(this)" title="Zoektermen herindexeren">🔄</button>' +
-          '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>' +
+          deleteBtn +
         '</td>' +
         '</tr>';
     }
@@ -1501,6 +1521,24 @@
         html += renderDocRow(doc).replace('<tr ', '<tr data-map-groep="' + escapeHtml(mapNaam) + '" ' + (isIngeklapt ? 'style="display:none" ' : '') );
       });
     });
+
+    // Gecrawlde website-groepen — inklapbaar per parent_url
+    var crawledKeys = Object.keys(crawledByUrl).sort();
+    crawledKeys.forEach(function (parentUrl) {
+      var groepKey = 'crawl|' + parentUrl;
+      var isIngeklapt = ingeklapt[groepKey] !== false; // default ingeklapt
+      var icoon = isIngeklapt ? '🌐▶' : '🌐▼';
+      var hostnaam = parentUrl;
+      try { hostnaam = new URL(parentUrl).hostname; } catch (e) {}
+      html += '<tr class="map-header" data-map="' + escapeHtml(groepKey) + '" style="cursor:pointer;user-select:none">' +
+        '<td colspan="6" style="background:var(--bg);font-weight:700;font-size:0.85rem;color:var(--primary);padding:10px 12px;border-bottom:2px solid var(--primary)">' +
+        '<span class="map-icoon">' + icoon + '</span> ' + escapeHtml(hostnaam) + ' (' + crawledByUrl[parentUrl].length + ' pagina\'s)' +
+        '</td></tr>';
+      crawledByUrl[parentUrl].forEach(function (doc) {
+        html += renderDocRow(doc).replace('<tr ', '<tr data-map-groep="' + escapeHtml(groepKey) + '" ' + (isIngeklapt ? 'style="display:none" ' : '') );
+      });
+    });
+
     tbody.innerHTML = html;
 
     // Event delegation voor map headers
@@ -1510,13 +1548,25 @@
         var header = e.target.closest('.map-header');
         if (!header) return;
         var mapNaam = header.getAttribute('data-map');
-        var rijen = tbody.querySelectorAll('tr[data-map-groep="' + mapNaam + '"]');
+        // CSS-attr-selector werkt niet betrouwbaar met dubbele quotes binnen
+        // de waarde; filter daarom via JS i.p.v. querySelectorAll selector
+        var rijen = Array.prototype.filter.call(
+          tbody.querySelectorAll('tr[data-map-groep]'),
+          function (tr) { return tr.getAttribute('data-map-groep') === mapNaam; }
+        );
         var icoonEl = header.querySelector('.map-icoon');
+        var isCrawlGroep = mapNaam && mapNaam.indexOf('crawl|') === 0;
 
         // Toggle
         var nuIngeklapt = rijen.length > 0 && rijen[0].style.display !== 'none';
         rijen.forEach(function (r) { r.style.display = nuIngeklapt ? 'none' : ''; });
-        if (icoonEl) icoonEl.textContent = nuIngeklapt ? '📁' : '📂';
+        if (icoonEl) {
+          if (isCrawlGroep) {
+            icoonEl.textContent = nuIngeklapt ? '🌐▶' : '🌐▼';
+          } else {
+            icoonEl.textContent = nuIngeklapt ? '📁' : '📂';
+          }
+        }
 
         // Sla staat op
         try {
@@ -4747,11 +4797,12 @@
   async function addToegestaneWebsite() {
     var naamEl = document.getElementById('website-naam');
     var urlEl = document.getElementById('website-url');
+    var statusEl = document.getElementById('website-crawl-status');
     var naam = naamEl.value.trim();
     var url = urlEl.value.trim();
 
     if (!naam || !url) { alert('Vul naam en URL in.'); return; }
-    if (!url.startsWith('http://') && !url.startsWith('https://')) { alert('URL moet beginnen met http:// of https://'); return; }
+    if (!url.startsWith('https://')) { alert('URL moet beginnen met https://'); return; }
 
     await supabaseClient.from('toegestane_websites').insert({
       tenant_id: tenantId,
@@ -4762,12 +4813,70 @@
     naamEl.value = '';
     urlEl.value = '';
     loadToegestaneWebsites();
+
+    // Direct crawlen
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = '🔍 Subpagina\'s worden geïndexeerd...';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ crawl_website: true, url: url })
+      });
+      var data = await resp.json();
+      if (data.error) {
+        if (statusEl) {
+          statusEl.textContent = '⚠️ Crawlen mislukt — URL is opgeslagen maar subpagina\'s niet geïndexeerd: ' + data.error;
+          statusEl.style.color = 'var(--error)';
+        }
+      } else {
+        if (statusEl) {
+          statusEl.textContent = '✅ ' + (data.geslaagd || 0) + ' pagina\'s geïndexeerd van ' + url;
+          statusEl.style.color = 'var(--success, #28A745)';
+        }
+        await loadDocuments();
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = '⚠️ Crawlen mislukt — URL is opgeslagen maar subpagina\'s niet geïndexeerd: ' + (err && err.message ? err.message : err);
+        statusEl.style.color = 'var(--error)';
+      }
+    }
   }
 
   window.deleteWebsite = async function (id) {
-    if (!confirm('Website verwijderen?')) return;
+    if (!confirm('Website verwijderen? Alle gecrawlde subpagina\'s worden ook verwijderd.')) return;
+
+    // Haal eerst de URL op zodat we de gecrawlde docs met die parent_url kunnen verwijderen
+    var ws = await supabaseClient
+      .from('toegestane_websites')
+      .select('url')
+      .eq('id', id)
+      .single();
+    var parentUrl = ws.data ? ws.data.url : null;
+
     await supabaseClient.from('toegestane_websites').delete().eq('id', id);
+
+    if (parentUrl) {
+      // Cascade: alle is_crawled_page documenten met deze parent_url verwijderen
+      var delResult = await supabaseClient
+        .from('documents')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('parent_url', parentUrl)
+        .eq('is_crawled_page', true);
+      console.log('[deleteWebsite] gecrawlde docs verwijderd:', delResult.error ? 'FOUT' : 'OK');
+    }
+
     loadToegestaneWebsites();
+    await loadDocuments();
   };
 
   // =============================================
