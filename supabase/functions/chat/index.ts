@@ -957,9 +957,12 @@ ${vraagLijst}`;
           console.error("[Terugblik] RESEND_API_KEY ontbreekt — emails worden NIET verstuurd.");
           logStatus = "mail_niet_geconfigureerd";
         } else {
-          const emailOntvangers = body.is_test
-            ? [{ naam: "Younes", email: "y.lemaalem@ambulantehulpverlening.nl" }]
-            : metEmail;
+          // is_test stuurt naar de admin die de actie triggerde (via auth user.email).
+          // Anders alle leidinggevenden met een geldig email-adres.
+          const testOntvanger = body.is_test && user.email
+            ? [{ naam: profile.naam || "Beheerder", email: user.email }]
+            : null;
+          const emailOntvangers = testOntvanger || metEmail;
 
           for (const tl of emailOntvangers) {
             const subject = (body.is_test ? "TEST — " : "") + "Wegwijzer terugblik — " + maand;
@@ -998,6 +1001,14 @@ ${vraagLijst}`;
             }
           }
           console.log("[Terugblik] Emails verstuurd:", mailVerstuurd, "van", emailOntvangers.length, mailFouten.length > 0 ? "Fouten: " + mailFouten.join(" | ") : "");
+          // Status alleen 'verstuurd' als minstens één mail daadwerkelijk
+          // is afgeleverd. Anders 'verzending mislukt' zodat het log eerlijk
+          // is i.p.v. ten onrechte succes te claimen.
+          if (mailVerstuurd === 0) {
+            logStatus = body.is_test ? "test_mislukt" : "verzending_mislukt";
+          } else if (mailVerstuurd < emailOntvangers.length) {
+            logStatus = body.is_test ? "test_deels" : "deels_verstuurd";
+          }
         }
 
         await supabaseAdmin.from("terugblik_log").insert({
