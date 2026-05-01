@@ -94,6 +94,75 @@ function buildTerugblikHtml(
 </body></html>`;
 }
 
+// ---- Embedding helpers ----
+
+async function generateEmbedding(text: string, openaiKey: string): Promise<number[] | null> {
+  const input = text.replace(/\n+/g, " ").trim().substring(0, 8000);
+  try {
+    const resp = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
+      body: JSON.stringify({ model: "text-embedding-3-small", input }),
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error("[Embedding] OpenAI fout:", resp.status, err.substring(0, 200));
+      return null;
+    }
+    const result = await resp.json();
+    return result.data?.[0]?.embedding ?? null;
+  } catch (e) {
+    console.error("[Embedding] Exception:", e);
+    return null;
+  }
+}
+
+function chunkText(text: string, chunkSize = 600, overlap = 100): string[] {
+  const paragraphs = text.split(/\n{2,}/);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) continue;
+
+    if (current.length + trimmed.length + 1 <= chunkSize) {
+      current = current ? current + "\n\n" + trimmed : trimmed;
+    } else {
+      if (current) chunks.push(current);
+      // Para itself larger than chunkSize: split on newlines, then sliding window
+      if (trimmed.length > chunkSize) {
+        const lines = trimmed.split(/\n/).filter(l => l.trim());
+        let buf = "";
+        for (const line of lines) {
+          if (buf.length + line.length + 1 <= chunkSize) {
+            buf = buf ? buf + "\n" + line : line;
+          } else {
+            if (buf) chunks.push(buf);
+            buf = line;
+          }
+        }
+        if (buf) current = buf;
+        else current = "";
+      } else {
+        current = trimmed;
+      }
+    }
+  }
+  if (current) chunks.push(current);
+
+  // Sliding window overlap: prepend tail of previous chunk
+  if (overlap > 0 && chunks.length > 1) {
+    const overlapped: string[] = [chunks[0]];
+    for (let i = 1; i < chunks.length; i++) {
+      const tail = chunks[i - 1].slice(-overlap);
+      overlapped.push(tail + " " + chunks[i]);
+    }
+    return overlapped;
+  }
+  return chunks;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -663,6 +732,93 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
       return new Response(
         JSON.stringify({ geslaagd, mislukt, paginas: verwerktePaginas, fouten: fouten.slice(0, 10) }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ---- Admin: document chunks indexeren (vector embeddings) ----
+    if (body.index_document_chunks && body.document_id) {
+      if (profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const openaiKey = Deno.env.get("OPENAI_API_KEY");
+      if (!openaiKey) {
+        return new Response(
+          JSON.stringify({ error: "OPENAI_API_KEY niet geconfigureerd" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const docId: string = body.document_id;
+
+      // Document ophalen (mag alleen van eigen tenant)
+      const { data: doc, error: docErr } = await supabaseAdmin
+        .from("documents")
+        .select("id, naam, content, tenant_id")
+        .eq("id", docId)
+        .eq("tenant_id", profile.tenant_id)
+        .single();
+
+      if (docErr || !doc) {
+        return new Response(
+          JSON.stringify({ error: "Document niet gevonden" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!doc.content || doc.content.trim().length < 10) {
+        return new Response(
+          JSON.stringify({ error: "Document heeft geen inhoud om te indexeren", chunks: 0 }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Bestaande chunks verwijderen zodat we clean kunnen herindexeren
+      await supabaseAdmin.from("document_chunks").delete().eq("document_id", docId);
+
+      const orgId: string = profile.tenant_id;
+      const chunks = chunkText(doc.content, 600, 100);
+      console.log(`[Index] Document "${doc.naam}": ${chunks.length} chunks`);
+
+      let geslaagd = 0;
+      let mislukt = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkTekst = chunks[i];
+        let embedding: number[] | null = null;
+
+        // Max 2 pogingen
+        for (let poging = 0; poging < 2; poging++) {
+          embedding = await generateEmbedding(chunkTekst, openaiKey);
+          if (embedding) break;
+          if (poging === 0) await new Promise(r => setTimeout(r, 1000));
+        }
+
+        const { error: insertErr } = await supabaseAdmin.from("document_chunks").insert({
+          document_id: docId,
+          org_id: orgId,
+          chunk_index: i,
+          chunk_text: chunkTekst,
+          embedding: embedding ? JSON.stringify(embedding) : null,
+        });
+
+        if (insertErr) {
+          console.error(`[Index] Chunk ${i} insert fout:`, insertErr.message);
+          mislukt++;
+        } else {
+          if (!embedding) console.warn(`[Index] Chunk ${i} opgeslagen zonder embedding (OpenAI fout)`);
+          geslaagd++;
+        }
+      }
+
+      console.log(`[Index] Klaar: ${geslaagd} chunks opgeslagen, ${mislukt} mislukt`);
+
+      return new Response(
+        JSON.stringify({ geslaagd, mislukt, totaal: chunks.length }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -1498,90 +1654,163 @@ ${vraagLijst}`;
     const regio: "Veluwe" | "Almere" | null = heeftVeluweTeam ? "Veluwe" : heeftAlmereTeam ? "Almere" : null;
     const uitgeslotenMappen: string[] = regio === "Veluwe" ? ["Almere", "Manuscript"] : regio === "Almere" ? ["Veluwe"] : [];
 
-    const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
-    const orgDocs = uitgeslotenMappen.length > 0
-      ? (ruweOrgDocs || []).filter((d: { map: string | null }) => !uitgeslotenMappen.includes(d.map || ""))
-      : (ruweOrgDocs || []);
-    const { data: persDocs } = await supabaseAdmin.from("documents").select("naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
-    const allDocs = [...(orgDocs || []), ...(persDocs || [])];
-    console.log(`[Chat] Gebruiker: ${profile.naam}, Regio: ${regio || "alle"}, Vraag: "${vraag.substring(0, 80)}", Org docs: ${orgDocs?.length || 0} (van ${ruweOrgDocs?.length || 0}), Pers docs: ${persDocs?.length || 0}`);
-
-    let keywords = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
-
-    // Semantisch zoeken
-    if (allDocs.length > 0 && keywords.length > 0) {
-      try {
-        const synResponse = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 200,
-            messages: [{ role: "user", content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden in een kennisbank. Denk breed: gebruik synoniemen, officiële HR-termen, gerelateerde begrippen, samengestelde woorden, praktische varianten en specifieke regelingen of beleidsdocumenten. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"` }],
-          }),
-        });
-        if (synResponse.ok) {
-          const synResult = await synResponse.json();
-          const synText = synResult.content?.[0]?.text || "";
-          const rawTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
-          const extraTerms: string[] = [];
-          for (const term of rawTerms) {
-            extraTerms.push(term);
-            const words = term.split(/\s+/).filter((w: string) => w.length > 2 && !STOPWOORDEN.has(w));
-            for (const w of words) { if (!extraTerms.includes(w)) extraTerms.push(w); }
-          }
-          keywords = keywords.concat(extraTerms);
-        }
-      } catch { console.log("[Chat] Semantisch zoeken mislukt, fallback naar originele keywords"); }
-    }
+    console.log(`[Chat] Gebruiker: ${profile.naam}, Regio: ${regio || "alle"}, Vraag: "${vraag.substring(0, 80)}"`);
 
     let documentContext = "";
     let HEEFT_KENNISBANK_MATCH = false;
-    if (allDocs.length > 0) {
-      const scored = allDocs
-        .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
-        .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
-          const lowerContent = d.content.toLowerCase();
-          const lowerNaam = d.naam.toLowerCase();
-          const indexTerms: string[] = [...((d.zoektermen || []) as string[]), ...((d.synoniemen || []) as string[])].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
-          let score = 0;
-          for (const kw of keywords) {
-            for (const term of indexTerms) { if (term === kw || term.includes(kw) || kw.includes(term)) score += 10; }
-            let pos = 0;
-            while ((pos = lowerContent.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
-            if (lowerNaam.indexOf(kw) !== -1) score += 5;
-            if (kw.length >= 5) {
-              const stam = kw.substring(0, Math.max(5, Math.floor(kw.length * 0.7)));
-              if (stam !== kw) { pos = 0; while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; } }
+    let zoekMethode = "geen";
+
+    const openaiKeyForChat = Deno.env.get("OPENAI_API_KEY");
+
+    // ---- Primair: vector similarity search via pgvector ----
+    if (openaiKeyForChat) {
+      try {
+        const queryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
+        if (queryEmbedding) {
+          const { data: chunkMatches, error: chunkErr } = await supabaseAdmin.rpc("match_document_chunks", {
+            query_embedding: JSON.stringify(queryEmbedding),
+            match_org_id: profile.tenant_id,
+            match_count: 8,
+            match_threshold: 0.5,
+          });
+
+          if (!chunkErr && chunkMatches && chunkMatches.length >= 3) {
+            // Haal unieke document_ids op om notities toe te kunnen voegen
+            const docIds = [...new Set((chunkMatches as { document_id: string }[]).map(c => c.document_id))];
+            const { data: docMeta } = await supabaseAdmin
+              .from("documents")
+              .select("id, naam, notitie, map")
+              .in("id", docIds);
+
+            // Filter op regio (crawled pages hebben geen map, die altijd includeren)
+            const toegestaneDocIds = new Set(
+              (docMeta || [])
+                .filter((d: { map: string | null }) => uitgeslotenMappen.length === 0 || !uitgeslotenMappen.includes(d.map || ""))
+                .map((d: { id: string }) => d.id)
+            );
+
+            const gefilterdeChunks = (chunkMatches as { document_id: string; chunk_text: string; similarity: number }[])
+              .filter(c => toegestaneDocIds.has(c.document_id));
+
+            if (gefilterdeChunks.length >= 3) {
+              HEEFT_KENNISBANK_MATCH = true;
+              zoekMethode = "vector";
+
+              const metaMap = new Map((docMeta || []).map((d: { id: string; naam: string; notitie: string | null }) => [d.id, d]));
+              const chunkTexts: string[] = [];
+              let totaalLengte = 0;
+
+              for (const chunk of gefilterdeChunks) {
+                if (totaalLengte >= 30000) break;
+                const meta = metaMap.get(chunk.document_id) as { naam: string; notitie?: string | null } | undefined;
+                const docNaam = meta?.naam || "Document";
+                const notitieRegel = meta?.notitie?.trim()
+                  ? `\n⚠️ Notitie: ${meta.notitie.trim().substring(0, 300)}`
+                  : "";
+                const tekst = `--- Fragment uit: ${docNaam} (similarity: ${chunk.similarity.toFixed(2)}) ---\n${chunk.chunk_text}${notitieRegel}`;
+                chunkTexts.push(tekst);
+                totaalLengte += chunk.chunk_text.length;
+              }
+
+              documentContext = chunkTexts.join("\n\n");
+              console.log(`[Chat] Vector search: ${gefilterdeChunks.length} chunks gevonden, similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}`);
+            } else {
+              console.log(`[Chat] Vector search: te weinig chunks (${gefilterdeChunks.length}), fallback naar zoektermen`);
             }
+          } else {
+            console.log(`[Chat] Vector search: geen resultaten of fout (${chunkErr?.message}), fallback naar zoektermen`);
           }
-          return { naam: d.naam, content: d.content, notitie: d.notitie || null, score };
-        })
-        .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
-        .slice(0, 5);
-
-      const MAX_SCORE = scored.length > 0 ? scored[0].score : 0;
-      HEEFT_KENNISBANK_MATCH = MAX_SCORE >= 5;
-      console.log(`[Chat] Kennisbank match: MAX_SCORE=${MAX_SCORE}, heeftMatch=${HEEFT_KENNISBANK_MATCH}`);
-
-      if (scored.length > 0) {
-        const docTexts: string[] = [];
-        let totaalLengte = 0;
-        for (const doc of scored) {
-          const beschikbaar = 40000 - totaalLengte;
-          if (beschikbaar <= 0) break;
-          const trimmed = doc.content.trim().substring(0, Math.min(beschikbaar, 8000));
-          // Voeg notitie van organisatie toe als die er is — admin kan zo de
-          // chatbot waarschuwen ("verouderd", "gebruik versie X", etc.)
-          const notitieRegel = doc.notitie && doc.notitie.trim()
-            ? `\n⚠️ Notitie van de organisatie: ${doc.notitie.trim().substring(0, 500)}`
-            : "";
-          docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}${notitieRegel}`);
-          totaalLengte += trimmed.length;
         }
-        documentContext = docTexts.join("\n\n");
+      } catch (embErr) {
+        console.error("[Chat] Vector search exception:", embErr);
       }
     }
+
+    // ---- Fallback: zoektermen + keyword scoring ----
+    if (!HEEFT_KENNISBANK_MATCH) {
+      const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
+      const orgDocs = uitgeslotenMappen.length > 0
+        ? (ruweOrgDocs || []).filter((d: { map: string | null }) => !uitgeslotenMappen.includes(d.map || ""))
+        : (ruweOrgDocs || []);
+      const { data: persDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
+      const allDocs = [...(orgDocs || []), ...(persDocs || [])];
+      console.log(`[Chat] Zoektermen fallback: org=${orgDocs?.length || 0}, pers=${persDocs?.length || 0}`);
+
+      let keywords = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
+
+      if (allDocs.length > 0 && keywords.length > 0) {
+        try {
+          const synResponse = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 200,
+              messages: [{ role: "user", content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden in een kennisbank. Denk breed: gebruik synoniemen, officiële HR-termen, gerelateerde begrippen, samengestelde woorden, praktische varianten en specifieke regelingen of beleidsdocumenten. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"` }],
+            }),
+          });
+          if (synResponse.ok) {
+            const synResult = await synResponse.json();
+            const synText = synResult.content?.[0]?.text || "";
+            const rawTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
+            const extraTerms: string[] = [];
+            for (const term of rawTerms) {
+              extraTerms.push(term);
+              const words = term.split(/\s+/).filter((w: string) => w.length > 2 && !STOPWOORDEN.has(w));
+              for (const w of words) { if (!extraTerms.includes(w)) extraTerms.push(w); }
+            }
+            keywords = keywords.concat(extraTerms);
+          }
+        } catch { console.log("[Chat] Zoektermen genereren mislukt, originele keywords gebruikt"); }
+      }
+
+      if (allDocs.length > 0) {
+        const scored = allDocs
+          .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
+          .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
+            const lowerContent = d.content.toLowerCase();
+            const lowerNaam = d.naam.toLowerCase();
+            const indexTerms: string[] = [...((d.zoektermen || []) as string[]), ...((d.synoniemen || []) as string[])].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
+            let score = 0;
+            for (const kw of keywords) {
+              for (const term of indexTerms) { if (term === kw || term.includes(kw) || kw.includes(term)) score += 10; }
+              let pos = 0;
+              while ((pos = lowerContent.indexOf(kw, pos)) !== -1) { score++; pos += kw.length; }
+              if (lowerNaam.indexOf(kw) !== -1) score += 5;
+              if (kw.length >= 5) {
+                const stam = kw.substring(0, Math.max(5, Math.floor(kw.length * 0.7)));
+                if (stam !== kw) { pos = 0; while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; } }
+              }
+            }
+            return { naam: d.naam, content: d.content, notitie: d.notitie || null, score };
+          })
+          .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+          .slice(0, 5);
+
+        const MAX_SCORE = scored.length > 0 ? scored[0].score : 0;
+        HEEFT_KENNISBANK_MATCH = MAX_SCORE >= 5;
+        zoekMethode = "zoektermen";
+        console.log(`[Chat] Zoektermen match: MAX_SCORE=${MAX_SCORE}, heeftMatch=${HEEFT_KENNISBANK_MATCH}`);
+
+        if (scored.length > 0) {
+          const docTexts: string[] = [];
+          let totaalLengte = 0;
+          for (const doc of scored) {
+            const beschikbaar = 40000 - totaalLengte;
+            if (beschikbaar <= 0) break;
+            const trimmed = doc.content.trim().substring(0, Math.min(beschikbaar, 8000));
+            const notitieRegel = doc.notitie && doc.notitie.trim()
+              ? `\n⚠️ Notitie van de organisatie: ${doc.notitie.trim().substring(0, 500)}`
+              : "";
+            docTexts.push(`--- Document: ${doc.naam} ---\n${trimmed}${notitieRegel}`);
+            totaalLengte += trimmed.length;
+          }
+          documentContext = docTexts.join("\n\n");
+        }
+      }
+    }
+
+    console.log(`[Chat] Zoekstrategie gebruikt: ${zoekMethode}, kennisbankMatch=${HEEFT_KENNISBANK_MATCH}`);
 
     // ---- 6f. Kennisbank items ----
     const { data: kennisItems } = await supabaseAdmin.from("kennisbank_items").select("vraag, antwoord").eq("tenant_id", profile.tenant_id);

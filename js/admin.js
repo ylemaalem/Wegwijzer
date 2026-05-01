@@ -1374,6 +1374,20 @@
 
     allDocuments = result.data;
 
+    // Chunk counts ophalen voor semantisch zoek badges
+    var chunkCountMap = {};
+    try {
+      var chunkResult = await supabaseClient
+        .from('document_chunks')
+        .select('document_id')
+        .in('document_id', result.data.map(function (d) { return d.id; }));
+      if (!chunkResult.error && chunkResult.data) {
+        chunkResult.data.forEach(function (row) {
+          chunkCountMap[row.document_id] = (chunkCountMap[row.document_id] || 0) + 1;
+        });
+      }
+    } catch (e) { /* chunk counts zijn optioneel */ }
+
     // Revisie herinneringen
     var herinneringenContainer = document.getElementById('revisie-herinneringen');
     if (herinneringenContainer) {
@@ -1483,15 +1497,31 @@
       var zoekCount = (doc.zoektermen && doc.zoektermen.length) || 0;
       var synTitle = 'Synoniemen & afkortingen' + (synCount ? ' (' + synCount + ')' : '');
       var zoekIndicator = zoekCount > 0 ? '<span style="color:var(--success);font-size:0.7rem;margin-left:4px" title="' + zoekCount + ' zoektermen geïndexeerd">🔍' + zoekCount + '</span>' : '';
+
+      // Semantisch zoek badge
+      var chunkCount = chunkCountMap[doc.id] || 0;
+      var chunkBadge = '';
+      if (!doc.content) {
+        chunkBadge = '';
+      } else if (chunkCount > 0) {
+        chunkBadge = '<span style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd">📊' + chunkCount + '</span>';
+      } else {
+        chunkBadge = '<span style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
+      }
+
       // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
       // alleen via 'website-bron verwijderen' (cascade op parent_url).
       var deleteBtn = doc.is_crawled_page
         ? '<span class="btn-icon" title="Verwijder via website-bron" style="opacity:0.3;cursor:not-allowed">🗑️</span>'
         : '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>';
 
+      var indexBtn = doc.content
+        ? '<button class="btn-icon doc-index-btn" data-doc-id="' + doc.id + '" onclick="window.indexDocumentChunks(\'' + doc.id + '\', this)" title="Semantisch indexeren (vector embeddings)">📊</button>'
+        : '';
+
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
@@ -1500,6 +1530,7 @@
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon" onclick="window.editSynoniemen(\'' + doc.id + '\')" title="' + synTitle + '">🏷️' + (synCount ? '<sup style="font-size:0.6rem">' + synCount + '</sup>' : '') + '</button>' +
           '<button class="btn-icon doc-zoektermen-btn" data-doc-id="' + doc.id + '" onclick="window.regenerateZoektermenDoc(this)" title="Zoektermen herindexeren">🔄</button>' +
+          indexBtn +
           deleteBtn +
         '</td>' +
         '</tr>';
@@ -1738,6 +1769,64 @@
       btn.innerHTML = origineelLabel;
       btn.title = origineelTitle;
     }, 2000);
+  };
+
+  window.indexDocumentChunks = async function (docId, btn) {
+    if (!docId) return;
+    var origineelLabel = btn ? btn.innerHTML : '';
+    var origineelTitle = btn ? btn.title : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳'; btn.title = 'Bezig met indexeren...'; }
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ index_document_chunks: true, document_id: docId })
+      });
+      var data = await resp.json();
+      console.log('[Index] Response:', resp.status, data);
+      if (!resp.ok || data.error) {
+        if (btn) { btn.innerHTML = '✗'; btn.title = 'Fout: ' + (data.error || resp.status); }
+        showAlert('Indexeren mislukt: ' + (data.error || resp.status), 'error');
+      } else {
+        if (btn) { btn.innerHTML = '✓'; btn.title = 'Klaar — ' + data.geslaagd + ' chunks geïndexeerd'; }
+        setTimeout(function () { loadDocuments(); }, 1200);
+      }
+    } catch (err) {
+      if (btn) { btn.innerHTML = '✗'; btn.title = 'Fout: ' + (err.message || err); }
+      console.error('[Index] Exception:', err);
+    }
+    if (btn) {
+      setTimeout(function () {
+        btn.disabled = false;
+        btn.innerHTML = origineelLabel;
+        btn.title = origineelTitle;
+      }, 2000);
+    }
+  };
+
+  window.indexAllDocuments = async function () {
+    var ongeindexeerd = allDocuments.filter(function (d) {
+      return d.content && !(chunkCountMap[d.id] > 0);
+    });
+    if (ongeindexeerd.length === 0) {
+      showAlert('Alle documenten zijn al semantisch geïndexeerd.', 'success');
+      return;
+    }
+    if (!confirm('Semantisch indexeren voor ' + ongeindexeerd.length + ' document(en)? Dit kan even duren.')) return;
+
+    var banner = document.getElementById('index-banner');
+    var progress = document.getElementById('index-progress');
+    if (banner) banner.style.display = 'block';
+
+    for (var i = 0; i < ongeindexeerd.length; i++) {
+      if (progress) progress.textContent = (i + 1) + ' / ' + ongeindexeerd.length + ' geïndexeerd...';
+      await window.indexDocumentChunks(ongeindexeerd[i].id, null);
+    }
+
+    if (banner) banner.style.display = 'none';
+    showAlert('Klaar! ' + ongeindexeerd.length + ' documenten semantisch geïndexeerd.', 'success');
+    loadDocuments();
   };
 
   window.deleteDocument = async function (id, bestandspad) {
