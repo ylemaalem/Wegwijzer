@@ -1660,6 +1660,9 @@ ${vraagLijst}`;
     let HEEFT_KENNISBANK_MATCH = false;
     let zoekMethode = "geen";
 
+    // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
+    let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
+
     const openaiKeyForChat = Deno.env.get("OPENAI_API_KEY");
 
     // ---- Primair: vector similarity search via pgvector ----
@@ -1736,8 +1739,7 @@ ${vraagLijst}`;
       const allDocs = [...(orgDocs || []), ...(persDocs || [])];
       console.log(`[Chat] Zoektermen fallback: org=${orgDocs?.length || 0}, pers=${persDocs?.length || 0}`);
 
-      let keywords = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
-
+      // keywords al gedefinieerd in outer scope; verrijken met Haiku zoektermen
       if (allDocs.length > 0 && keywords.length > 0) {
         try {
           const synResponse = await fetch("https://api.anthropic.com/v1/messages", {
