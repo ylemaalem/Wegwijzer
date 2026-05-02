@@ -446,8 +446,18 @@
 
   function initChips() {
     chipsBar.innerHTML = '';
+
+    // ---- Permanente 🧠 chip — altijd eerste, ongeacht week of inwerkstatus ----
+    var sparringBtn = document.createElement('button');
+    sparringBtn.className = 'chip chip--sparring';
+    sparringBtn.dataset.action = 'sparring';
+    sparringBtn.textContent = '🧠 Sparringsmodus';
+    chipsBar.appendChild(sparringBtn);
+
+    // ---- Context chips — sla ingebouwde sparring chips over (permanente chip vervangt ze) ----
     var setjes = chipsVoorContext();
     setjes.forEach(function (c) {
+      if (c.action === 'sparring') return; // al aanwezig als permanente chip
       var btn = document.createElement('button');
       btn.className = 'chip';
       btn.dataset.vraag = c.vraag;
@@ -456,11 +466,10 @@
       chipsBar.appendChild(btn);
     });
 
-    // Klik-handlers
+    // ---- Klik-handlers ----
     chipsBar.querySelectorAll('.chip').forEach(function (chip) {
       chip.addEventListener('click', function () {
         if (isSending) return;
-        // Sparring chip: aparte gespreksflow, GEEN edge function call
         if (chip.dataset.action === 'sparring') {
           startSparring();
           return;
@@ -505,12 +514,27 @@
   // SPARRING MODUS — 3-staps dialoog client-side, advies via 1 edge call
   // =============================================
   function startSparring() {
+    // Als we midden in een gesprek zitten: voeg een visuele scheiding toe
+    var heeftBestaandeberichten = chatMessages && chatMessages.children.length > 0;
+    if (heeftBestaandeberichten) {
+      var separator = document.createElement('div');
+      separator.style.cssText = 'text-align:center;font-size:0.75rem;color:var(--text-muted,#888);padding:8px 0 4px;border-top:1px dashed var(--border,#e0e0e0);margin:8px 0';
+      separator.textContent = '— Nieuw sparringgesprek —';
+      chatMessages.appendChild(separator);
+    }
+
+    // Reset sparring state (ook als eerder een sparring actief was)
     sparringModus = true;
     sparringStap = 1;
     sparringContext = [];
-    renderGebruikersBericht('💬 Sparren over een cliëntsituatie', null);
+    conversatieHistorie = []; // context wissen zodat sparring schoon start
+
+    renderGebruikersBericht('🧠 Sparringsmodus starten', null);
     toonSparringBadge();
-    renderBotBericht(SPARRING_VRAGEN[0], null, null, null);
+    renderBotBericht(
+      'Ik ben er. Vertel — wat speelt er? Ik stel je een paar gerichte vragen zodat we samen tot een goed antwoord komen.\n\n' + SPARRING_VRAGEN[0],
+      null, null, null
+    );
     chatInput.focus();
     scrollNaarOnder();
   }

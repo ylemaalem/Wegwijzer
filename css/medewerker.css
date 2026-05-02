@@ -282,6 +282,25 @@
   color: white;
 }
 
+/* Permanente sparring chip — teal ipv oranje zodat hij opvalt */
+.chip--sparring {
+  border-color: #0D5C6B;
+  color: #0D5C6B;
+  background: #EEF6F8;
+  font-weight: 600;
+}
+.chip--sparring:hover {
+  background: #0D5C6B;
+  color: white;
+  border-color: #0D5C6B;
+  box-shadow: 0 2px 8px rgba(13, 92, 107, 0.25);
+}
+.chip--sparring:active {
+  background: #094a57;
+  border-color: #094a57;
+  color: white;
+}
+
 /* ---- Chat berichten ---- */
 .chat-messages {
   flex: 1;
