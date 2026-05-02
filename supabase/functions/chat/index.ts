@@ -163,6 +163,105 @@ function chunkText(text: string, chunkSize = 600, overlap = 100): string[] {
   return chunks;
 }
 
+// ---- Web Push helpers ----
+
+async function sendPushNotification(
+  endpoint: string, p256dh: string, auth: string,
+  payload: { title: string; body: string; url?: string }
+): Promise<"ok" | "gone" | "error"> {
+  const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
+  const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+  if (!vapidPublicKey || !vapidPrivateKey) return "error";
+  try {
+    const webPushModule = await import("npm:web-push@3.6.7");
+    const webPush = webPushModule.default || webPushModule;
+    webPush.setVapidDetails(
+      Deno.env.get("VAPID_SUBJECT") || "mailto:info@mijnwegwijzer.com",
+      vapidPublicKey,
+      vapidPrivateKey
+    );
+    await webPush.sendNotification(
+      { endpoint, keys: { p256dh, auth } },
+      JSON.stringify(payload),
+      { TTL: 3600 }
+    );
+    return "ok";
+  } catch (e: unknown) {
+    const statusCode = (e as { statusCode?: number }).statusCode;
+    if (statusCode === 410 || statusCode === 404) return "gone";
+    console.error("[Push] sendNotification fout:", e);
+    return "error";
+  }
+}
+
+async function sendFallbackMail(to: string, subject: string, body: string): Promise<void> {
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendKey || !to) return;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${resendKey}` },
+      body: JSON.stringify({
+        from: "Wegwijzer <noreply@mijnwegwijzer.com>",
+        to: [to],
+        subject,
+        html: `<p style="font-family:Arial,sans-serif;font-size:15px;color:#333">${body}</p>`,
+      }),
+    });
+  } catch (e) { console.error("[Mail] Fallback mail fout:", e); }
+}
+
+async function pushNaarGebruikers(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userIds: string[],
+  tenantId: string,
+  payload: { title: string; body: string; url?: string },
+  eventType: string,
+  dedupUserId: string | null = null
+): Promise<void> {
+  if (userIds.length === 0) return;
+
+  // Dedup: zelfde event_type voor zelfde user in de laatste uur al verstuurd?
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  const dedupQuery = supabaseAdmin.from("push_log")
+    .select("id").eq("tenant_id", tenantId).eq("event_type", eventType)
+    .gte("sent_at", oneHourAgo).limit(1);
+  if (dedupUserId) dedupQuery.eq("user_id", dedupUserId);
+  const { data: recentLog } = await dedupQuery;
+  if (recentLog && recentLog.length > 0) return;
+
+  const { data: subs } = await supabaseAdmin.from("push_subscriptions")
+    .select("*").in("user_id", userIds).eq("is_active", true);
+
+  let sent = false;
+  for (const sub of (subs || [])) {
+    const result = await sendPushNotification(sub.endpoint, sub.p256dh, sub.auth, payload);
+    if (result === "gone") {
+      await supabaseAdmin.from("push_subscriptions").update({ is_active: false }).eq("id", sub.id);
+    }
+    if (result === "ok") sent = true;
+  }
+
+  await supabaseAdmin.from("push_log").insert({
+    tenant_id: tenantId,
+    user_id: dedupUserId,
+    event_type: eventType,
+    payload,
+  });
+
+  // Fallback mail als geen push verstuurd — haal email op via auth admin
+  if (!sent) {
+    for (const uid of userIds) {
+      try {
+        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(uid);
+        if (authUser?.user?.email) {
+          await sendFallbackMail(authUser.user.email, payload.title, payload.body);
+        }
+      } catch { /* skip */ }
+    }
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -423,6 +522,16 @@ Geen uitleg, alleen JSON.`;
         }
 
         console.log(`[KennisScan] ${scanType}: ${inserted} suggesties opgeslagen`);
+
+        if (inserted > 0) {
+          const { data: admins } = await supabaseAdmin.from("profiles")
+            .select("user_id").eq("tenant_id", profile.tenant_id).eq("role", "admin");
+          const adminIds = (admins || []).map((a: { user_id: string }) => a.user_id);
+          pushNaarGebruikers(supabaseAdmin, adminIds, profile.tenant_id,
+            { title: "Wegwijzer — Kennissuggesties", body: `${inserted} nieuwe kennissuggestie${inserted === 1 ? "" : "s"} beschikbaar.`, url: "/admin.html" },
+            "kennissuggestie"
+          );
+        }
 
         return new Response(
           JSON.stringify({ success: true, count: inserted, scan_type: scanType }),
@@ -1212,6 +1321,16 @@ ${vraagLijst}`;
         const briefResult = await briefResp.json();
         const briefText = briefResult.content?.[0]?.text || "Welkom in week " + wk + "!";
         await supabaseAdmin.from("weekstart_briefings").insert({ user_id: user.id, week_nummer: wk, briefing_tekst: briefText });
+
+        // Push naar de medewerker zelf (geen expired accounts)
+        if (profile.account_type !== "tijdelijk" || !profile.einddatum || new Date(profile.einddatum) > new Date()) {
+          pushNaarGebruikers(supabaseAdmin, [user.id], profile.tenant_id,
+            { title: "Wegwijzer — Week " + wk, body: "Je weekstart briefing voor week " + wk + " staat klaar.", url: "/medewerker.html" },
+            "weekstart_briefing",
+            user.id
+          );
+        }
+
         return new Response(JSON.stringify({ briefing: briefText, cached: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[Briefing] Fout:", err);
@@ -1289,6 +1408,16 @@ ${vraagLijst}`;
     if (body.generate_document_concept && body.vraag_tekst) {
       try {
         await supabaseAdmin.from("document_aanvragen").insert({ user_id: user.id, vraag: body.vraag_tekst });
+
+        // Push naar tenant admins
+        const { data: admins } = await supabaseAdmin.from("profiles")
+          .select("user_id").eq("tenant_id", profile.tenant_id).eq("role", "admin");
+        const adminIds = (admins || []).map((a: { user_id: string }) => a.user_id);
+        pushNaarGebruikers(supabaseAdmin, adminIds, profile.tenant_id,
+          { title: "Wegwijzer — Documentaanvraag", body: "Een medewerker heeft een nieuw document aangevraagd.", url: "/admin.html" },
+          "document_aanvraag"
+        );
+
         return new Response(JSON.stringify({ saved: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[DocAanvraag] Fout:", err);
@@ -1604,6 +1733,18 @@ ${vraagLijst}`;
                   team: teamVoorMelding,
                   medewerker_profile_id: profile.id,
                 });
+
+                // Push naar teamleiders van het betreffende team
+                if (teamVoorMelding) {
+                  const { data: tlProfiles } = await supabaseAdmin.from("profiles")
+                    .select("user_id").eq("tenant_id", profile.tenant_id).eq("role", "teamleider")
+                    .contains("teams", [teamVoorMelding]);
+                  const tlIds = (tlProfiles || []).map((p: { user_id: string }) => p.user_id);
+                  pushNaarGebruikers(supabaseAdmin, tlIds, profile.tenant_id,
+                    { title: "Wegwijzer — Patroonmelding", body: `Er zijn meerdere vragen over ${onderwerp} in jouw team.`, url: "/teamleider.html" },
+                    "patroon_melding"
+                  );
+                }
               }
             }
           }

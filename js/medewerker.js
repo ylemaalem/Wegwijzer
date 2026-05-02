@@ -95,6 +95,7 @@
       checkVertrouwenscheck();
     }
     checkRolwissel();
+    initPushSubscription();
   });
 
   // =============================================
@@ -1803,4 +1804,80 @@
       setTimeout(closeModal, 2000);
     });
   })();
+
+  // =============================================
+  // WEB PUSH NOTIFICATIES
+  // =============================================
+  var VAPID_PUBLIC_KEY = 'BCmFCprzEP-azJsjYqxd-L_aZc5vl5P3uaxBys6KZ-oBb1-ryXWGmOB0pt6Mtqo6xA4MYXLKR9NV-zarXjJPtfM';
+
+  function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function upsertPushSubscription(subscription) {
+    var keys = subscription.toJSON().keys || {};
+    var { error } = await supabaseClient.from('push_subscriptions').upsert({
+      user_id: user.id,
+      tenant_id: profile.tenant_id,
+      endpoint: subscription.endpoint,
+      p256dh: keys.p256dh || '',
+      auth: keys.auth || '',
+      user_agent: navigator.userAgent.substring(0, 200),
+      is_active: true,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,endpoint' });
+    if (error) console.warn('[Push] Upsert fout:', error.message);
+  }
+
+  async function initPushSubscription() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (typeof Notification === 'undefined') return;
+
+    var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    var isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator.standalone === true);
+
+    if (isIos && !isStandalone) {
+      if (!localStorage.getItem('push_ios_banner_shown')) {
+        localStorage.setItem('push_ios_banner_shown', '1');
+        var banner = document.createElement('div');
+        banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#0D5C6B;color:#fff;padding:12px 16px;font-size:13px;z-index:9999;display:flex;align-items:center;justify-content:space-between;gap:8px';
+        banner.innerHTML = '<span>Voeg de app toe aan je beginscherm voor pushmeldingen.</span><button style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0">Sluiten</button>';
+        banner.querySelector('button').addEventListener('click', function () { banner.remove(); });
+        document.body.appendChild(banner);
+      }
+      return;
+    }
+
+    if (Notification.permission === 'denied') return;
+
+    if (Notification.permission === 'default') {
+      var result = await Notification.requestPermission();
+      if (result !== 'granted') return;
+    }
+
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        await upsertPushSubscription(existing);
+        return;
+      }
+      var subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      await upsertPushSubscription(subscription);
+      console.log('[Push] Subscription aangemaakt');
+    } catch (e) {
+      console.warn('[Push] Subscribe mislukt:', e);
+    }
+  }
+
 })();

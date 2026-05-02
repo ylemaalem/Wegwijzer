@@ -91,6 +91,7 @@
     initVerbeterCollapse();
     initSuggestieDelegation();
     initRoiWidget();
+    initPushSubscription();
   });
 
   // =============================================
@@ -6055,6 +6056,67 @@
         '<td>' + r.aantal + ' medewerker' + (r.aantal === 1 ? '' : 's') + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  // =============================================
+  // WEB PUSH NOTIFICATIES
+  // =============================================
+  var VAPID_PUBLIC_KEY = 'BCmFCprzEP-azJsjYqxd-L_aZc5vl5P3uaxBys6KZ-oBb1-ryXWGmOB0pt6Mtqo6xA4MYXLKR9NV-zarXjJPtfM';
+
+  function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function upsertPushSubscription(subscription) {
+    var keys = subscription.toJSON().keys || {};
+    var { error } = await supabaseClient.from('push_subscriptions').upsert({
+      user_id: currentUserId,
+      tenant_id: tenantId,
+      endpoint: subscription.endpoint,
+      p256dh: keys.p256dh || '',
+      auth: keys.auth || '',
+      user_agent: navigator.userAgent.substring(0, 200),
+      is_active: true,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,endpoint' });
+    if (error) console.warn('[Push] Upsert fout:', error.message);
+  }
+
+  async function initPushSubscription() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (typeof Notification === 'undefined') return;
+    if (!currentUserId || !tenantId) return;
+
+    if (Notification.permission === 'denied') return;
+
+    if (Notification.permission === 'default') {
+      var result = await Notification.requestPermission();
+      if (result !== 'granted') return;
+    }
+
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        await upsertPushSubscription(existing);
+        return;
+      }
+      var subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      await upsertPushSubscription(subscription);
+      console.log('[Push] Subscription aangemaakt');
+    } catch (e) {
+      console.warn('[Push] Subscribe mislukt:', e);
+    }
   }
 
 })();
