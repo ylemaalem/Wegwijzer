@@ -1504,9 +1504,9 @@
       if (!doc.content) {
         chunkBadge = '';
       } else if (chunkCount > 0) {
-        chunkBadge = '<span style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd">📊' + chunkCount + '</span>';
+        chunkBadge = '<span class="chunk-badge" style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd">📊' + chunkCount + '</span>';
       } else {
-        chunkBadge = '<span style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
+        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
       }
 
       // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
@@ -1771,11 +1771,56 @@
     }, 2000);
   };
 
-  window.indexDocumentChunks = async function (docId, btn) {
-    if (!docId) return;
-    var origineelLabel = btn ? btn.innerHTML : '';
-    var origineelTitle = btn ? btn.title : '';
+  // Haal chunk count op voor één document en update de badge in de tabelrij.
+  // Werkt zonder volledige table-reload: zoekt de rij op via data-doc-id.
+  async function updateChunkBadge(docId) {
+    try {
+      var countResult = await supabaseClient
+        .from('document_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('document_id', docId);
+      var count = countResult.count || 0;
+      chunkCountMap[docId] = count;
+
+      // Update badge in de DOM (zoek de rij zonder volledige reload)
+      var tbody = document.getElementById('documents-body');
+      if (!tbody) return;
+      var rij = tbody.querySelector('tr[data-doc-id="' + docId + '"]');
+      if (!rij) return;
+      var naamTd = rij.cells[1];
+      if (!naamTd) return;
+
+      // Verwijder bestaande chunk badge
+      var oud = naamTd.querySelector('.chunk-badge');
+      if (oud) oud.remove();
+
+      // Voeg nieuwe badge toe
+      var badge = document.createElement('span');
+      badge.className = 'chunk-badge';
+      badge.style.cssText = 'font-size:0.7rem;margin-left:4px';
+      if (count > 0) {
+        badge.style.color = 'var(--primary)';
+        badge.title = count + ' vector chunks geïndexeerd';
+        badge.textContent = '📊' + count;
+      } else {
+        badge.style.color = 'var(--warning,#f59e0b)';
+        badge.title = 'Nog niet semantisch geïndexeerd — klik 📊 om te indexeren';
+        badge.textContent = '⚠️';
+      }
+      naamTd.appendChild(badge);
+    } catch (e) {
+      console.error('[Index] Badge update fout:', e);
+    }
+  }
+
+  // Indexeer één document. skipReload=true voor bulk-modus (geen table-reload).
+  // Geeft { ok: bool, count: number } terug zodat bulk de teller kan bijhouden.
+  window.indexDocumentChunks = async function (docId, btn, skipReload) {
+    if (!docId) return { ok: false, count: 0 };
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳'; btn.title = 'Bezig met indexeren...'; }
+    var success = false;
+    var chunkCount = 0;
+    var foutTekst = '';
     try {
       var session = (await supabaseClient.auth.getSession()).data.session;
       var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
@@ -1784,25 +1829,54 @@
         body: JSON.stringify({ index_document_chunks: true, document_id: docId })
       });
       var data = await resp.json();
-      console.log('[Index] Response:', resp.status, data);
+      console.log('[Index] Response voor', docId + ':', resp.status, data);
+
       if (!resp.ok || data.error) {
-        if (btn) { btn.innerHTML = '✗'; btn.title = 'Fout: ' + (data.error || resp.status); }
-        showAlert('Indexeren mislukt: ' + (data.error || resp.status), 'error');
+        foutTekst = data.error || ('HTTP ' + resp.status);
       } else {
-        if (btn) { btn.innerHTML = '✓'; btn.title = 'Klaar — ' + data.geslaagd + ' chunks geïndexeerd'; }
-        setTimeout(function () { loadDocuments(); }, 1200);
+        success = true;
+        chunkCount = data.geslaagd || 0;
       }
     } catch (err) {
-      if (btn) { btn.innerHTML = '✗'; btn.title = 'Fout: ' + (err.message || err); }
-      console.error('[Index] Exception:', err);
+      foutTekst = err.message || String(err);
+      console.error('[Index] Exception voor', docId + ':', err);
     }
-    if (btn) {
-      setTimeout(function () {
+
+    if (success) {
+      // Badge in-place bijwerken zonder table-reload
+      await updateChunkBadge(docId);
+      if (btn) {
+        btn.innerHTML = '✅';
+        btn.title = chunkCount + ' chunks geïndexeerd';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.innerHTML = '📊';
+          btn.title = 'Semantisch indexeren (vector embeddings)';
+        }, 2500);
+      }
+      // Volledige reload alleen bij individuele knop (niet bulk)
+      if (!skipReload) {
+        setTimeout(function () { loadDocuments(); }, 3000);
+      }
+    } else {
+      // Fout: rode badge in de rij + console
+      console.error('[Index] Mislukt voor', docId + ':', foutTekst);
+      if (btn) {
         btn.disabled = false;
-        btn.innerHTML = origineelLabel;
-        btn.title = origineelTitle;
-      }, 2000);
+        btn.innerHTML = '📊';
+        btn.title = '⚠️ Mislukt: ' + foutTekst + ' — probeer opnieuw';
+      }
+      // Markeer badge als fout in rij
+      var tbody2 = document.getElementById('documents-body');
+      if (tbody2) {
+        var rij2 = tbody2.querySelector('tr[data-doc-id="' + docId + '"]');
+        if (rij2 && rij2.cells[1]) {
+          var oudBadge = rij2.cells[1].querySelector('.chunk-badge');
+          if (oudBadge) { oudBadge.textContent = '⚠️'; oudBadge.style.color = 'var(--error,#dc2626)'; oudBadge.title = 'Indexering mislukt: ' + foutTekst; }
+        }
+      }
     }
+    return { ok: success, count: chunkCount };
   };
 
   window.indexAllDocuments = async function () {
@@ -1819,13 +1893,29 @@
     var progress = document.getElementById('index-progress');
     if (banner) banner.style.display = 'block';
 
-    for (var i = 0; i < ongeindexeerd.length; i++) {
-      if (progress) progress.textContent = (i + 1) + ' / ' + ongeindexeerd.length + ' geïndexeerd...';
-      await window.indexDocumentChunks(ongeindexeerd[i].id, null);
+    var geslaagd = 0;
+    var mislukt = 0;
+    var BATCH = 5;
+
+    for (var i = 0; i < ongeindexeerd.length; i += BATCH) {
+      var batch = ongeindexeerd.slice(i, i + BATCH);
+      var gedaanInBatch = i;
+      if (progress) progress.textContent = 'Bezig met document ' + (gedaanInBatch + 1) + ' – ' + Math.min(gedaanInBatch + BATCH, ongeindexeerd.length) + ' van ' + ongeindexeerd.length + '...';
+
+      // Verwerk batch parallel
+      var resultaten = await Promise.all(batch.map(function (doc) {
+        return window.indexDocumentChunks(doc.id, null, true);
+      }));
+
+      resultaten.forEach(function (r) {
+        if (r.ok) geslaagd++; else mislukt++;
+      });
     }
 
     if (banner) banner.style.display = 'none';
-    showAlert('Klaar! ' + ongeindexeerd.length + ' documenten semantisch geïndexeerd.', 'success');
+    var boodschap = '✅ ' + geslaagd + ' van ' + ongeindexeerd.length + ' documenten geïndexeerd.';
+    if (mislukt > 0) boodschap += ' ' + mislukt + ' mislukt — controleer de console.';
+    showAlert(boodschap, mislukt > 0 ? 'warning' : 'success');
     loadDocuments();
   };
 
