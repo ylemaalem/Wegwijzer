@@ -103,6 +103,36 @@ function buildTerugblikHtml(
 
 // ---- Embedding helpers ----
 
+// ---- Audit log helper ----
+// Audit-falen mag de hoofdactie nooit blokkeren, dus alle fouten worden
+// alleen gelogd en niet opnieuw gegooid.
+async function logAuditEvent(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  userId: string | null,
+  userEmail: string | null,
+  userNaam: string | null,
+  actie: string,
+  objectType: string | null,
+  objectId: string | null,
+  details: Record<string, unknown> | null,
+): Promise<void> {
+  try {
+    await supabase.from("audit_log").insert({
+      tenant_id: tenantId,
+      user_id: userId,
+      user_email: userEmail,
+      user_naam: userNaam,
+      actie: actie,
+      object_type: objectType,
+      object_id: objectId,
+      details: details,
+    });
+  } catch (err) {
+    console.error("[Audit] Log fout:", err);
+  }
+}
+
 // ---- Response cache helpers ----
 function normalizeQuestion(vraag: string): string {
   return vraag.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!,]/g, '');
@@ -652,6 +682,12 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
         console.log(`[Zoektermen] Gegenereerd: ${zoektermen.length} voor: ${doc.naam}`);
 
+        await logAuditEvent(
+          supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+          "ZOEKTERMEN_GEGENEREERD", "document", doc.id,
+          { naam: doc.naam, count: zoektermen.length },
+        );
+
         return new Response(
           JSON.stringify({ success: true, count: zoektermen.length, zoektermen }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -954,6 +990,12 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         console.warn("[Cache] Invalidatie na reindex faalde:", cacheErr);
       }
 
+      await logAuditEvent(
+        supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+        "DOCUMENT_GEHERINDEXEERD", "document", docId,
+        { naam: doc.naam, geslaagd, mislukt, totaal: chunks.length },
+      );
+
       return new Response(
         JSON.stringify({ geslaagd, mislukt, totaal: chunks.length }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1062,6 +1104,12 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         medewerker_naam: medewerkerNaam,
       });
       console.log("[Ontsluit naam] Teamleider", profile.naam, "ontsloot naam van", medewerkerNaam, "voor melding", body.melding_id);
+
+      await logAuditEvent(
+        supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+        "NAAM_ONTSLOTEN", "melding", body.melding_id,
+        { medewerker_naam: medewerkerNaam },
+      );
 
       return new Response(
         JSON.stringify({ naam: medewerkerNaam }),
@@ -1221,6 +1269,12 @@ ${vraagLijst}`;
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        await logAuditEvent(
+          supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+          "MEDEWERKER_UITGENODIGD", "medewerker", inviteData?.user?.id || null,
+          { email: inviteEmail, naam: inviteNaam, role: inviteRole, functiegroep: inviteFunctiegroep },
+        );
 
         return new Response(
           JSON.stringify({ invited: true, user_id: inviteData?.user?.id }),
@@ -1624,6 +1678,12 @@ ${vraagLijst}`;
           ontvangers: ontvangerNamen,
           team: teamNaam,
         });
+
+        await logAuditEvent(
+          supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+          "RAPPORT_GEGENEREERD", "rapport", null,
+          { maand, team: teamNaam, aantal_ontvangers: metEmail.length, is_test: body.is_test === true, status: logStatus },
+        );
 
         return new Response(
           JSON.stringify({

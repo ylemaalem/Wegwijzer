@@ -8,6 +8,8 @@
   // ---- State ----
   var tenantId = null;
   var currentUserId = null;
+  var currentUserEmail = null;
+  var currentUserNaam = null;
   var allConversations = [];
   var allProfiles = [];
   var allTeamleiders = [];
@@ -25,6 +27,24 @@
       await supabaseClient.from('response_cache').delete().eq('tenant_id', tenantId);
     } catch (e) {
       console.warn('[Cache] Invalidatie faalde:', e);
+    }
+  }
+
+  async function logAudit(actie, objectType, objectId, details) {
+    if (!tenantId) return;
+    try {
+      await supabaseClient.from('audit_log').insert({
+        tenant_id: tenantId,
+        user_id: currentUserId,
+        user_email: currentUserEmail,
+        user_naam: currentUserNaam,
+        actie: actie,
+        object_type: objectType || null,
+        object_id: objectId || null,
+        details: details || null,
+      });
+    } catch (e) {
+      console.warn('[Audit] Log fout:', e);
     }
   }
 
@@ -54,6 +74,8 @@
     eigenTenantId = profile.tenant_id;
     tenantId = eigenTenantId;
     currentUserId = e.detail.user ? e.detail.user.id : null;
+    currentUserEmail = e.detail.user ? e.detail.user.email : null;
+    currentUserNaam = profile.naam || null;
 
     isSuperadmin = profile.naam === 'Wegwijzer Beheer' && profile.role === 'admin';
     if (isSuperadmin) {
@@ -277,7 +299,8 @@
     instellingen: [
       { key: 'instellingen', label: '⚙️ Instellingen' },
       { key: 'teamleiders', label: '👔 Leidinggevende/HR' },
-      { key: 'privacy', label: '🔒 Privacy verzoeken' }
+      { key: 'privacy', label: '🔒 Privacy verzoeken' },
+      { key: 'auditlog', label: '📋 Audit log' }
     ]
   };
 
@@ -340,6 +363,8 @@
     document.querySelectorAll('#sub-tab-nav .sub-tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === subKey);
     });
+
+    if (subKey === 'auditlog') loadAuditLog();
 
     reapplyBadges();
   }
@@ -1679,6 +1704,7 @@
           await supabaseClient.from('documents').delete().eq('id', docId);
         }
         await invalideerResponseCache();
+        await logAudit('DOCUMENTEN_BULK_VERWIJDERD', 'document', null, { aantal: checked.length });
 
         bulkBtn.disabled = false;
         document.getElementById('bulk-delete-bar').style.display = 'none';
@@ -1943,6 +1969,7 @@
     await supabaseClient.storage.from('documents').remove([bestandspad]);
     await supabaseClient.from('documents').delete().eq('id', id);
     await invalideerResponseCache();
+    await logAudit('DOCUMENT_VERWIJDERD', 'document', id, { bestandspad: bestandspad });
 
     loadDocuments();
   };
@@ -2648,6 +2675,8 @@
       .update({ inwerken_afgerond: true })
       .eq('id', profileId);
 
+    await logAudit('INWERKTRAJECT_AFGESLOTEN', 'medewerker', profileId, { naam: naam });
+
     loadMedewerkers();
   };
 
@@ -2673,6 +2702,8 @@
         console.error('[Delete] Auth verwijdering mislukt:', err);
       }
     }
+
+    await logAudit('MEDEWERKER_VERWIJDERD', 'medewerker', profileId, { user_id: userId });
 
     loadMedewerkers();
     loadGesprekken();
@@ -4964,6 +4995,7 @@
       alertMsg.textContent = 'Instellingen opgeslagen.';
       // Direct de nieuwe kleur toepassen — geen reload nodig
       if (kleurVal) applyOrgKleur(kleurVal);
+      await logAudit('INSTELLINGEN_OPGESLAGEN', 'settings', null, null);
       setTimeout(function () {
         alertBox.className = 'alert';
       }, 3000);
@@ -5784,6 +5816,77 @@
   };
 
   // =============================================
+  // AUDIT LOG
+  // =============================================
+  var AUDIT_LABELS = {
+    DOCUMENT_VERWIJDERD: 'Document verwijderd',
+    DOCUMENTEN_BULK_VERWIJDERD: 'Documenten bulk verwijderd',
+    DOCUMENT_GEHERINDEXEERD: 'Document geherindexeerd',
+    ZOEKTERMEN_GEGENEREERD: 'Zoektermen gegenereerd',
+    MEDEWERKER_UITGENODIGD: 'Medewerker uitgenodigd',
+    MEDEWERKER_VERWIJDERD: 'Medewerker verwijderd',
+    INWERKTRAJECT_AFGESLOTEN: 'Inwerktraject afgesloten',
+    NAAM_ONTSLOTEN: 'Naam ontsloten',
+    RAPPORT_GEGENEREERD: 'Rapport gegenereerd',
+    INSTELLINGEN_OPGESLAGEN: 'Instellingen opgeslagen',
+    DOC_AANVRAAG_GEPUBLICEERD: 'Doc. aanvraag gepubliceerd',
+    DOC_AANVRAAG_AFGEWEZEN: 'Doc. aanvraag afgewezen',
+  };
+
+  var auditLogLoaded = false;
+
+  async function loadAuditLog() {
+    var tbody = document.getElementById('auditlog-body');
+    if (!tbody) return;
+
+    var filterActie = document.getElementById('audit-filter-actie').value;
+    var filterVan = document.getElementById('audit-filter-van').value;
+    var filterTot = document.getElementById('audit-filter-tot').value;
+
+    var query = supabaseClient
+      .from('audit_log')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (filterActie) query = query.eq('actie', filterActie);
+    if (filterVan) query = query.gte('created_at', filterVan + 'T00:00:00');
+    if (filterTot) query = query.lte('created_at', filterTot + 'T23:59:59');
+
+    var result = await query;
+    var rows = result.data || [];
+
+    // Vul actie-filter dropdown
+    if (!auditLogLoaded) {
+      var select = document.getElementById('audit-filter-actie');
+      var acties = Object.keys(AUDIT_LABELS);
+      acties.forEach(function (a) {
+        var opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = AUDIT_LABELS[a];
+        select.appendChild(opt);
+      });
+      document.getElementById('audit-filter-btn').addEventListener('click', loadAuditLog);
+      auditLogLoaded = true;
+    }
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Geen logregels gevonden.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(function (r) {
+      var datum = new Date(r.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      var gebruiker = r.user_naam || r.user_email || '-';
+      var actieLabel = AUDIT_LABELS[r.actie] || r.actie;
+      var object = r.object_type ? (r.object_type + (r.object_id ? ' ' + r.object_id.substring(0, 8) : '')) : '-';
+      var details = r.details ? '<code>' + JSON.stringify(r.details).substring(0, 80) + '</code>' : '-';
+      return '<tr><td>' + datum + '</td><td>' + gebruiker + '</td><td>' + actieLabel + '</td><td>' + object + '</td><td>' + details + '</td></tr>';
+    }).join('');
+  }
+
+  // =============================================
   // DOCUMENT AANVRAGEN
   // =============================================
   async function loadDocumentAanvragen() {
@@ -5867,12 +5970,14 @@
     await invalideerResponseCache();
 
     await supabaseClient.from('document_aanvragen').update({ status: 'gepubliceerd' }).eq('id', id);
+    await logAudit('DOC_AANVRAAG_GEPUBLICEERD', 'document_aanvraag', id, { vraag: da.vraag });
     loadDocumentAanvragen();
     loadDocuments();
   };
 
   window.afwijsDocAanvraag = async function (id) {
     await supabaseClient.from('document_aanvragen').update({ status: 'afgewezen' }).eq('id', id);
+    await logAudit('DOC_AANVRAAG_AFGEWEZEN', 'document_aanvraag', id, null);
     loadDocumentAanvragen();
   };
 
