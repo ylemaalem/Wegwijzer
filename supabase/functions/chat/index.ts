@@ -38,6 +38,13 @@ const WEBSITE_TRIGGERS = [
   "contract", "proeftijd", "ontslag"
 ];
 
+// Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
+// of "mijnheer" op "mijn".
+const PERSOONLIJKE_WOORDEN = [
+  "mijn ", "mij ", "ik ",
+  "mijn team", "mijn leidinggevende", "mijn dienst", "mijn uren",
+];
+
 console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
 
 // HTML email builder voor de maandelijkse terugblik
@@ -95,6 +102,19 @@ function buildTerugblikHtml(
 }
 
 // ---- Embedding helpers ----
+
+// ---- Response cache helpers ----
+function normalizeQuestion(vraag: string): string {
+  return vraag.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!,]/g, '');
+}
+
+async function hashQuestion(tenantId: string, userId: string, vraag: string): Promise<string> {
+  const normalized = normalizeQuestion(vraag);
+  const data = `${tenantId}:${userId}:${normalized}`;
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 async function generateEmbedding(text: string, openaiKey: string): Promise<number[] | null> {
   const input = text.replace(/\n+/g, " ").trim().substring(0, 8000);
@@ -926,6 +946,14 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
       console.log(`[Index] Klaar: ${geslaagd} chunks opgeslagen, ${mislukt} mislukt`);
 
+      // Cache leegmaken: na herindexering kan eerder gecachet antwoord
+      // achterhaald zijn (nieuwe of gewijzigde document-inhoud).
+      try {
+        await supabaseAdmin.from("response_cache").delete().eq("tenant_id", profile.tenant_id);
+      } catch (cacheErr) {
+        console.warn("[Cache] Invalidatie na reindex faalde:", cacheErr);
+      }
+
       return new Response(
         JSON.stringify({ geslaagd, mislukt, totaal: chunks.length }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1445,6 +1473,18 @@ ${vraagLijst}`;
       }
 
       console.log("[Terugblik] Start voor tenant:", profile.tenant_id);
+
+      // Periodieke opschoning van verlopen cache-entries — meelift op de
+      // terugblik-route i.p.v. een aparte cron op te zetten.
+      try {
+        const { error: cleanErr } = await supabaseAdmin
+          .from("response_cache")
+          .delete()
+          .lt("expires_at", new Date().toISOString());
+        if (cleanErr) console.warn("[Terugblik] Cache cleanup fout:", cleanErr.message);
+      } catch (cacheCleanErr) {
+        console.warn("[Terugblik] Cache cleanup exception:", cacheCleanErr);
+      }
       try {
         const now = new Date();
         const maand = now.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
@@ -1751,6 +1791,57 @@ ${vraagLijst}`;
         } else {
           console.log("[Patroonherkenning] Team te klein voor melding:", teamProfiles?.length || 0, "<", MIN_ACTIEVE_MEDEWERKERS);
         }
+      }
+    }
+
+    // ---- 5c. Response cache lookup ----
+    // Sla cache over bij persoonlijke vragen (per gebruiker variabel),
+    // korte vragen (<10 tekens, te weinig signaal) en sparring-sessies
+    // (context-afhankelijk, nooit identiek herbruikbaar).
+    const isSparringRequest = body.sparring === true
+      && Array.isArray(body.sparring_context)
+      && body.sparring_context.length === 3;
+    const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
+      || vraag.length < 10
+      || isSparringRequest;
+
+    let vraagHash: string | null = null;
+    if (!skipCache) {
+      try {
+        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag);
+        const { data: cachedEntry } = await supabaseAdmin
+          .from("response_cache")
+          .select("antwoord")
+          .eq("tenant_id", profile.tenant_id)
+          .eq("user_id", user.id)
+          .eq("vraag_hash", vraagHash)
+          .gt("expires_at", new Date().toISOString())
+          .maybeSingle();
+
+        if (cachedEntry?.antwoord) {
+          // Cache-hit: gesprek nog wel loggen + laatste_actief bijwerken
+          // zodat patroonherkenning, terugblik-statistieken en het
+          // adoptie-signaal ongewijzigd blijven werken.
+          const { data: cachedConv } = await supabaseAdmin
+            .from("conversations")
+            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedEntry.antwoord })
+            .select("id")
+            .single();
+          supabaseAdmin
+            .from("profiles")
+            .update({ laatste_actief: new Date().toISOString() })
+            .eq("id", profile.id)
+            .then((r: { error: { message: string } | null }) => {
+              if (r.error) console.error("[laatste_actief] update fout:", r.error.message);
+            });
+          console.log("[Cache] HIT voor user", user.id);
+          return new Response(
+            JSON.stringify({ antwoord: cachedEntry.antwoord, conversation_id: cachedConv?.id || null, cached: true }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch (cacheErr) {
+        console.warn("[Cache] Lookup faalde, normale flow:", cacheErr);
       }
     }
 
@@ -2253,6 +2344,29 @@ ${alleKennisbronnen}`;
       antwoord = antwoord.replace(/\n+\s*(?:📄|✏️|📝|🌐|ℹ️)\s*Bron:[^\n]*(?:\n[^\n]*)*$/u, "");
       antwoord = antwoord.replace(/\n+\s*ℹ️\s*Niet gevonden[^\n]*(?:\n[^\n]*)*$/u, "");
       antwoord = antwoord.trimEnd();
+    }
+
+    // ---- 9d. Response cache write ----
+    // Alleen cachen bij niet-skip vragen, met geldige hash, en niet-leeg
+    // niet-fallback antwoord. CAO/salaris-vragen krijgen 7d TTL, rest 24u.
+    if (!skipCache && vraagHash && antwoord && antwoord !== "Geen antwoord ontvangen." && antwoord.trim().length > 0) {
+      try {
+        const isCAOVraag = WEBSITE_TRIGGERS.some(t => vraag.toLowerCase().includes(t.toLowerCase()))
+          || vraag.toLowerCase().includes("cao")
+          || vraag.toLowerCase().includes("salaris");
+        const ttlHours = isCAOVraag ? 7 * 24 : 24;
+        const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
+
+        await supabaseAdmin.from("response_cache").upsert({
+          tenant_id: profile.tenant_id,
+          user_id: user.id,
+          vraag_hash: vraagHash,
+          antwoord: antwoord,
+          expires_at: expiresAt,
+        }, { onConflict: "tenant_id,user_id,vraag_hash" });
+      } catch (cacheErr) {
+        console.warn("[Cache] Write faalde:", cacheErr);
+      }
     }
 
     // ---- 9. Gesprek opslaan — naam strippen uit DB-antwoord (privacy)

@@ -16,6 +16,18 @@
   // Cache van geladen kennissuggesties voor lookup vanuit notitie-handler.
   var suggestiesCache = {};
 
+  // Response cache leegmaken na elke document-mutatie. Documenten zijn
+  // de bron voor de chatbot-antwoorden, dus na een wijziging mag een
+  // eerder gecachet antwoord niet meer geserveerd worden.
+  async function invalideerResponseCache() {
+    if (!tenantId) return;
+    try {
+      await supabaseClient.from('response_cache').delete().eq('tenant_id', tenantId);
+    } catch (e) {
+      console.warn('[Cache] Invalidatie faalde:', e);
+    }
+  }
+
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -1020,6 +1032,7 @@
     await supabaseClient.from('document_mappen').update({ naam: nieuweNaam }).eq('id', id);
     // Update alle documenten met de oude mapnaam
     await supabaseClient.from('documents').update({ map: nieuweNaam }).eq('tenant_id', tenantId).eq('map', oudeNaam);
+    await invalideerResponseCache();
 
     await loadMappen();
     await loadDocuments();
@@ -1032,6 +1045,7 @@
     await supabaseClient.from('documents').update({ map: null }).eq('tenant_id', tenantId).eq('map', mapNaam);
     // Verwijder de map
     await supabaseClient.from('document_mappen').delete().eq('id', id);
+    await invalideerResponseCache();
 
     await loadMappen();
     await loadDocuments();
@@ -1073,6 +1087,7 @@
       for (var i = 0; i < checked.length; i++) {
         await supabaseClient.from('documents').update({ map: mapValue }).eq('id', checked[i].value);
       }
+      await invalideerResponseCache();
 
       await loadDocuments();
       document.getElementById('bulk-move-bar').style.display = 'none';
@@ -1336,6 +1351,7 @@
 
     // Direct lijst verversen
     console.log('[Upload] Klaar met alle bestanden, lijst verversen');
+    await invalideerResponseCache();
     await loadMappen();
     await loadDocuments();
 
@@ -1662,6 +1678,7 @@
           }
           await supabaseClient.from('documents').delete().eq('id', docId);
         }
+        await invalideerResponseCache();
 
         bulkBtn.disabled = false;
         document.getElementById('bulk-delete-bar').style.display = 'none';
@@ -1925,6 +1942,7 @@
 
     await supabaseClient.storage.from('documents').remove([bestandspad]);
     await supabaseClient.from('documents').delete().eq('id', id);
+    await invalideerResponseCache();
 
     loadDocuments();
   };
@@ -2380,6 +2398,7 @@
       alert('Opslaan mislukt: ' + result.error.message);
       return;
     }
+    await invalideerResponseCache();
     loadDocuments();
   };
 
@@ -2515,6 +2534,7 @@
       } else {
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Document bijgewerkt.';
+        await invalideerResponseCache();
         loadMappen();
         loadDocuments();
         setTimeout(function () {
@@ -2804,6 +2824,8 @@
     console.log('[PersDocs] Batch klaar — gelukt:', gelukt, 'mislukt:', mislukt.length, 'genegeerd:', genegeerd.length);
     console.log('[PersDocs] Upload voltooid, refresh lijst voor profileId:', profileId);
 
+    if (gelukt > 0) await invalideerResponseCache();
+
     var lines = [];
     if (gelukt > 0) lines.push('✅ ' + gelukt + ' bestand' + (gelukt === 1 ? '' : 'en') + ' geüpload');
     if (mislukt.length > 0) lines.push('❌ Mislukt: ' + mislukt.map(escapeHtml).join('; '));
@@ -2820,6 +2842,7 @@
 
     await supabaseClient.storage.from('documents').remove([bestandspad]);
     await supabaseClient.from('documents').delete().eq('id', id);
+    await invalideerResponseCache();
 
     loadPersoonlijkeDocs(profileId);
   };
@@ -5841,6 +5864,7 @@
       documenttype: 'overig'
     });
     if (insertResult.error) { alert('Toevoegen mislukt: ' + insertResult.error.message); return; }
+    await invalideerResponseCache();
 
     await supabaseClient.from('document_aanvragen').update({ status: 'gepubliceerd' }).eq('id', id);
     loadDocumentAanvragen();
