@@ -1432,40 +1432,93 @@ ${vraagLijst}`;
       };
       const niveau = niveaus[wk] || "Gemiddeld";
 
+      // Stap 1: Weekvragen ophalen (maandag t/m nu)
       let vragenContext = "";
+      let vragenBron = "medewerker";
       try {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const { data: recenteVragen } = await supabaseAdmin.from("conversations").select("vraag").eq("user_id", profile.id).gte("created_at", sevenDaysAgo.toISOString()).order("created_at", { ascending: false }).limit(15);
-        if (recenteVragen && recenteVragen.length > 0) {
-          vragenContext = "VRAGEN DIE DEZE MEDEWERKER DEZE WEEK STELDE:\n" + recenteVragen.map((v: { vraag: string }, i: number) => (i + 1) + ". " + v.vraag).join("\n");
+        const startOfWeek = new Date();
+        startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7)); // Maandag
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const { data: weekGesprekken } = await supabaseAdmin
+          .from("conversations")
+          .select("vraag")
+          .eq("user_id", profile.id)
+          .eq("tenant_id", profile.tenant_id)
+          .gte("created_at", startOfWeek.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (weekGesprekken && weekGesprekken.length >= 3) {
+          vragenContext = "VRAGEN DIE DEZE MEDEWERKER DEZE WEEK STELDE (basis voor de quiz):\n" + weekGesprekken.map((v: { vraag: string }, i: number) => (i + 1) + ". " + v.vraag).join("\n");
+        } else {
+          // Fallback: 10 meest gestelde vragen van het team deze maand (anoniem)
+          vragenBron = "team";
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+
+          const { data: teamGesprekken } = await supabaseAdmin
+            .from("conversations")
+            .select("vraag")
+            .eq("tenant_id", profile.tenant_id)
+            .gte("created_at", startOfMonth.toISOString())
+            .order("created_at", { ascending: false })
+            .limit(50);
+
+          if (teamGesprekken && teamGesprekken.length > 0) {
+            // Selecteer unieke vragen (geen duplicaten)
+            const uniek: string[] = [];
+            for (const g of teamGesprekken) {
+              const norm = (g as { vraag: string }).vraag.toLowerCase().trim();
+              if (!uniek.some(u => u.toLowerCase().trim() === norm)) uniek.push((g as { vraag: string }).vraag);
+              if (uniek.length >= 10) break;
+            }
+            vragenContext = "MEEST GESTELDE VRAGEN DOOR HET TEAM DEZE MAAND (anoniem, basis voor de quiz):\n" + uniek.map((v, i) => (i + 1) + ". " + v).join("\n");
+          }
         }
       } catch (err) { console.error("[Quiz] Vragen ophalen mislukt:", err); }
 
+      // Stap 2: Relevante kennisbankfragmenten ophalen
       let docContext = "";
       try {
         const { data: docs } = await supabaseAdmin.from("documents").select("naam, content").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null).limit(20);
         if (docs && docs.length > 0) {
-          const searchTerm = ("week " + wk + " " + fg.replace(/_/g, " ")).toLowerCase();
+          // Score documenten op basis van de weekvragen (niet alleen week+functiegroep)
+          const searchTerms = vragenContext.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
           const scored = docs.map((d: { naam: string; content: string }) => {
             const lower = (d.content + " " + d.naam).toLowerCase();
             let score = 0;
-            searchTerm.split(/\s+/).forEach((w: string) => { if (w.length > 2 && lower.indexOf(w) !== -1) score++; });
+            searchTerms.forEach((w: string) => { if (lower.indexOf(w) !== -1) score++; });
             return { ...d, score };
           }).sort((a: { score: number }, b: { score: number }) => b.score - a.score).slice(0, 3);
           docContext = "RELEVANTE KENNISBANK DOCUMENTEN:\n" + scored.map((d: { naam: string; content: string }) => "--- " + d.naam + " ---\n" + d.content.substring(0, 2500)).join("\n\n");
         }
       } catch (err) { console.error("[Quiz] Documenten ophalen mislukt:", err); }
 
+      // Stap 3: Genereer quizvragen via Claude Haiku
       try {
-        const prompt = `Genereer 3 quizvragen voor een nieuwe zorgmedewerker in inwerkweek ${wk}.\nNiveau: ${niveau}.\nFunctiegroep: ${fg.replace(/_/g, " ")}.\nGebruik UITSLUITEND informatie uit de onderstaande kennisbank documenten — verzin niets.\nPer vraag 3 antwoordopties waarvan precies 1 correct is.\nRetourneer ALLEEN een JSON array, geen tekst eromheen, in dit exacte formaat:\n[{"vraag": "...", "opties": ["a", "b", "c"], "correct_antwoord": "a", "uitleg": "..."}]\n\n${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over ambulante zorg)"}\n\n${vragenContext}`;
+        const prompt = `Genereer 3 quizvragen voor een zorgmedewerker in inwerkweek ${wk}.
+Niveau: ${niveau}.
+Functiegroep: ${fg.replace(/_/g, " ")}.
+
+BELANGRIJK: Baseer de quizvragen DIRECT op de onderstaande vragen die ${vragenBron === "medewerker" ? "deze medewerker deze week stelde" : "het team deze maand stelde"}. De quiz moet toetsen of de medewerker de antwoorden op deze vragen heeft onthouden en begrepen.
+
+Gebruik UITSLUITEND informatie uit de kennisbank documenten hieronder als bron voor de correcte antwoorden — verzin niets.
+Per vraag 3 antwoordopties waarvan precies 1 correct is.
+Retourneer ALLEEN een JSON array, geen tekst eromheen, in dit exacte formaat:
+[{"vraag": "...", "opties": ["a", "b", "c"], "correct_antwoord": "a", "uitleg": "..."}]
+
+${vragenContext || "(geen vragen beschikbaar — gebruik de kennisbank documenten als basis)"}
+
+${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over ambulante zorg)"}`;
         const quizResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
         });
         const quizResult = await quizResp.json();
-        return new Response(JSON.stringify({ antwoord: quizResult.content?.[0]?.text || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ antwoord: quizResult.content?.[0]?.text || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[Quiz] Fout:", err);
         return new Response(JSON.stringify({ error: "Quiz genereren mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
