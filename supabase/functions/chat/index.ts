@@ -424,6 +424,28 @@ Deno.serve(async (req: Request) => {
       const vraagLijst = (convs || []).map((c: { vraag: string }) => c.vraag).slice(0, 200);
       const documentNamen = scanDocs.map((d: { naam: string }) => d.naam).join(", ");
 
+      // Kennisnotities en kennisbank items ophalen — als een onderwerp hier
+      // al gedekt is mag het niet als "hiaat" gecategoriseerd worden.
+      const { data: kennisnotities } = await supabaseAdmin
+        .from("kennisnotities")
+        .select("originele_vraag, notitie")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("actief", true);
+
+      const { data: kennisitems } = await supabaseAdmin
+        .from("kennisbank_items")
+        .select("vraag, antwoord")
+        .eq("tenant_id", profile.tenant_id);
+
+      const gedekteTekst = [
+        ...(kennisnotities || []).map((n: { originele_vraag: string; notitie: string }) => `${n.originele_vraag}: ${n.notitie}`),
+        ...(kennisitems || []).map((i: { vraag: string; antwoord: string }) => `${i.vraag}: ${i.antwoord}`),
+      ].join("\n").substring(0, 2000);
+
+      const gedekteContext = gedekteTekst.length > 0
+        ? `\n\nKENNISNOTITIES EN KENNISBANK ITEMS DIE AL IN HET SYSTEEM STAAN (deze onderwerpen zijn NIET hiaten):\n${gedekteTekst}\n\nBELANGRIJK: Als een vraagpatroon al wordt afgedekt door bovenstaande kennisnotities of kennisbank items, categoriseer het dan NIET als "hiaat" maar als "suggestie" (het antwoord bestaat al, maar de zoekterm-matching vindt het niet). Alleen onderwerpen die NIET voorkomen in kennisnotities/items EN ook niet in de kennisbank-documenten zijn echte "hiaat" items.`
+        : "";
+
       let scanPrompt = "";
       if (scanType === "snel") {
         scanPrompt = `Je bent een kennisbank-analist voor een ambulante zorgorganisatie. Analyseer de volgende informatie en identificeer:
@@ -435,7 +457,7 @@ DOCUMENTNAMEN IN KENNISBANK (${scanDocs.length}):
 ${documentNamen}
 
 VEELGESTELDE VRAGEN (${vraagLijst.length}):
-${vraagLijst.slice(0, 50).join("\n")}
+${vraagLijst.slice(0, 50).join("\n")}${gedekteContext}
 
 OMSCHRIJVING FORMAT — Genereer per hiaat een omschrijving die EXACT dit format volgt, met dubbele \\n als regelscheider:
 
@@ -469,7 +491,7 @@ DOCUMENTEN (${scanDocs.length} totaal, eerste 30 getoond):
 ${docContexts}
 
 VEELGESTELDE VRAGEN (${vraagLijst.length}):
-${vraagLijst.slice(0, 30).join("\n")}
+${vraagLijst.slice(0, 30).join("\n")}${gedekteContext}
 
 OMSCHRIJVING FORMAT — Genereer per item een omschrijving die EXACT dit format volgt, met dubbele \\n als regelscheider:
 
@@ -1140,15 +1162,36 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       const gebruikteVragen = vragen.slice(0, 200);
       const vraagLijst = gebruikteVragen.map((v, i) => `${i + 1}. ${v}`).join("\n");
 
+      // Kennisnotities en items ophalen voor context
+      let trendGedekteContext = "";
+      try {
+        const { data: trendNotities } = await supabaseAdmin
+          .from("kennisnotities")
+          .select("originele_vraag, notitie")
+          .eq("tenant_id", profile.tenant_id)
+          .eq("actief", true);
+        const { data: trendItems } = await supabaseAdmin
+          .from("kennisbank_items")
+          .select("vraag, antwoord")
+          .eq("tenant_id", profile.tenant_id);
+        const gedekt = [
+          ...(trendNotities || []).map((n: { originele_vraag: string; notitie: string }) => n.originele_vraag),
+          ...(trendItems || []).map((i: { vraag: string }) => i.vraag),
+        ];
+        if (gedekt.length > 0) {
+          trendGedekteContext = `\n\nOnderwerpen waarvoor al kennisnotities/items bestaan (deze zijn al afgedekt):\n${gedekt.slice(0, 30).join("\n")}`;
+        }
+      } catch (err) { console.warn("[Trendanalyse] Kennisnotities ophalen mislukt:", err); }
+
       const trendPrompt = `Analyseer deze lijst vragen van een zorgteam en geef een overzicht van:
 1) De meest gestelde onderwerpen (top 5).
-2) Onderwerpen waar medewerkers moeite mee lijken te hebben.
+2) Onderwerpen waar medewerkers moeite mee lijken te hebben (negeer onderwerpen die al afgedekt zijn door kennisnotities/items).
 3) Één concrete aanbeveling voor de leidinggevende.
 
 Wees bondig, maximaal 200 woorden. Nederlands.
 
 Vragen (${gebruikteVragen.length}):
-${vraagLijst}`;
+${vraagLijst}${trendGedekteContext}`;
 
       try {
         const trendResp = await fetch("https://api.anthropic.com/v1/messages", {
