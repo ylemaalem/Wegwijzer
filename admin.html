@@ -127,11 +127,24 @@
         </div>
 
         <!-- Semantisch indexeren (vector embeddings) -->
-        <div style="margin-bottom:12px">
-          <button class="btn btn-secondary" onclick="window.indexAllDocuments()" style="width:auto;padding:8px 14px;font-size:0.8rem">📊 Semantisch indexeren (alle niet-geïndexeerde)</button>
+        <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <button class="btn btn-secondary" onclick="window.indexAllDocuments()" style="width:auto;padding:8px 14px;font-size:0.8rem">📊 Indexeer niet-geïndexeerde</button>
+          <button class="btn btn-secondary" id="bulk-herindexeer-alles-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Alles herindexeren</button>
+          <button class="btn btn-secondary" id="bulk-herindexeer-mislukte-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Alleen mislukte herindexeren</button>
         </div>
         <div class="alert alert-info" id="index-banner" style="display:none;margin-bottom:12px">
           <span id="index-progress">Bezig met indexeren...</span>
+        </div>
+        <!-- Voortgangsbalk bulk herindexering -->
+        <div id="bulk-herindexeer-progress" style="display:none;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong style="font-size:0.85rem" id="bulk-progress-titel">Bezig met herindexeren...</strong>
+            <span style="font-size:0.8rem;color:var(--text-muted)" id="bulk-progress-teller">0 / 0</span>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px">
+            <div id="bulk-progress-bar" style="background:var(--primary);height:100%;border-radius:4px;width:0%;transition:width 0.3s"></div>
+          </div>
+          <div style="font-size:0.78rem;color:var(--text-muted)" id="bulk-progress-detail">Wachten op start...</div>
         </div>
 
         <!-- Documenten tabel -->

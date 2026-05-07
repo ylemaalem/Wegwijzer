@@ -133,6 +133,27 @@ async function logAuditEvent(
   }
 }
 
+// ---- Indexering status helper ----
+async function setDocStatus(
+  supabase: ReturnType<typeof createClient>,
+  docId: string,
+  status: string,
+  fout: string | null = null,
+  aantalChunks = 0,
+  extractieMethode: string | null = null,
+): Promise<void> {
+  const update: Record<string, unknown> = { indexering_status: status };
+  if (fout !== null) update.indexering_fout = fout;
+  if (status !== "bezig") update.indexering_voltooid_op = new Date().toISOString();
+  if (aantalChunks > 0) update.aantal_chunks = aantalChunks;
+  if (extractieMethode) update.extractie_methode = extractieMethode;
+  try {
+    await supabase.from("documents").update(update).eq("id", docId);
+  } catch (e) {
+    console.error("[setDocStatus] DB update fout:", e);
+  }
+}
+
 // ---- Response cache helpers ----
 function normalizeQuestion(vraag: string): string {
   return vraag.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!,]/g, '');
@@ -945,7 +966,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       // Document ophalen (mag alleen van eigen tenant)
       const { data: doc, error: docErr } = await supabaseAdmin
         .from("documents")
-        .select("id, naam, content, tenant_id")
+        .select("id, naam, content, tenant_id, bestandspad")
         .eq("id", docId)
         .eq("tenant_id", profile.tenant_id)
         .single();
@@ -957,60 +978,104 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         );
       }
 
-      if (!doc.content || doc.content.trim().length < 10) {
+      // Extractie_methode afleiden uit bestandspad extensie
+      const pad = ((doc as { bestandspad: string | null }).bestandspad || "").toLowerCase();
+      const extractieMethode = pad.endsWith(".pdf") ? "pdf-text"
+        : pad.endsWith(".docx") ? "docx"
+        : pad.endsWith(".txt") || pad.endsWith(".csv") ? "txt"
+        : pad.endsWith(".html") || pad.endsWith(".htm") ? "html"
+        : "overig";
+
+      // FASE 1: Tekstcontrole — gescande PDF detectie
+      const content = (doc as { content: string | null }).content || "";
+      if (!content || content.trim().length < 10) {
+        const isGescandPdf = pad.endsWith(".pdf") && (!content || content.trim().length < 50);
+        if (isGescandPdf) {
+          await setDocStatus(supabaseAdmin, docId, "gescand_pdf",
+            "Geen tekst gevonden — mogelijk gescand document of alleen afbeeldingen. Indexering niet mogelijk zonder OCR.",
+            0, extractieMethode);
+          return new Response(
+            JSON.stringify({ error: "gescand_pdf", chunks: 0 }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        await setDocStatus(supabaseAdmin, docId, "fout",
+          `Geen tekst geëxtraheerd uit document (${content.trim().length} tekens).`, 0, extractieMethode);
         return new Response(
           JSON.stringify({ error: "Document heeft geen inhoud om te indexeren", chunks: 0 }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Bestaande chunks verwijderen zodat we clean kunnen herindexeren
-      await supabaseAdmin.from("documents").update({ indexering_status: "bezig" }).eq("id", docId);
+      // Status op 'bezig' + bestaande chunks verwijderen
+      await setDocStatus(supabaseAdmin, docId, "bezig");
       await supabaseAdmin.from("document_chunks").delete().eq("document_id", docId);
 
+      // FASE 2: Chunking
       const orgId: string = profile.tenant_id;
-      const chunks = chunkText(doc.content, 600, 100);
-      console.log(`[Index] Document "${doc.naam}": ${chunks.length} chunks`);
+      let chunks: string[];
+      try {
+        chunks = chunkText(content, 600, 100);
+        if (chunks.length === 0) {
+          await setDocStatus(supabaseAdmin, docId, "fout", "Document leverde geen chunks op.", 0, extractieMethode);
+          return new Response(
+            JSON.stringify({ error: "Document leverde geen chunks op", chunks: 0 }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        console.log(`[Index] Document "${(doc as { naam: string }).naam}": ${chunks.length} chunks`);
+      } catch (chunkErr) {
+        const msg = `Chunking fout: ${(chunkErr as Error).message}`;
+        await setDocStatus(supabaseAdmin, docId, "fout", msg, 0, extractieMethode);
+        return new Response(JSON.stringify({ error: msg }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
 
+      // FASE 3: Embeddings in batches van 20 om timeout te voorkomen
+      const BATCH_SIZE = 20;
       let geslaagd = 0;
       let mislukt = 0;
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkTekst = chunks[i];
-        let embedding: number[] | null = null;
+      for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
+        const batchEinde = Math.min(batchStart + BATCH_SIZE, chunks.length);
+        for (let i = batchStart; i < batchEinde; i++) {
+          const chunkTekst = chunks[i];
+          let embedding: number[] | null = null;
+          try {
+            for (let poging = 0; poging < 2; poging++) {
+              embedding = await generateEmbedding(chunkTekst, openaiKey);
+              if (embedding) break;
+              if (poging === 0) await new Promise(r => setTimeout(r, 1000));
+            }
+          } catch (embErr) {
+            console.error(`[Index] Embedding fout chunk ${i}:`, embErr);
+          }
 
-        // Max 2 pogingen
-        for (let poging = 0; poging < 2; poging++) {
-          embedding = await generateEmbedding(chunkTekst, openaiKey);
-          if (embedding) break;
-          if (poging === 0) await new Promise(r => setTimeout(r, 1000));
-        }
+          // FASE 4: Opslaan in DB
+          const { error: insertErr } = await supabaseAdmin.from("document_chunks").insert({
+            document_id: docId,
+            org_id: orgId,
+            chunk_index: i,
+            chunk_text: chunkTekst,
+            embedding: embedding ? JSON.stringify(embedding) : null,
+          });
 
-        const { error: insertErr } = await supabaseAdmin.from("document_chunks").insert({
-          document_id: docId,
-          org_id: orgId,
-          chunk_index: i,
-          chunk_text: chunkTekst,
-          embedding: embedding ? JSON.stringify(embedding) : null,
-        });
-
-        if (insertErr) {
-          console.error(`[Index] Chunk ${i} insert fout:`, insertErr.message);
-          mislukt++;
-        } else {
-          if (!embedding) console.warn(`[Index] Chunk ${i} opgeslagen zonder embedding (OpenAI fout)`);
-          geslaagd++;
+          if (insertErr) {
+            console.error(`[Index] Chunk ${i} insert fout:`, insertErr.message);
+            mislukt++;
+          } else {
+            if (!embedding) console.warn(`[Index] Chunk ${i} zonder embedding`);
+            geslaagd++;
+          }
         }
       }
 
       console.log(`[Index] Klaar: ${geslaagd} chunks opgeslagen, ${mislukt} mislukt`);
 
-      // Status bijwerken — nooit feedback-tellers resetten
+      // Eindstatus — nooit feedback-tellers resetten
       const indexStatus = geslaagd > 0 ? "klaar" : "fout";
-      await supabaseAdmin.from("documents").update({ indexering_status: indexStatus }).eq("id", docId);
+      const indexFout = geslaagd === 0 ? `Alle ${chunks.length} chunks mislukten (embedding of DB fout).` : null;
+      await setDocStatus(supabaseAdmin, docId, indexStatus, indexFout, geslaagd, extractieMethode);
 
-      // Cache leegmaken: na herindexering kan eerder gecachet antwoord
-      // achterhaald zijn (nieuwe of gewijzigde document-inhoud).
       try {
         await supabaseAdmin.from("response_cache").delete().eq("tenant_id", profile.tenant_id);
       } catch (cacheErr) {
@@ -1020,7 +1085,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       await logAuditEvent(
         supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
         "DOCUMENT_GEHERINDEXEERD", "document", docId,
-        { naam: doc.naam, geslaagd, mislukt, totaal: chunks.length },
+        { naam: (doc as { naam: string }).naam, geslaagd, mislukt, totaal: chunks.length },
       );
 
       return new Response(
@@ -2604,8 +2669,6 @@ ${alleKennisbronnen}`;
     if (convError) console.error("Conversation opslaan mislukt:", convError);
 
     // ---- 9b. Last online — adoptiesignaal voor teamleider ----
-    // Bij elke succesvolle chatbot-vraag laatste_actief bijwerken.
-    // Geen blocking await op het response-pad — best effort.
     supabaseAdmin
       .from("profiles")
       .update({ laatste_actief: new Date().toISOString() })
@@ -2613,6 +2676,13 @@ ${alleKennisbronnen}`;
       .then((r: { error: { message: string } | null }) => {
         if (r.error) console.error("[laatste_actief] update fout:", r.error.message);
       });
+
+    // ---- 9c. gebruik_count incrementeren per document (fire-and-forget) ----
+    if (gebruikteDocIds.length > 0) {
+      for (const gDocId of gebruikteDocIds) {
+        supabaseAdmin.rpc("increment_gebruikt_count", { doc_id: gDocId }).then(() => {}).catch(() => {});
+      }
+    }
 
     return new Response(
       JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null }),

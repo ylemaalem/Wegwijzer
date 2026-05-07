@@ -1393,7 +1393,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, feedback_positief, feedback_negatief, kwaliteitsscore')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1540,19 +1540,29 @@
       var synTitle = 'Synoniemen & afkortingen' + (synCount ? ' (' + synCount + ')' : '');
       var zoekIndicator = zoekCount > 0 ? '<span style="color:var(--success);font-size:0.7rem;margin-left:4px" title="' + zoekCount + ' zoektermen geïndexeerd">🔍' + zoekCount + '</span>' : '';
 
-      // Semantisch zoek badge
+      // Semantisch zoek badge + indexering status
       var chunkCount = chunkCountMap[doc.id] || 0;
       var chunkBadge = '';
       if (!doc.content) {
         chunkBadge = '';
       } else if (doc.indexering_status === 'bezig') {
         chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Wordt geïndexeerd...">⏳</span>';
+      } else if (doc.indexering_status === 'gescand_pdf') {
+        chunkBadge = '<span class="chunk-badge" style="color:#d97706;font-size:0.7rem;margin-left:4px" title="Gescande PDF — bevat geen extraheerbare tekst. Maak een tekstversie of gebruik OCR-software.">⚠️ Scan</span>';
       } else if (doc.indexering_status === 'fout') {
-        chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px" title="Indexering mislukt — klik 📊 om opnieuw te proberen">❌</span>';
+        var foutTip = doc.indexering_fout ? escapeHtml(doc.indexering_fout) : 'Onbekende fout';
+        chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px;cursor:pointer" title="❌ ' + foutTip + ' — klik 📊 om opnieuw te proberen">❌ Fout</span>';
       } else if (chunkCount > 0) {
-        chunkBadge = '<span class="chunk-badge" style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd">📊' + chunkCount + '</span>';
+        var voltooidTip = doc.indexering_voltooid_op ? ' · ' + new Date(doc.indexering_voltooid_op).toLocaleDateString('nl-NL') : '';
+        chunkBadge = '<span class="chunk-badge" style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd' + voltooidTip + '">📊' + chunkCount + '</span>';
       } else {
         chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
+      }
+
+      // Gebruik-teller badge
+      var gebruiktBadge = '';
+      if (doc.gebruikt_count && doc.gebruikt_count > 0) {
+        gebruiktBadge = '<span style="font-size:0.65rem;color:var(--text-muted);margin-left:4px" title="' + doc.gebruikt_count + 'x gebruikt in chatantwoorden">↗' + doc.gebruikt_count + '</span>';
       }
 
       // Kwaliteitsscore indicator
@@ -1588,7 +1598,7 @@
 
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + gebruiktBadge + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
@@ -1987,6 +1997,86 @@
     showAlert(boodschap, mislukt > 0 ? 'warning' : 'success');
     loadDocuments();
   };
+
+  // ---- Bulk herindexering met seriële queue ----
+  var bulkHerindexeerBezig = false;
+
+  async function bulkHerindexeren(documentIds, titel) {
+    if (bulkHerindexeerBezig) { alert('Er loopt al een herindexering. Wacht tot die klaar is.'); return; }
+    if (documentIds.length === 0) { showAlert('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
+    if (!confirm(titel + '\n\n' + documentIds.length + ' document(en) worden serieel verwerkt. Dit kan enkele minuten duren. Doorgaan?')) return;
+
+    bulkHerindexeerBezig = true;
+    var progressEl = document.getElementById('bulk-herindexeer-progress');
+    var titelEl = document.getElementById('bulk-progress-titel');
+    var tellerEl = document.getElementById('bulk-progress-teller');
+    var barEl = document.getElementById('bulk-progress-bar');
+    var detailEl = document.getElementById('bulk-progress-detail');
+
+    if (progressEl) progressEl.style.display = 'block';
+    if (titelEl) titelEl.textContent = 'Bezig met herindexeren...';
+
+    var totaal = documentIds.length;
+    var voltooid = 0;
+    var mislukt = 0;
+
+    var session = (await supabaseClient.auth.getSession()).data.session;
+    var token = session && session.access_token;
+
+    for (var qi = 0; qi < documentIds.length; qi++) {
+      var docId = documentIds[qi];
+      var docNaam = (allDocuments.find(function (d) { return d.id === docId; }) || {}).naam || docId.substring(0, 8);
+
+      if (detailEl) detailEl.textContent = 'Verwerken: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+
+      try {
+        var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ index_document_chunks: true, document_id: docId })
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) mislukt++; else voltooid++;
+      } catch (e) {
+        mislukt++;
+      }
+
+      var perc = Math.round(((voltooid + mislukt) / totaal) * 100);
+      if (barEl) barEl.style.width = perc + '%';
+      if (tellerEl) tellerEl.textContent = (voltooid + mislukt) + ' / ' + totaal + ' (' + voltooid + ' ✓ / ' + mislukt + ' ✗)';
+
+      // 2 seconden vertraging om Edge Function niet te overbelasten
+      if (qi < documentIds.length - 1) await new Promise(function (r) { setTimeout(r, 2000); });
+    }
+
+    bulkHerindexeerBezig = false;
+    if (titelEl) titelEl.textContent = voltooid === totaal ? '✓ Herindexering voltooid' : '⚠️ Herindexering klaar met fouten';
+    if (detailEl) detailEl.textContent = voltooid + ' succesvol, ' + mislukt + ' mislukt.' + (mislukt > 0 ? ' Bekijk de mislukte documenten in de lijst.' : '');
+    if (barEl) barEl.style.background = mislukt > 0 ? 'var(--warning,#f59e0b)' : 'var(--success)';
+
+    await loadDocuments();
+    setTimeout(function () { if (progressEl) progressEl.style.display = 'none'; }, 5000);
+  }
+
+  (function initBulkHerindexeerBtns() {
+    var allesBtn = document.getElementById('bulk-herindexeer-alles-btn');
+    var mislukteBtn = document.getElementById('bulk-herindexeer-mislukte-btn');
+
+    if (allesBtn) {
+      allesBtn.addEventListener('click', function () {
+        var ids = (allDocuments || []).filter(function (d) { return d.content; }).map(function (d) { return d.id; });
+        bulkHerindexeren(ids, '🔄 Alles herindexeren');
+      });
+    }
+    if (mislukteBtn) {
+      mislukteBtn.addEventListener('click', function () {
+        var ids = (allDocuments || []).filter(function (d) {
+          return d.content && (d.indexering_status === 'fout' || d.indexering_status === 'gescand_pdf');
+        }).map(function (d) { return d.id; });
+        bulkHerindexeren(ids, '🔄 Alleen mislukte herindexeren');
+      });
+    }
+  })();
 
   window.deleteDocument = async function (id, bestandspad) {
     if (!confirm('Weet je zeker dat je dit document wilt verwijderen?')) return;
