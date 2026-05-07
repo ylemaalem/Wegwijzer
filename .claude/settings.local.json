@@ -41,7 +41,10 @@
       "Bash(grep:*)",
       "Bash(bash deploy.sh)",
       "Bash(where supabase:*)",
-      "Read(//c/Users/youne/AppData/Local/npm-cache/_npx/**)"
+      "Read(//c/Users/youne/AppData/Local/npm-cache/_npx/**)",
+      "mcp__408f19a6-83df-4ebe-9e68-40906f4c3c82__apply_migration",
+      "mcp__408f19a6-83df-4ebe-9e68-40906f4c3c82__execute_sql",
+      "Bash(npx tsc *)"
     ]
   }
 }

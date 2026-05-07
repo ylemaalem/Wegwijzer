@@ -965,6 +965,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
 
       // Bestaande chunks verwijderen zodat we clean kunnen herindexeren
+      await supabaseAdmin.from("documents").update({ indexering_status: "bezig" }).eq("id", docId);
       await supabaseAdmin.from("document_chunks").delete().eq("document_id", docId);
 
       const orgId: string = profile.tenant_id;
@@ -1003,6 +1004,10 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
 
       console.log(`[Index] Klaar: ${geslaagd} chunks opgeslagen, ${mislukt} mislukt`);
+
+      // Status bijwerken — nooit feedback-tellers resetten
+      const indexStatus = geslaagd > 0 ? "klaar" : "fout";
+      await supabaseAdmin.from("documents").update({ indexering_status: indexStatus }).eq("id", docId);
 
       // Cache leegmaken: na herindexering kan eerder gecachet antwoord
       // achterhaald zijn (nieuwe of gewijzigde document-inhoud).
@@ -1234,6 +1239,55 @@ ${vraagLijst}${trendGedekteContext}`;
           JSON.stringify({ error: "Trendanalyse genereren mislukt." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      }
+    }
+
+    // ---- Feedback: document kwaliteitsscores bijwerken ----
+    if (body.save_feedback && body.conversation_id && body.feedback_waarde) {
+      const fbWaarde: string = body.feedback_waarde; // 'goed' of 'niet_goed'
+      if (fbWaarde !== "goed" && fbWaarde !== "niet_goed") {
+        return new Response(JSON.stringify({ error: "Ongeldige feedback waarde" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      try {
+        // Haal gebruikte document_ids op voor dit gesprek
+        const { data: conv } = await supabaseAdmin
+          .from("conversations")
+          .select("gebruikte_document_ids, tenant_id")
+          .eq("id", body.conversation_id)
+          .eq("tenant_id", profile.tenant_id)
+          .maybeSingle();
+
+        const docIds: string[] = (conv as { gebruikte_document_ids: string[] | null } | null)?.gebruikte_document_ids || [];
+
+        if (docIds.length > 0) {
+          for (const docId of docIds) {
+            // Haal huidige tellers op
+            const { data: doc } = await supabaseAdmin
+              .from("documents")
+              .select("feedback_positief, feedback_negatief")
+              .eq("id", docId)
+              .eq("tenant_id", profile.tenant_id)
+              .maybeSingle();
+
+            if (!doc) continue;
+
+            const pos = ((doc as { feedback_positief: number }).feedback_positief || 0) + (fbWaarde === "goed" ? 1 : 0);
+            const neg = ((doc as { feedback_negatief: number }).feedback_negatief || 0) + (fbWaarde === "niet_goed" ? 1 : 0);
+            const kwaliteitsscore = (pos + neg) >= 5 ? pos / (pos + neg) : null;
+
+            await supabaseAdmin.from("documents").update({
+              feedback_positief: pos,
+              feedback_negatief: neg,
+              kwaliteitsscore,
+            }).eq("id", docId);
+          }
+        }
+
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (fbErr) {
+        console.error("[Feedback] Kwaliteitsscore update fout:", fbErr);
+        return new Response(JSON.stringify({ ok: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
 
@@ -2047,6 +2101,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let documentContext = "";
     let HEEFT_KENNISBANK_MATCH = false;
     let zoekMethode = "geen";
+    let gebruikteDocIds: string[] = [];
 
     // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
     let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
@@ -2086,6 +2141,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
             if (gefilterdeChunks.length >= 3) {
               HEEFT_KENNISBANK_MATCH = true;
               zoekMethode = "vector";
+              gebruikteDocIds = [...new Set(gefilterdeChunks.map(c => c.document_id))];
 
               const metaMap = new Map((docMeta || []).map((d: { id: string; naam: string; notitie: string | null }) => [d.id, d]));
               const chunkTexts: string[] = [];
@@ -2157,7 +2213,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       if (allDocs.length > 0) {
         const scored = allDocs
           .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
-          .map((d: { naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
+          .map((d: { id: string; naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
             const lowerContent = d.content.toLowerCase();
             const lowerNaam = d.naam.toLowerCase();
             const indexTerms: string[] = [...((d.zoektermen || []) as string[]), ...((d.synoniemen || []) as string[])].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
@@ -2172,7 +2228,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
                 if (stam !== kw) { pos = 0; while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; } }
               }
             }
-            return { naam: d.naam, content: d.content, notitie: d.notitie || null, score };
+            return { id: d.id, naam: d.naam, content: d.content, notitie: d.notitie || null, score };
           })
           .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
           .slice(0, 5);
@@ -2180,6 +2236,9 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const MAX_SCORE = scored.length > 0 ? scored[0].score : 0;
         HEEFT_KENNISBANK_MATCH = MAX_SCORE >= 5;
         zoekMethode = "zoektermen";
+        if (HEEFT_KENNISBANK_MATCH) {
+          gebruikteDocIds = scored.filter((d: { score: number }) => d.score >= 5).map((d: { id: string }) => d.id);
+        }
         console.log(`[Chat] Zoektermen match: MAX_SCORE=${MAX_SCORE}, heeftMatch=${HEEFT_KENNISBANK_MATCH}`);
 
         if (scored.length > 0) {
@@ -2538,7 +2597,7 @@ ${alleKennisbronnen}`;
 
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
-      .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: antwoordVoorDb })
+      .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: antwoordVoorDb, gebruikte_document_ids: gebruikteDocIds })
       .select("id")
       .single();
 

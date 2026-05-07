@@ -1393,7 +1393,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, feedback_positief, feedback_negatief, kwaliteitsscore')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1545,10 +1545,35 @@
       var chunkBadge = '';
       if (!doc.content) {
         chunkBadge = '';
+      } else if (doc.indexering_status === 'bezig') {
+        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Wordt geïndexeerd...">⏳</span>';
+      } else if (doc.indexering_status === 'fout') {
+        chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px" title="Indexering mislukt — klik 📊 om opnieuw te proberen">❌</span>';
       } else if (chunkCount > 0) {
         chunkBadge = '<span class="chunk-badge" style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd">📊' + chunkCount + '</span>';
       } else {
         chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
+      }
+
+      // Kwaliteitsscore indicator
+      var kwaliteitsBadge = '';
+      var pos = doc.feedback_positief || 0;
+      var neg = doc.feedback_negatief || 0;
+      var totaalFeedback = pos + neg;
+      if (doc.kwaliteitsscore !== null && doc.kwaliteitsscore !== undefined && totaalFeedback >= 5) {
+        var ks = doc.kwaliteitsscore;
+        var ksKleur, ksIcoon;
+        if (ks >= 0.80) {
+          ksIcoon = '🟢'; ksKleur = 'var(--success)';
+        } else if (ks >= 0.50) {
+          ksIcoon = '🟡'; ksKleur = '#d97706';
+        } else {
+          ksIcoon = '🔴'; ksKleur = 'var(--error)';
+        }
+        var tooltip = 'Kwaliteit: ' + Math.round(ks * 100) + '% positief · gebaseerd op ' + totaalFeedback + ' feedbacks';
+        kwaliteitsBadge = '<span style="font-size:0.7rem;margin-left:4px;cursor:default" title="' + tooltip + '">' + ksIcoon + (ks < 0.50 ? ' <span style="color:var(--error);font-size:0.65rem">Controleer document</span>' : '') + '</span>';
+      } else if (totaalFeedback > 0) {
+        kwaliteitsBadge = '<span style="font-size:0.7rem;margin-left:4px;color:var(--text-muted);cursor:default" title="Te weinig data (' + totaalFeedback + ' feedback' + (totaalFeedback === 1 ? '' : 's') + ', minimaal 5 nodig)">⚪</span>';
       }
 
       // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
@@ -1563,7 +1588,7 @@
 
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
@@ -2564,6 +2589,11 @@
         await invalideerResponseCache();
         loadMappen();
         loadDocuments();
+        // Herindexeer automatisch als document content heeft
+        // (chunks bevatten de tekst, metadata-update zoals naam kan zoekterm-context beïnvloeden)
+        if (huidigDoc && huidigDoc.content) {
+          window.indexDocumentChunks(docId, null, true);
+        }
         setTimeout(function () {
           modal.classList.remove('show');
         }, 1000);

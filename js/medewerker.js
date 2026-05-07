@@ -831,6 +831,19 @@
       .update({ feedback: waarde, feedback_op: nu.toISOString() })
       .eq('id', conversationId);
 
+    // Document kwaliteitsscores bijwerken via Edge Function (best effort)
+    try {
+      var fbSession = await supabaseClient.auth.getSession();
+      var fbToken = fbSession.data.session && fbSession.data.session.access_token;
+      if (fbToken && conversationId) {
+        fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + fbToken },
+          body: JSON.stringify({ save_feedback: true, conversation_id: conversationId, feedback_waarde: waarde })
+        }).catch(function () {});
+      }
+    } catch (e) { /* niet blokkerend */ }
+
     // Toon wijzigbaar-tekst
     var feedbackRow = activeBtn.parentElement;
     var bestaandInfo = feedbackRow.querySelector('.feedback-info');
