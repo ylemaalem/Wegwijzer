@@ -115,22 +115,19 @@
           <input class="form-input" type="text" id="doc-search" placeholder="🔍 Zoek in documenten..." style="padding:10px 14px;font-size:0.9rem">
         </div>
 
-        <!-- Bulk actie -->
-        <div id="bulk-delete-bar" style="display:none;margin-bottom:12px">
+        <!-- Bulk acties -->
+        <div id="bulk-delete-bar" style="display:none;margin-bottom:12px;flex-wrap:wrap;gap:8px;align-items:center">
           <button class="btn btn-primary" id="bulk-delete-btn" style="background:var(--error);width:auto;padding:10px 20px;font-size:0.85rem">Verwijder geselecteerde (0)</button>
+          <button class="btn btn-secondary" id="bulk-semantic-btn" style="width:auto;padding:10px 20px;font-size:0.85rem">🧠 Geselecteerde semantisch herindexeren (0)</button>
         </div>
 
-        <!-- Herindexeer alle documenten (zoektermen) -->
-        <div style="margin-bottom:12px">
-          <button class="btn btn-secondary" id="herindexeer-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Herindexeer alle documenten</button>
-          <span id="herindexeer-status" style="margin-left:12px;font-size:0.85rem;color:var(--text-muted)"></span>
-        </div>
-
-        <!-- Semantisch indexeren (vector embeddings) -->
+        <!-- Indexeer knoppen: drie aparte acties -->
         <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <button class="btn btn-secondary" onclick="window.indexAllDocuments()" style="width:auto;padding:8px 14px;font-size:0.8rem">📊 Indexeer niet-geïndexeerde</button>
-          <button class="btn btn-secondary" id="bulk-herindexeer-alles-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Alles herindexeren</button>
-          <button class="btn btn-secondary" id="bulk-herindexeer-mislukte-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Alleen mislukte herindexeren</button>
+          <button class="btn btn-secondary" id="herindexeer-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔤 Zoektermen herindexeren</button>
+          <button class="btn btn-secondary" id="bulk-herindexeer-alles-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🧠 Semantisch herindexeren</button>
+          <button class="btn btn-secondary" id="bulk-volledig-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">🔄 Volledig herindexeren (beide)</button>
+          <button class="btn btn-secondary" id="bulk-herindexeer-mislukte-btn" style="width:auto;padding:8px 14px;font-size:0.8rem">⚠️ Alleen mislukte herindexeren</button>
+          <span id="herindexeer-status" style="margin-left:4px;font-size:0.85rem;color:var(--text-muted)"></span>
         </div>
         <div class="alert alert-info" id="index-banner" style="display:none;margin-bottom:12px">
           <span id="index-progress">Bezig met indexeren...</span>

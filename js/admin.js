@@ -1393,7 +1393,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1551,12 +1551,16 @@
         chunkBadge = '<span class="chunk-badge" style="color:#d97706;font-size:0.7rem;margin-left:4px" title="Gescande PDF — bevat geen extraheerbare tekst. Maak een tekstversie of gebruik OCR-software.">⚠️ Scan</span>';
       } else if (doc.indexering_status === 'fout') {
         var foutTip = doc.indexering_fout ? escapeHtml(doc.indexering_fout) : 'Onbekende fout';
-        chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px;cursor:pointer" title="❌ ' + foutTip + ' — klik 📊 om opnieuw te proberen">❌ Fout</span>';
-      } else if (chunkCount > 0) {
+        chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px;cursor:pointer" title="🔴 ' + foutTip + ' — klik 📊 om opnieuw te proberen">🔴</span>';
+      } else if (doc.heeft_embeddings && chunkCount > 0) {
         var voltooidTip = doc.indexering_voltooid_op ? ' · ' + new Date(doc.indexering_voltooid_op).toLocaleDateString('nl-NL') : '';
-        chunkBadge = '<span class="chunk-badge" style="color:var(--primary);font-size:0.7rem;margin-left:4px" title="' + chunkCount + ' vector chunks geïndexeerd' + voltooidTip + '">📊' + chunkCount + '</span>';
+        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟢 Volledig geïndexeerd: ' + chunkCount + ' chunks' + voltooidTip + '">🟢' + chunkCount + '</span>';
+      } else if (chunkCount > 0) {
+        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟡 Chunks aanwezig maar embeddings ontbreken — herindexeer voor betere zoekresultaten">🟡' + chunkCount + '</span>';
+      } else if (doc.indexering_status === 'nooit_geindexeerd') {
+        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="⚪ Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚪</span>';
       } else {
-        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚠️</span>';
+        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚪</span>';
       }
 
       // Gebruik-teller badge
@@ -1696,9 +1700,11 @@
     var checked = document.querySelectorAll('.doc-select-cb:checked');
     var bar = document.getElementById('bulk-delete-bar');
     var btn = document.getElementById('bulk-delete-btn');
+    var semanticBtn = document.getElementById('bulk-semantic-btn');
     var moveBar = document.getElementById('bulk-move-bar');
     if (checked.length > 0) {
-      if (bar) { bar.style.display = ''; btn.textContent = 'Verwijder geselecteerde (' + checked.length + ')'; }
+      if (bar) { bar.style.display = 'flex'; btn.textContent = 'Verwijder geselecteerde (' + checked.length + ')'; }
+      if (semanticBtn) semanticBtn.textContent = '🧠 Geselecteerde semantisch herindexeren (' + checked.length + ')';
       if (moveBar) moveBar.style.display = '';
     } else {
       if (bar) bar.style.display = 'none';
@@ -1878,13 +1884,11 @@
       badge.className = 'chunk-badge';
       badge.style.cssText = 'font-size:0.7rem;margin-left:4px';
       if (count > 0) {
-        badge.style.color = 'var(--primary)';
-        badge.title = count + ' vector chunks geïndexeerd';
-        badge.textContent = '📊' + count;
+        badge.title = '🟢 Volledig geïndexeerd: ' + count + ' chunks';
+        badge.textContent = '🟢' + count;
       } else {
-        badge.style.color = 'var(--warning,#f59e0b)';
-        badge.title = 'Nog niet semantisch geïndexeerd — klik 📊 om te indexeren';
-        badge.textContent = '⚠️';
+        badge.title = '⚪ Nog niet semantisch geïndexeerd — klik 📊 om te indexeren';
+        badge.textContent = '⚪';
       }
       naamTd.appendChild(badge);
     } catch (e) {
@@ -2058,22 +2062,117 @@
     setTimeout(function () { if (progressEl) progressEl.style.display = 'none'; }, 5000);
   }
 
-  (function initBulkHerindexeerBtns() {
-    var allesBtn = document.getElementById('bulk-herindexeer-alles-btn');
-    var mislukteBtn = document.getElementById('bulk-herindexeer-mislukte-btn');
+  // Volledig herindexeren: zoektermen + semantisch per document, serieel
+  async function bulkVolledigHerindexeren(documentIds, titel) {
+    if (bulkHerindexeerBezig) { alert('Er loopt al een herindexering. Wacht tot die klaar is.'); return; }
+    if (documentIds.length === 0) { showAlert('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
+    if (!confirm(titel + '\n\n' + documentIds.length + ' document(en) worden volledig herindexeerd (zoektermen + semantisch). Dit kan lang duren. Doorgaan?')) return;
 
+    bulkHerindexeerBezig = true;
+    var progressEl = document.getElementById('bulk-herindexeer-progress');
+    var titelEl = document.getElementById('bulk-progress-titel');
+    var tellerEl = document.getElementById('bulk-progress-teller');
+    var barEl = document.getElementById('bulk-progress-bar');
+    var detailEl = document.getElementById('bulk-progress-detail');
+
+    if (progressEl) progressEl.style.display = 'block';
+    if (titelEl) titelEl.textContent = 'Bezig met volledig herindexeren...';
+    if (barEl) barEl.style.background = 'var(--primary)';
+
+    var totaal = documentIds.length;
+    var voltooid = 0;
+    var mislukt = 0;
+
+    var session = (await supabaseClient.auth.getSession()).data.session;
+    var token = session && session.access_token;
+
+    for (var qi = 0; qi < documentIds.length; qi++) {
+      var docId = documentIds[qi];
+      var docNaam = (allDocuments.find(function (d) { return d.id === docId; }) || {}).naam || docId.substring(0, 8);
+
+      if (detailEl) detailEl.textContent = '🔤 Zoektermen: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+
+      var stap1Ok = false;
+      try {
+        var resp1 = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ generate_zoektermen: true, document_id: docId })
+        });
+        var data1 = await resp1.json();
+        stap1Ok = resp1.ok && !data1.error;
+      } catch (e) { /* stap 1 mislukt */ }
+
+      if (detailEl) detailEl.textContent = '🧠 Semantisch: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+
+      var stap2Ok = false;
+      try {
+        var resp2 = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ index_document_chunks: true, document_id: docId })
+        });
+        var data2 = await resp2.json();
+        stap2Ok = resp2.ok && !data2.error;
+      } catch (e) { /* stap 2 mislukt */ }
+
+      if (stap1Ok && stap2Ok) voltooid++; else mislukt++;
+
+      var perc = Math.round(((voltooid + mislukt) / totaal) * 100);
+      if (barEl) barEl.style.width = perc + '%';
+      if (tellerEl) tellerEl.textContent = (voltooid + mislukt) + ' / ' + totaal + ' (' + voltooid + ' ✓ / ' + mislukt + ' ✗)';
+
+      if (qi < documentIds.length - 1) await new Promise(function (r) { setTimeout(r, 3000); });
+    }
+
+    bulkHerindexeerBezig = false;
+    if (titelEl) titelEl.textContent = voltooid === totaal ? '✓ Volledig herindexering voltooid' : '⚠️ Herindexering klaar met fouten';
+    if (detailEl) detailEl.textContent = voltooid + ' succesvol, ' + mislukt + ' mislukt.';
+    if (barEl) barEl.style.background = mislukt > 0 ? 'var(--warning,#f59e0b)' : 'var(--success)';
+
+    await loadDocuments();
+    setTimeout(function () { if (progressEl) progressEl.style.display = 'none'; }, 5000);
+  }
+
+  (function initBulkHerindexeerBtns() {
+    // 🧠 Semantisch herindexeren — alle documenten met content
+    var allesBtn = document.getElementById('bulk-herindexeer-alles-btn');
     if (allesBtn) {
       allesBtn.addEventListener('click', function () {
         var ids = (allDocuments || []).filter(function (d) { return d.content; }).map(function (d) { return d.id; });
-        bulkHerindexeren(ids, '🔄 Alles herindexeren');
+        bulkHerindexeren(ids, '🧠 Semantisch herindexeren');
       });
     }
+
+    // ⚠️ Alleen mislukte herindexeren
+    var mislukteBtn = document.getElementById('bulk-herindexeer-mislukte-btn');
     if (mislukteBtn) {
       mislukteBtn.addEventListener('click', function () {
         var ids = (allDocuments || []).filter(function (d) {
           return d.content && (d.indexering_status === 'fout' || d.indexering_status === 'gescand_pdf');
         }).map(function (d) { return d.id; });
-        bulkHerindexeren(ids, '🔄 Alleen mislukte herindexeren');
+        bulkHerindexeren(ids, '⚠️ Alleen mislukte herindexeren');
+      });
+    }
+
+    // 🔄 Volledig herindexeren (zoektermen + semantisch)
+    var volledigBtn = document.getElementById('bulk-volledig-btn');
+    if (volledigBtn) {
+      volledigBtn.addEventListener('click', function () {
+        var ids = (allDocuments || []).filter(function (d) { return d.content; }).map(function (d) { return d.id; });
+        bulkVolledigHerindexeren(ids, '🔄 Volledig herindexeren (zoektermen + semantisch)');
+      });
+    }
+
+    // 🧠 Geselecteerde semantisch herindexeren (checkbox-selectie)
+    var semanticBtn = document.getElementById('bulk-semantic-btn');
+    if (semanticBtn) {
+      semanticBtn.addEventListener('click', function () {
+        var checked = document.querySelectorAll('.doc-select-cb:checked');
+        if (checked.length === 0) return;
+        var ids = [];
+        checked.forEach(function (cb) { ids.push(cb.value); });
+        bulkHerindexeren(ids, '🧠 Geselecteerde semantisch herindexeren');
       });
     }
   })();

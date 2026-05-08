@@ -145,7 +145,7 @@ async function setDocStatus(
   const update: Record<string, unknown> = { indexering_status: status };
   if (fout !== null) update.indexering_fout = fout;
   if (status !== "bezig") update.indexering_voltooid_op = new Date().toISOString();
-  if (aantalChunks > 0) update.aantal_chunks = aantalChunks;
+  if (aantalChunks > 0) { update.aantal_chunks = aantalChunks; update.heeft_embeddings = true; }
   if (extractieMethode) update.extractie_methode = extractieMethode;
   try {
     await supabase.from("documents").update(update).eq("id", docId);
