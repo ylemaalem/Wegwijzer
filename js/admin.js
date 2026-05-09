@@ -2145,13 +2145,22 @@
     }
 
     // ⚠️ Alleen mislukte herindexeren
+    // "Mislukt" = zoektermen ontbreken OF geen chunks OF expliciete foutstatus
     var mislukteBtn = document.getElementById('bulk-herindexeer-mislukte-btn');
     if (mislukteBtn) {
       mislukteBtn.addEventListener('click', function () {
         var ids = (allDocuments || []).filter(function (d) {
-          return d.content && (d.indexering_status === 'fout' || d.indexering_status === 'gescand_pdf');
+          if (!d.content) return false;
+          var geenZoektermen = !d.zoektermen || d.zoektermen.length === 0;
+          var geenChunks = !(chunkCountMap[d.id] > 0);
+          var foutStatus = d.indexering_status === 'fout' || d.indexering_status === 'gescand_pdf' || d.indexering_status === 'nooit_geindexeerd';
+          return geenZoektermen || geenChunks || foutStatus;
         }).map(function (d) { return d.id; });
-        bulkHerindexeren(ids, '⚠️ Alleen mislukte herindexeren');
+        if (ids.length === 0) {
+          showAlert('Alle documenten zijn al geïndexeerd ✅', 'success');
+          return;
+        }
+        bulkVolledigHerindexeren(ids, '⚠️ Alleen mislukte herindexeren (' + ids.length + ' documenten)');
       });
     }
 
