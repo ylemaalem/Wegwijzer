@@ -1007,11 +1007,10 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         );
       }
 
-      // Status op 'bezig' + bestaande chunks verwijderen
+      // Status op 'bezig'
       await setDocStatus(supabaseAdmin, docId, "bezig");
-      await supabaseAdmin.from("document_chunks").delete().eq("document_id", docId);
 
-      // FASE 2: Chunking
+      // FASE 2: Chunking (vóór DELETE zodat oude chunks bewaard blijven bij fout)
       const orgId: string = profile.tenant_id;
       let chunks: string[];
       try {
@@ -1030,10 +1029,10 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         return new Response(JSON.stringify({ error: msg }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // FASE 3: Embeddings in batches van 20 om timeout te voorkomen
+      // FASE 3: Embeddings genereren (in-memory, nog geen DB-writes)
       const BATCH_SIZE = 20;
-      let geslaagd = 0;
-      let mislukt = 0;
+      const preparedChunks: Array<{ index: number; text: string; embedding: number[] | null }> = [];
+      let embeddingFouten = 0;
 
       for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
         const batchEinde = Math.min(batchStart + BATCH_SIZE, chunks.length);
@@ -1049,23 +1048,38 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           } catch (embErr) {
             console.error(`[Index] Embedding fout chunk ${i}:`, embErr);
           }
+          if (!embedding) embeddingFouten++;
+          preparedChunks.push({ index: i, text: chunkTekst, embedding });
+        }
+      }
 
-          // FASE 4: Opslaan in DB
-          const { error: insertErr } = await supabaseAdmin.from("document_chunks").insert({
-            document_id: docId,
-            org_id: orgId,
-            chunk_index: i,
-            chunk_text: chunkTekst,
-            embedding: embedding ? JSON.stringify(embedding) : null,
-          });
+      // Als ALLE embeddings mislukt zijn, behoud oude chunks
+      if (embeddingFouten === chunks.length) {
+        await setDocStatus(supabaseAdmin, docId, "fout", "Alle embeddings mislukt — oude chunks behouden.", 0, extractieMethode);
+        return new Response(
+          JSON.stringify({ error: "Alle embeddings mislukt", chunks: 0 }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-          if (insertErr) {
-            console.error(`[Index] Chunk ${i} insert fout:`, insertErr.message);
-            mislukt++;
-          } else {
-            if (!embedding) console.warn(`[Index] Chunk ${i} zonder embedding`);
-            geslaagd++;
-          }
+      // FASE 4: Pas NU oude chunks verwijderen + nieuwe inserten
+      await supabaseAdmin.from("document_chunks").delete().eq("document_id", docId);
+
+      let geslaagd = 0;
+      let mislukt = 0;
+      for (const pc of preparedChunks) {
+        const { error: insertErr } = await supabaseAdmin.from("document_chunks").insert({
+          document_id: docId,
+          org_id: orgId,
+          chunk_index: pc.index,
+          chunk_text: pc.text,
+          embedding: pc.embedding ? JSON.stringify(pc.embedding) : null,
+        });
+        if (insertErr) {
+          console.error(`[Index] Chunk ${pc.index} insert fout:`, insertErr.message);
+          mislukt++;
+        } else {
+          geslaagd++;
         }
       }
 
@@ -1253,12 +1267,27 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         }
       } catch (err) { console.warn("[Trendanalyse] Kennisnotities ophalen mislukt:", err); }
 
-      const trendPrompt = `Analyseer deze lijst vragen van een zorgteam en geef een overzicht van:
-1) De meest gestelde onderwerpen (top 5).
-2) Onderwerpen waar medewerkers moeite mee lijken te hebben (negeer onderwerpen die al afgedekt zijn door kennisnotities/items).
-3) Één concrete aanbeveling voor de leidinggevende.
+      const trendPrompt = `Je analyseert anonieme vragen van een zorgteam. Geef een beknopt overzicht in het Nederlands.
 
-Wees bondig, maximaal 200 woorden. Nederlands.
+Structuur:
+1. **Meest gestelde onderwerpen deze periode** (top 5, op basis van frequentie)
+   Noem per onderwerp hoeveel vragen er over gesteld zijn.
+
+2. **Opvallende vragen** (maximaal 3)
+   Vragen die buiten de normale patronen vallen — bijzonder, nieuw of specifiek.
+   Benoem waarom ze opvallen. NIET als probleem framen — gewoon signaleren.
+
+3. **Kort woordje** (maximaal 2 zinnen)
+   Een neutrale observatie over het gebruik deze periode.
+   Geen aanbevelingen. Geen oordelen. Geen trainingsadviezen.
+
+Regels:
+- Nooit suggereren dat medewerkers beter moeten leren zoeken
+- Nooit aanbevelen om trainingen of kennissessies te organiseren
+- Nooit het gebruik als probleem framen
+- Meer vragen = meer gebruik = goed teken, nooit als knelpunt benoemen
+- Maximaal 200 woorden totaal
+- Alleen op basis van de aangeleverde anonieme vraagteksten
 
 Vragen (${gebruikteVragen.length}):
 ${vraagLijst}${trendGedekteContext}`;
@@ -1295,7 +1324,7 @@ ${vraagLijst}${trendGedekteContext}`;
         }
 
         return new Response(
-          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport }),
+          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {
@@ -1900,11 +1929,16 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           { maand, team: teamNaam, aantal_ontvangers: metEmail.length, is_test: body.is_test === true, status: logStatus },
         );
 
+        // Bij test-modus: toon de werkelijke ontvanger (admin), niet de doel-teamleiders
+        const werkelijkeOntvangers = body.is_test && user.email
+          ? [(profile.naam || "Beheerder") + " (" + user.email + ") — testmail"]
+          : ontvangerNamen;
+
         return new Response(
           JSON.stringify({
             success: true,
             aantal_ontvangers: metEmail.length,
-            ontvangers: ontvangerNamen,
+            ontvangers: werkelijkeOntvangers,
             maand,
             mail_verstuurd: mailVerstuurd,
             mail_fouten: mailFouten,

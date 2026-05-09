@@ -425,12 +425,19 @@
       var ts = new Date(r.aangemaakt_op).toLocaleString('nl-NL', {
         day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
       });
+      var dertigDagenGeleden = new Date(new Date(r.aangemaakt_op).getTime() - 30 * 24 * 60 * 60 * 1000);
+      var startDatum = dertigDagenGeleden.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
+      var eindDatum = new Date(r.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+      var tekst = r.tekst || '';
+      // Markdown-achtige bold rendering: **tekst** → <strong>tekst</strong>
+      var geformatteerdeTekst = escapeHtml(tekst).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       return '<div class="trend-rapport" style="margin-bottom:16px;padding:16px 20px;border:1px solid #0d9488;border-left-width:4px;border-radius:8px;background:var(--bg)">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px">' +
         '<span style="font-size:0.78rem;color:var(--text-muted);font-style:italic">Gegenereerd op ' + escapeHtml(ts) + '</span>' +
         '<button class="btn-icon btn-icon-danger" onclick="window.deleteTrendanalyse(\'' + r.id + '\')" title="Verwijder rapport">🗑️</button>' +
         '</div>' +
-        '<div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.55;color:var(--text)">' + escapeHtml(r.tekst || '') + '</div>' +
+        '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;padding:8px 12px;background:var(--surface);border-radius:6px">Periode: ' + escapeHtml(startDatum) + ' t/m ' + escapeHtml(eindDatum) + '</div>' +
+        '<div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.55;color:var(--text)">' + geformatteerdeTekst + '</div>' +
         '</div>';
     }).join('');
   }

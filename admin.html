@@ -350,10 +350,12 @@
           <div class="roi-card-head">
             <h3 class="roi-card-title">ROI overzicht</h3>
             <div class="roi-toggle" role="tablist">
-              <button type="button" class="roi-toggle-btn active" data-roi-periode="maand" role="tab" aria-selected="true">Maand</button>
-              <button type="button" class="roi-toggle-btn" data-roi-periode="week" role="tab" aria-selected="false">Week</button>
+              <button type="button" class="roi-toggle-btn" data-roi-periode="week" role="tab" aria-selected="false">Deze week</button>
+              <button type="button" class="roi-toggle-btn active" data-roi-periode="maand" role="tab" aria-selected="true">Deze maand</button>
+              <button type="button" class="roi-toggle-btn" data-roi-periode="kwartaal" role="tab" aria-selected="false">Dit kwartaal</button>
             </div>
           </div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px" id="roi-periode-label">Periode: ...</div>
           <div class="roi-grid" id="roi-grid">
             <div class="roi-metric"><span class="roi-label">Totaal vragen</span><span class="roi-value" id="roi-vragen">—</span></div>
             <div class="roi-metric"><span class="roi-label">Tijdwinst leidinggevende</span><span class="roi-value" id="roi-tijdwinst">—</span></div>
@@ -619,24 +621,44 @@
       <!-- ========== TAB: VERTROUWEN ========== -->
       <section class="tab-content" id="tab-vertrouwen">
         <h2 class="section-title">Vertrouwenscheck</h2>
-        <p class="section-subtitle">Geaggregeerde gemiddelden per team per week — geen individuele scores zichtbaar voor de beheerder.</p>
+        <p class="section-subtitle">Anoniem totaaloverzicht van alle ingevulde vertrouwenschecks.</p>
+
+        <!-- Totaaloverzicht (anoniem) -->
         <div class="stats-grid" style="margin-bottom:20px">
           <div class="stat-card">
-            <div class="stat-value" id="vc-gem-score">-</div>
-            <div class="stat-label">Gem. gedeelde score</div>
+            <div class="stat-value" id="vc-totaal-checks">0</div>
+            <div class="stat-label">Totaal ingevulde checks</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value" id="vc-signalen">0</div>
-            <div class="stat-label">Aantal gedeelde scores</div>
+            <div class="stat-value" id="vc-gem-score">-</div>
+            <div class="stat-label">Gemiddelde score (alle)</div>
           </div>
         </div>
-        <div class="data-table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Team</th><th>Week</th><th>Gemiddelde</th><th>Aantal medewerkers</th></tr></thead>
-            <tbody id="vertrouwen-body">
-              <tr><td colspan="4" class="no-data">Laden...</td></tr>
-            </tbody>
-          </table>
+
+        <!-- Score verdeling -->
+        <div style="margin-bottom:24px;padding:16px;background:var(--surface);border-radius:8px">
+          <h3 style="font-size:0.9rem;margin-bottom:12px;color:var(--text)">Verdeling scores</h3>
+          <div id="vc-verdeling" style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.9rem">
+            <span>1⭐: <strong id="vc-s1">0</strong>x</span>
+            <span>2⭐: <strong id="vc-s2">0</strong>x</span>
+            <span>3⭐: <strong id="vc-s3">0</strong>x</span>
+            <span>4⭐: <strong id="vc-s4">0</strong>x</span>
+            <span>5⭐: <strong id="vc-s5">0</strong>x</span>
+          </div>
+        </div>
+
+        <!-- Gedeelde scores (met naam) -->
+        <h3 style="font-size:0.95rem;margin-bottom:12px;color:var(--text)">Gedeelde scores (per team/week)</h3>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">Alleen scores die medewerkers expliciet hebben gedeeld.</p>
+        <div id="vertrouwen-sectie">
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Team</th><th>Week</th><th>Gemiddelde</th><th>Aantal medewerkers</th></tr></thead>
+              <tbody id="vertrouwen-body">
+                <tr><td colspan="4" class="no-data">Laden...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

@@ -131,17 +131,24 @@
   // =============================================
   // ROI WIDGET (Rapporten tab)
   // =============================================
-  var roiCurrentPeriode = 'maand';
+  var roiCurrentPeriode = localStorage.getItem('wegwijzer_roi_periode') || 'maand';
 
   function initRoiWidget() {
     var card = document.getElementById('roi-card');
     if (!card) return;
     var toggleBtns = card.querySelectorAll('.roi-toggle-btn');
+    // Zet initiële actieve staat op basis van localStorage
+    toggleBtns.forEach(function (b) {
+      var actief = b.getAttribute('data-roi-periode') === roiCurrentPeriode;
+      b.classList.toggle('active', actief);
+      b.setAttribute('aria-selected', actief ? 'true' : 'false');
+    });
     toggleBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
         var periode = btn.getAttribute('data-roi-periode');
         if (periode === roiCurrentPeriode) return;
         roiCurrentPeriode = periode;
+        localStorage.setItem('wegwijzer_roi_periode', periode);
         toggleBtns.forEach(function (b) {
           var actief = b.getAttribute('data-roi-periode') === periode;
           b.classList.toggle('active', actief);
@@ -154,9 +161,17 @@
   }
 
   async function loadRoiWidget() {
-    var dagen = roiCurrentPeriode === 'week' ? 7 : 30;
+    var dagen = roiCurrentPeriode === 'week' ? 7 : roiCurrentPeriode === 'kwartaal' ? 90 : 30;
     var sinds = new Date();
     sinds.setDate(sinds.getDate() - dagen);
+
+    // Periode label tonen
+    var periodeLabel = document.getElementById('roi-periode-label');
+    if (periodeLabel) {
+      var startDatum = sinds.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+      var eindDatum = new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+      periodeLabel.textContent = 'Periode: ' + startDatum + ' t/m ' + eindDatum;
+    }
 
     var convsRes = await supabaseClient
       .from('conversations')
@@ -204,13 +219,14 @@
       setText('roi-actief', actief + ' van ' + totaalMedewerkers);
     }
 
-    // Jaarwaarde alleen bij Maand
+    // Jaarwaarde extrapolatie bij maand of kwartaal
     var jaarMetric = document.getElementById('roi-metric-jaar');
     if (jaarMetric) {
-      if (roiCurrentPeriode === 'maand' && totaalVragen > 0) {
+      var factor = roiCurrentPeriode === 'maand' ? 12 : roiCurrentPeriode === 'kwartaal' ? 4 : 0;
+      if (factor > 0 && totaalVragen > 0) {
         jaarMetric.style.display = '';
-        var jaarUren = uren * 12;
-        var jaarEuros = euros * 12;
+        var jaarUren = uren * factor;
+        var jaarEuros = euros * factor;
         setText('roi-jaar', '~' + jaarUren + ' uur (~€' + jaarEuros.toLocaleString('nl-NL') + ')');
       } else {
         jaarMetric.style.display = 'none';
@@ -5688,13 +5704,26 @@
     loadRapporten();
   };
 
+  var huidigOpenRapportId = null;
+
   window.showRapport = function (id) {
     var container = document.getElementById('rapporten-list');
+    // Verwijder eerder geopend rapport-detail
+    var bestaand = document.getElementById('rapport-detail-view');
+    if (bestaand) bestaand.remove();
+
+    // Toggle: tweede klik op hetzelfde rapport sluit het
+    if (huidigOpenRapportId === id) {
+      huidigOpenRapportId = null;
+      return;
+    }
+    huidigOpenRapportId = id;
+
     supabaseClient.from('rapporten').select('*').eq('id', id).single().then(function (result) {
       if (!result.data) return;
       var r = result.data.inhoud;
       var secties = r.secties || { gebruik: true, kwaliteit: true, tijdwinst: true };
-      var html = '<div style="background:var(--bg-white);padding:24px;border-radius:var(--radius);margin-top:16px;border:1px solid var(--border)">' +
+      var html = '<div id="rapport-detail-view" style="background:var(--bg-white);padding:24px;border-radius:var(--radius);margin-top:16px;border:1px solid var(--border)">' +
         '<h3>Rapport ' + escapeHtml(result.data.maand) + '</h3>' +
         '<p style="color:var(--text-muted);font-size:0.85rem">Periode: ' + escapeHtml(r.periode || result.data.maand) + ' • ' + escapeHtml(r.team_filter || 'alle teams') + '</p>';
 
@@ -5707,7 +5736,6 @@
           '<p>Positieve feedback: <strong>' + r.kwaliteit.positief_percentage + '%</strong> (van ' + r.kwaliteit.totaal_met_feedback + ' beoordeelde antwoorden)</p>';
       }
       if (secties.tijdwinst !== false && r.tijdwinst) {
-        // Backwards-compat: oude rapporten hadden geschatte_minuten
         if (typeof r.tijdwinst.medewerker_minuten_bespaard !== 'undefined') {
           html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst</h4>' +
             '<p><strong>Teamleider tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 6 min (zonder Wegwijzer) = ' + r.tijdwinst.teamleider_minuten_vrij + ' minuten (' + r.tijdwinst.teamleider_uren + ' uur) vrijgekomen</p>' +
@@ -5735,7 +5763,14 @@
         html += '</ul>';
       }
       html += '</div>';
-      container.innerHTML += html;
+
+      // Verwijder eventueel bestaand detail (race condition)
+      var oud = document.getElementById('rapport-detail-view');
+      if (oud) oud.remove();
+
+      container.insertAdjacentHTML('beforeend', html);
+      var detailEl = document.getElementById('rapport-detail-view');
+      if (detailEl) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   };
 
@@ -6336,28 +6371,35 @@
     var tbody = document.getElementById('vertrouwen-body');
     if (!tbody) return;
 
-    // Haal alleen scores op die expliciet zijn gedeeld door de medewerker
+    // Haal ALLE scores op voor deze tenant (admin RLS geeft alleen eigen tenant)
     var result = await supabaseClient
       .from('vertrouwens_scores')
       .select('user_id, week_nummer, score, gedeeld, created_at')
-      .eq('gedeeld', true)
       .order('created_at', { ascending: false });
 
-    var gedeeld = (result.data || []);
+    var alleScores = (result.data || []);
+    var gedeeld = alleScores.filter(function (s) { return s.gedeeld === true; });
 
-    // Statistieken: tenant-breed gemiddelde + totaal aantal gedeelde scores
+    // Totaaloverzicht (anoniem)
+    var totaalEl = document.getElementById('vc-totaal-checks');
     var gemEl = document.getElementById('vc-gem-score');
-    var sigEl = document.getElementById('vc-signalen');
+    if (totaalEl) totaalEl.textContent = alleScores.length;
     if (gemEl) {
-      if (gedeeld.length > 0) {
-        var totaal = gedeeld.reduce(function (a, b) { return a + b.score; }, 0);
-        gemEl.textContent = (totaal / gedeeld.length).toFixed(1);
+      if (alleScores.length > 0) {
+        var totaal = alleScores.reduce(function (a, b) { return a + b.score; }, 0);
+        gemEl.textContent = (totaal / alleScores.length).toFixed(1) + ' / 5';
       } else {
         gemEl.textContent = '-';
       }
     }
-    if (sigEl) sigEl.textContent = gedeeld.length;
 
+    // Score verdeling 1-5
+    for (var s = 1; s <= 5; s++) {
+      var el = document.getElementById('vc-s' + s);
+      if (el) el.textContent = alleScores.filter(function (sc) { return sc.score === s; }).length;
+    }
+
+    // Gedeelde scores sectie
     var sectie = document.getElementById('vertrouwen-sectie');
     if (sectie) sectie.style.display = gedeeld.length > 0 ? '' : 'none';
 
@@ -6399,7 +6441,6 @@
       };
     });
 
-    // Sorteer op week desc, dan team alfabetisch
     rijen.sort(function (a, b) {
       if (a.week !== b.week) return b.week - a.week;
       return a.team.localeCompare(b.team);
