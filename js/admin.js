@@ -1409,7 +1409,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, user_id, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -2165,25 +2165,28 @@
   }
 
   (function initBulkHerindexeerBtns() {
-    // 🧠 Semantisch herindexeren — alle documenten met content
+    // 🧠 Semantisch herindexeren — alle org-documenten met content (geen persoonlijke docs, geen gescande PDFs)
     var allesBtn = document.getElementById('bulk-herindexeer-alles-btn');
     if (allesBtn) {
       allesBtn.addEventListener('click', function () {
-        var ids = (allDocuments || []).filter(function (d) { return d.content; }).map(function (d) { return d.id; });
+        var ids = (allDocuments || []).filter(function (d) {
+          return !d.user_id && d.content && d.indexering_status !== 'gescand_pdf';
+        }).map(function (d) { return d.id; });
         bulkHerindexeren(ids, '🧠 Semantisch herindexeren');
       });
     }
 
     // ⚠️ Alleen mislukte herindexeren
     // "Mislukt" = zoektermen ontbreken OF geen chunks OF expliciete foutstatus
+    // Uitgesloten: persoonlijke docs (user_id), gescande PDFs (herindexeren helpt niet)
     var mislukteBtn = document.getElementById('bulk-herindexeer-mislukte-btn');
     if (mislukteBtn) {
       mislukteBtn.addEventListener('click', function () {
         var ids = (allDocuments || []).filter(function (d) {
-          if (!d.content) return false;
+          if (d.user_id || !d.content || d.indexering_status === 'gescand_pdf') return false;
           var geenZoektermen = !d.zoektermen || d.zoektermen.length === 0;
-          var geenChunks = !(chunkCountMap[d.id] > 0);
-          var foutStatus = d.indexering_status === 'fout' || d.indexering_status === 'gescand_pdf' || d.indexering_status === 'nooit_geindexeerd';
+          var geenChunks = !d.heeft_embeddings && !(chunkCountMap[d.id] > 0);
+          var foutStatus = d.indexering_status === 'fout' || d.indexering_status === 'nooit_geindexeerd';
           return geenZoektermen || geenChunks || foutStatus;
         }).map(function (d) { return d.id; });
         if (ids.length === 0) {
@@ -2194,11 +2197,13 @@
       });
     }
 
-    // 🔄 Volledig herindexeren (zoektermen + semantisch)
+    // 🔄 Volledig herindexeren (zoektermen + semantisch) — geen persoonlijke docs, geen gescande PDFs
     var volledigBtn = document.getElementById('bulk-volledig-btn');
     if (volledigBtn) {
       volledigBtn.addEventListener('click', function () {
-        var ids = (allDocuments || []).filter(function (d) { return d.content; }).map(function (d) { return d.id; });
+        var ids = (allDocuments || []).filter(function (d) {
+          return !d.user_id && d.content && d.indexering_status !== 'gescand_pdf';
+        }).map(function (d) { return d.id; });
         bulkVolledigHerindexeren(ids, '🔄 Volledig herindexeren (zoektermen + semantisch)');
       });
     }
