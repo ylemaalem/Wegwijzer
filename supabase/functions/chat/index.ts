@@ -1076,14 +1076,21 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           embedding: pc.embedding ? JSON.stringify(pc.embedding) : null,
         });
         if (insertErr) {
-          console.error(`[Index] Chunk ${pc.index} insert fout:`, insertErr.message);
+          console.error(`[Index] Chunk ${pc.index} insert fout:`, insertErr.message, "code:", insertErr.code);
           mislukt++;
         } else {
           geslaagd++;
         }
       }
 
-      console.log(`[Index] Klaar: ${geslaagd} chunks opgeslagen, ${mislukt} mislukt`);
+      // Verifieer daadwerkelijk aantal rijen in DB (vangt stille fouten op)
+      const { count: verifiedCount } = await supabaseAdmin
+        .from("document_chunks")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", docId);
+      const chunks_aangemaakt = verifiedCount ?? 0;
+
+      console.log(`[Index] Klaar: ${geslaagd} inserts geslaagd, ${mislukt} mislukt, ${chunks_aangemaakt} geverifieerd in DB`);
 
       // Eindstatus — nooit feedback-tellers resetten
       const indexStatus = geslaagd > 0 ? "klaar" : "fout";
@@ -1103,7 +1110,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       );
 
       return new Response(
-        JSON.stringify({ geslaagd, mislukt, totaal: chunks.length }),
+        JSON.stringify({ geslaagd, mislukt, totaal: chunks.length, chunks_aangemaakt }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

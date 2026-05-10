@@ -1874,14 +1874,20 @@
 
   // Haal chunk count op voor één document en update de badge in de tabelrij.
   // Werkt zonder volledige table-reload: zoekt de rij op via data-doc-id.
-  async function updateChunkBadge(docId) {
+  // Optioneel: geef knownCount mee om DB-query te slaan (na succesvolle indexering).
+  async function updateChunkBadge(docId, knownCount) {
     try {
-      var countResult = await supabaseClient
-        .from('document_chunks')
-        .select('id', { count: 'exact', head: true })
-        .eq('document_id', docId);
-      var count = countResult.count || 0;
-      chunkCountMap[docId] = count;
+      var count;
+      if (knownCount != null) {
+        count = knownCount;
+      } else {
+        var countResult = await supabaseClient
+          .from('document_chunks')
+          .select('id', { count: 'exact', head: true })
+          .eq('document_id', docId);
+        count = countResult.count || 0;
+      }
+      // chunkCountMap is lokaal in loadDocuments; update hier niet (scope-bug vermeden).
 
       // Update badge in de DOM (zoek de rij zonder volledige reload)
       var tbody = document.getElementById('documents-body');
@@ -1933,8 +1939,12 @@
       if (!resp.ok || data.error) {
         foutTekst = data.error || ('HTTP ' + resp.status);
       } else {
-        success = true;
-        chunkCount = data.geslaagd || 0;
+        chunkCount = (data.chunks_aangemaakt != null ? data.chunks_aangemaakt : data.geslaagd) || 0;
+        if (chunkCount === 0) {
+          foutTekst = 'Geen chunks aangemaakt (0 rijen in DB) — controleer de Edge Function logs en OpenAI-sleutel';
+        } else {
+          success = true;
+        }
       }
     } catch (err) {
       foutTekst = err.message || String(err);
@@ -1943,10 +1953,10 @@
 
     if (success) {
       // Badge in-place bijwerken zonder table-reload
-      await updateChunkBadge(docId);
+      await updateChunkBadge(docId, chunkCount);
       if (btn) {
-        btn.innerHTML = '✅';
-        btn.title = chunkCount + ' chunks geïndexeerd';
+        btn.innerHTML = '✅ ' + chunkCount;
+        btn.title = chunkCount + ' chunks aangemaakt';
         setTimeout(function () {
           btn.disabled = false;
           btn.innerHTML = '📊';
