@@ -1438,7 +1438,8 @@
       var chunkResult = await supabaseClient
         .from('document_chunks')
         .select('document_id')
-        .in('document_id', result.data.map(function (d) { return d.id; }));
+        .in('document_id', result.data.map(function (d) { return d.id; }))
+        .limit(10000);
       if (!chunkResult.error && chunkResult.data) {
         chunkResult.data.forEach(function (row) {
           chunkCountMap[row.document_id] = (chunkCountMap[row.document_id] || 0) + 1;
@@ -1557,26 +1558,31 @@
       var zoekIndicator = zoekCount > 0 ? '<span style="color:var(--success);font-size:0.7rem;margin-left:4px" title="' + zoekCount + ' zoektermen geïndexeerd">🔍' + zoekCount + '</span>' : '';
 
       // Semantisch zoek badge + indexering status
-      var chunkCount = chunkCountMap[doc.id] || 0;
+      // Gebruik aantal_chunks uit document (backfill na 058) of chunkCountMap als fallback
+      var chunkCount = doc.aantal_chunks || chunkCountMap[doc.id] || 0;
       var chunkBadge = '';
-      if (!doc.content) {
+      if (doc.indexering_status === 'gescand_pdf') {
+        // Gescande PDF: check VOOR !doc.content zodat de melding altijd zichtbaar is
+        chunkBadge = '<span class="chunk-badge" style="color:#d97706;font-size:0.7rem;margin-left:4px" title="Geen tekst gevonden in dit bestand — gescande PDF zonder extraheerbare tekst. Herindexeren helpt niet; gebruik OCR-software of maak een tekstversie.">📄 Geen tekst</span>';
+      } else if (!doc.content) {
         chunkBadge = '';
       } else if (doc.indexering_status === 'bezig') {
         chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Wordt geïndexeerd...">⏳</span>';
-      } else if (doc.indexering_status === 'gescand_pdf') {
-        chunkBadge = '<span class="chunk-badge" style="color:#d97706;font-size:0.7rem;margin-left:4px" title="Gescande PDF — bevat geen extraheerbare tekst. Maak een tekstversie of gebruik OCR-software.">⚠️ Scan</span>';
       } else if (doc.indexering_status === 'fout') {
         var foutTip = doc.indexering_fout ? escapeHtml(doc.indexering_fout) : 'Onbekende fout';
         chunkBadge = '<span class="chunk-badge" style="color:var(--error);font-size:0.7rem;margin-left:4px;cursor:pointer" title="🔴 ' + foutTip + ' — klik 📊 om opnieuw te proberen">🔴</span>';
-      } else if (doc.heeft_embeddings && chunkCount > 0) {
+      } else if (doc.heeft_embeddings === true) {
+        // Geïndexeerd: heeft_embeddings is backfilled via migratie 059 — dit is de betrouwbare bron.
+        // chunkCount kan 0 zijn voor oudere docs (aantal_chunks niet backfilled), toon dan geen getal.
+        var displayCount = chunkCount > 0 ? chunkCount : '';
         var voltooidTip = doc.indexering_voltooid_op ? ' · ' + new Date(doc.indexering_voltooid_op).toLocaleDateString('nl-NL') : '';
-        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟢 Volledig geïndexeerd: ' + chunkCount + ' chunks' + voltooidTip + '">🟢' + chunkCount + '</span>';
-      } else if (chunkCount > 0) {
-        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟡 Chunks aanwezig maar embeddings ontbreken — herindexeer voor betere zoekresultaten">🟡' + chunkCount + '</span>';
-      } else if (doc.indexering_status === 'nooit_geindexeerd') {
-        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="⚪ Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚪</span>';
+        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟢 Volledig geïndexeerd' + (chunkCount > 0 ? ': ' + chunkCount + ' chunks' : '') + voltooidTip + '">🟢' + displayCount + '</span>';
+      } else if (chunkCount >= 1) {
+        // Chunks aanwezig maar heeft_embeddings nog niet gezet (edge case)
+        chunkBadge = '<span class="chunk-badge" style="font-size:0.7rem;margin-left:4px" title="🟡 Chunks aanwezig (' + chunkCount + ') maar embeddings-vlag ontbreekt — herindexeer">🟡' + chunkCount + '</span>';
       } else {
-        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚪</span>';
+        // Geen chunks, niet geïndexeerd
+        chunkBadge = '<span class="chunk-badge" style="color:var(--warning,#f59e0b);font-size:0.7rem;margin-left:4px" title="⚪ Nog niet semantisch geïndexeerd — klik 📊 om te indexeren">⚪</span>';
       }
 
       // Gebruik-teller badge
@@ -1901,11 +1907,11 @@
       var oud = naamTd.querySelector('.chunk-badge');
       if (oud) oud.remove();
 
-      // Voeg nieuwe badge toe
+      // Voeg nieuwe badge toe — groen zodra count >= 1 (na indexering is heeft_embeddings = true)
       var badge = document.createElement('span');
       badge.className = 'chunk-badge';
       badge.style.cssText = 'font-size:0.7rem;margin-left:4px';
-      if (count > 0) {
+      if (count >= 1) {
         badge.title = '🟢 Volledig geïndexeerd: ' + count + ' chunks';
         badge.textContent = '🟢' + count;
       } else {
@@ -1963,10 +1969,6 @@
           btn.title = 'Semantisch indexeren (vector embeddings)';
         }, 2500);
       }
-      // Volledige reload alleen bij individuele knop (niet bulk)
-      if (!skipReload) {
-        setTimeout(function () { loadDocuments(); }, 3000);
-      }
     } else {
       // Fout: rode badge in de rij + console
       console.error('[Index] Mislukt voor', docId + ':', foutTekst);
@@ -1990,7 +1992,9 @@
 
   window.indexAllDocuments = async function () {
     var ongeindexeerd = allDocuments.filter(function (d) {
-      return d.content && !(chunkCountMap[d.id] > 0);
+      // Sla over: geen content, gescand PDF, of al geïndexeerd (heeft_embeddings of chunkCountMap)
+      if (!d.content || d.indexering_status === 'gescand_pdf') return false;
+      return d.heeft_embeddings !== true && !(chunkCountMap[d.id] > 0);
     });
     if (ongeindexeerd.length === 0) {
       showAlert('Alle documenten zijn al semantisch geïndexeerd.', 'success');
