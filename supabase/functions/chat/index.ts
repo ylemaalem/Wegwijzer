@@ -2138,9 +2138,14 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           // Cache-hit: gesprek nog wel loggen + laatste_actief bijwerken
           // zodat patroonherkenning, terugblik-statistieken en het
           // adoptie-signaal ongewijzigd blijven werken.
+          const naamInDbCache = (profile.naam || "").trim();
+          const escapeRegexCache = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const cachedAntwoordVoorDb = naamInDbCache.length > 2
+            ? cachedEntry.antwoord.replace(new RegExp(escapeRegexCache(naamInDbCache), "gi"), "de medewerker")
+            : cachedEntry.antwoord;
           const { data: cachedConv } = await supabaseAdmin
             .from("conversations")
-            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedEntry.antwoord })
+            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedAntwoordVoorDb })
             .select("id")
             .single();
           supabaseAdmin

@@ -232,6 +232,15 @@
         jaarMetric.style.display = 'none';
       }
     }
+
+    // Abonnementskosten: €15/pp/mnd, minimum 15 accounts, jaarkorting 10%
+    var abonnementMetric = document.getElementById('roi-metric-abonnement');
+    if (abonnementMetric) {
+      var aantalVoorPrijs = Math.max(totaalMedewerkers, 15);
+      var maandprijs = aantalVoorPrijs * 15;
+      var jaarprijs = Math.round(aantalVoorPrijs * 15 * 12 * 0.9);
+      setText('roi-abonnement', '€' + maandprijs.toLocaleString('nl-NL') + '/mnd · €' + jaarprijs.toLocaleString('nl-NL') + '/jr (-10%)');
+    }
   }
 
   // =============================================

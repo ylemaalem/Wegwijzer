@@ -10,6 +10,8 @@
   var profile = null;
   var user = null;
   var weekNummer = 1;
+  var dagenActief = 0;
+  var toonVoortgang = true;
   var isSending = false;
   var chatInitialized = false;
   var historieGeladen = false;
@@ -52,6 +54,9 @@
       if (freshResult.data) {
         profile = freshResult.data;
         console.log('[Profiel] Vers profiel geladen, naam:', profile.naam);
+        var aanmaakDatum = new Date(profile.created_at);
+        dagenActief = Math.floor((Date.now() - aanmaakDatum) / (1000 * 60 * 60 * 24));
+        toonVoortgang = dagenActief < 42;
       } else {
         console.error('[Profiel] Verse query mislukt, uitloggen. Error:', freshResult.error ? freshResult.error.message : 'geen data', 'Status:', freshResult.status);
         await supabaseClient.auth.signOut();
@@ -231,8 +236,8 @@
         var startDatumNL = startDatum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
         subtitle.textContent = 'Jouw inwerktraject start op ' + startDatumNL + '. Tot die tijd kun je al vragen stellen.';
       }
-    } else if (weekNummer > 6) {
-      // Na inwerkperiode: kennisassistent modus
+    } else if (weekNummer > 6 || !toonVoortgang) {
+      // Na inwerkperiode of na 42 dagen: kennisassistent modus
       if (meter) meter.style.display = 'none';
       if (labels) labels.style.display = 'none';
       if (weekBadge) weekBadge.style.display = 'none';
@@ -379,17 +384,64 @@
   // SUGGESTIE CHIPS — dynamisch op basis van rol, weeknummer en functiegroep
   // =============================================
 
-  // Pak max 2 woorden uit de functiegroep voor gebruik in een chip-zin,
-  // bv. "ambulant_begeleider" → "ambulant begeleider".
-  function functiegroepKort() {
-    var fg = profile && profile.functiegroep ? profile.functiegroep : '';
-    if (!fg) return 'jouw functie';
-    var woorden = fg.replace(/_/g, ' ').split(/\s+/).filter(Boolean);
-    return woorden.slice(0, 2).join(' ').toLowerCase() || 'jouw functie';
-  }
+  // ---- Chip sets per rol/week (constanten) ----
+  var CHIPS_WEEK1 = [
+    'Wat zijn mijn werktijden?',
+    'Hoe meld ik me ziek?',
+    'Wie is mijn teamleider?',
+    'Hoe log ik in op ONS?'
+  ];
+  var CHIPS_WEEK23_AMBULANT = [
+    'Hoe schrijf ik een rapportage?',
+    'Wat staat er in het zorgplan?',
+    'Hoe registreer ik uren?',
+    'Wat is een indicatie?'
+  ];
+  var CHIPS_WEEK23_WOON = [
+    'Wat zijn de overdrachtsregels?',
+    'Hoe werkt de dag/nacht overdracht?',
+    'Wat doe ik bij een incident?',
+    'Hoe registreer ik in ONS?'
+  ];
+  var CHIPS_WEEK46_AMBULANT = [
+    'Wat zijn mijn reiskostenvergoedingen?',
+    'Hoe vraag ik verlof aan?',
+    'Wat doet de gedragsdeskundige?',
+    'Wanneer schakel ik de gedragsdeskundige in?'
+  ];
+  var CHIPS_WEEK46_WOON = [
+    'Wat zijn de BHV-afspraken?',
+    'Hoe werkt de medicatieprocedure?',
+    'Wanneer bel ik de crisisdienst?',
+    'Wat is het agressieprotocol?'
+  ];
+  var CHIPS_NA6_AMBULANT_PB = [
+    'Hoe stel ik een zorgplan op?',
+    'Wat zijn de WMO-regels?',
+    'Hoe werkt zorgkantoor contact?',
+    'Wat is een herindicatie?'
+  ];
+  var CHIPS_NA6_AMBULANT_BEG = [
+    'Hoe rapporteer ik correct?',
+    'Wat zijn mijn verplichtingen bij een incident?',
+    'Wanneer betrek ik de persoonlijk begeleider?',
+    'Wat zijn signalen van overbelasting?'
+  ];
+  var CHIPS_NA6_WOONBEG = [
+    'Hoe verloopt een overdracht?',
+    'Wat doe ik bij medicatiefouten?',
+    'Hoe schrijf ik een dagrapport?',
+    'Wat zijn de veiligheidsprotocollen?'
+  ];
+  var CHIPS_NA6_PERSOONLIJK_WOON = [
+    'Hoe stel ik een ondersteuningsplan op?',
+    'Wat zijn de rechten van de cliënt?',
+    'Hoe werk ik samen met het netwerk?',
+    'Wanneer schakel ik de orthopedagoog in?'
+  ];
 
   function chipsVoorContext() {
-    // Teamleider/admin: vaste set
+    // Teamleider/admin: vaste set (objecten met emoji voor achterwaartse compatibiliteit)
     if (profile.role === 'teamleider' || profile.role === 'admin') {
       return [
         { emoji: '📊', vraag: 'Geef me een overzicht van mijn team' },
@@ -399,50 +451,26 @@
       ];
     }
 
-    var fgKort = functiegroepKort();
+    var fg = (profile.functiegroep || '').toLowerCase();
+    var isWoon = fg.includes('woon');
 
-    // Week 1-2 (nieuw)
-    if (weekNummer >= 1 && weekNummer <= 2) {
-      return [
-        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
-        { emoji: '🚗', vraag: 'Wat is ' + fgKort + ' werken?' },
-        { emoji: '👤', vraag: 'Bij wie kan ik terecht?' },
-        { emoji: '🎯', vraag: 'Wat is de missie van de organisatie?' },
-        { emoji: '🤝', vraag: 'Hoe ga ik om met een cliënt?' }
-      ];
+    // Na 6 weken of account ouder dan 42 dagen: chips per functiegroep
+    if (!toonVoortgang || weekNummer > 6 || weekNummer === 99) {
+      if (fg === 'ambulant_persoonlijk_begeleider') return CHIPS_NA6_AMBULANT_PB;
+      if (fg === 'ambulant_begeleider') return CHIPS_NA6_AMBULANT_BEG;
+      if (fg === 'woonbegeleider') return CHIPS_NA6_WOONBEG;
+      if (fg === 'persoonlijk_woonbegeleider') return CHIPS_NA6_PERSOONLIJK_WOON;
+      return CHIPS_NA6_AMBULANT_BEG; // fallback
     }
 
-    // Week 3-4 (halverwege)
-    if (weekNummer >= 3 && weekNummer <= 4) {
-      return [
-        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
-        { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
-        { emoji: '❓', vraag: 'Leg zorgplan, indicatie en WMO uit' },
-        { emoji: '👤', vraag: 'Wie is mijn leidinggevende?' },
-        { emoji: '🤝', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' }
-      ];
-    }
+    // Week 1 (alle rollen)
+    if (weekNummer <= 1) return CHIPS_WEEK1;
 
-    // Week 5-6 (afronden)
-    if (weekNummer >= 5 && weekNummer <= 6) {
-      return [
-        { emoji: '📋', vraag: 'Wat zijn mijn taken in week ' + weekNummer + '?' },
-        { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
-        { emoji: '💬', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' },
-        { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
-        { emoji: '🎯', vraag: 'Wat verwacht de organisatie van mij?' }
-      ];
-    }
+    // Week 2-3
+    if (weekNummer <= 3) return isWoon ? CHIPS_WEEK23_WOON : CHIPS_WEEK23_AMBULANT;
 
-    // Na week 6, weekNummer 99 (inwerken_afgerond), of weekNummer 0
-    // (toekomstige startdatum) — kennisassistent modus
-    return [
-      { emoji: '📝', vraag: 'Help me een rapportage schrijven' },
-      { emoji: '💬', vraag: 'Sparren over een cliëntsituatie', action: 'sparring' },
-      { emoji: '📋', vraag: 'Maak een checklist voor mijn bezoek' },
-      { emoji: '📎', vraag: 'Zoek een protocol op' },
-      { emoji: '💶', vraag: 'Hoe declareer ik reiskosten?' }
-    ];
+    // Week 4-6
+    return isWoon ? CHIPS_WEEK46_WOON : CHIPS_WEEK46_AMBULANT;
   }
 
   function initChips() {
@@ -455,15 +483,18 @@
     sparringBtn.textContent = '🧠 Sparringsmodus';
     chipsBar.appendChild(sparringBtn);
 
-    // ---- Context chips — sla ingebouwde sparring chips over (permanente chip vervangt ze) ----
+    // ---- Context chips ----
     var setjes = chipsVoorContext();
     setjes.forEach(function (c) {
-      if (c.action === 'sparring') return; // al aanwezig als permanente chip
+      // Ondersteuning voor zowel string als {emoji, vraag} formaat
+      var tekst = typeof c === 'string' ? c : (c.emoji ? c.emoji + ' ' + c.vraag : c.vraag);
+      var vraagTekst = typeof c === 'string' ? c : c.vraag;
+      var actie = typeof c === 'object' ? c.action : null;
+      if (actie === 'sparring') return; // al aanwezig als permanente chip
       var btn = document.createElement('button');
       btn.className = 'chip';
-      btn.dataset.vraag = c.vraag;
-      if (c.action) btn.dataset.action = c.action;
-      btn.textContent = c.emoji + ' ' + c.vraag;
+      btn.dataset.vraag = vraagTekst;
+      btn.textContent = tekst;
       chipsBar.appendChild(btn);
     });
 
