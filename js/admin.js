@@ -3261,6 +3261,7 @@
               invite_naam: naam,
               invite_role: 'medewerker',
               invite_functiegroep: functiegroep,
+              invite_afdeling: afdeling || null,
               redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
             })
           });
@@ -3379,6 +3380,8 @@
 
     document.getElementById('edit-profile-id').value = p.id;
     document.getElementById('edit-naam').value = p.naam || '';
+    var editEmailEl = document.getElementById('edit-email');
+    if (editEmailEl) editEmailEl.value = p.email || '';
     var editFgSelect = document.getElementById('edit-functiegroep');
     editFgSelect.value = p.functiegroep || '';
     // Als functiegroep niet in dropdown staat, voeg als optie toe
@@ -3495,6 +3498,8 @@
 
       var profileId = document.getElementById('edit-profile-id').value;
       var naam = document.getElementById('edit-naam').value.trim();
+      var emailEl = document.getElementById('edit-email');
+      var nieuwEmail = emailEl ? emailEl.value.trim() : '';
       var functiegroep = document.getElementById('edit-functiegroep').value;
       var startdatum = document.getElementById('edit-startdatum').value;
       var inwerktrajectUrl = document.getElementById('edit-inwerktraject-url').value.trim();
@@ -3538,6 +3543,7 @@
 
       // Bouw update object — sla alleen niet-lege velden op
       var updateData = { naam: naam, functiegroep: functiegroep };
+      if (nieuwEmail) updateData.email = nieuwEmail;
       if (startdatum) updateData.startdatum = startdatum;
       if (inwerktrajectUrl !== undefined) updateData.inwerktraject_url = inwerktrajectUrl || null;
       if (werkuren !== undefined) updateData.werkuren = werkuren || null;

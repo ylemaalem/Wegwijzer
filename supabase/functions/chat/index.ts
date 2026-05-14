@@ -1445,6 +1445,7 @@ ${vraagLijst}${trendGedekteContext}`;
       const inviteNaam = body.invite_naam || "";
       const inviteRole = body.invite_role || "teamleider";
       const inviteFunctiegroep = body.invite_functiegroep || null;
+      const inviteAfdeling = body.invite_afdeling || null;
       const redirectUrl = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
 
       try {
@@ -1454,6 +1455,7 @@ ${vraagLijst}${trendGedekteContext}`;
           tenant_id: profile.tenant_id,
         };
         if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
+        if (inviteAfdeling) userData.afdeling = inviteAfdeling;
 
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
           data: userData,
