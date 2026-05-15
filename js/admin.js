@@ -48,6 +48,50 @@
     }
   }
 
+  async function loadStudytubeCursussen() {
+    if (!tenantId) return;
+    var container = document.getElementById('studytube-cursussen-container');
+    var header = document.getElementById('studytube-cursussen-header');
+    var tbody = document.getElementById('studytube-cursussen-body');
+    if (!container || !header || !tbody) return;
+    try {
+      var { data: cursussen, error } = await supabaseClient
+        .from('studytube_cursussen')
+        .select('naam, duur_minuten, trefwoorden, laatst_gesynchroniseerd')
+        .eq('tenant_id', tenantId)
+        .order('naam');
+      if (error || !cursussen || cursussen.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      var laatst = cursussen[0].laatst_gesynchroniseerd;
+      var datum = laatst ? new Date(laatst).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–';
+      header.textContent = cursussen.length + ' cursussen gesynchroniseerd — laatst bijgewerkt: ' + datum;
+      tbody.innerHTML = '';
+      cursussen.forEach(function (c) {
+        var tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        var tags = (c.trefwoorden || []);
+        var zichtbaar = tags.slice(0, 5);
+        var rest = tags.length - 5;
+        var tagHtml = zichtbaar.map(function (t) {
+          return '<span style="display:inline-block;background:var(--bg-secondary);color:var(--text-secondary);padding:1px 6px;border-radius:4px;font-size:0.75rem;margin:1px 2px">' + t + '</span>';
+        }).join('');
+        if (rest > 0) {
+          tagHtml += '<span style="display:inline-block;color:var(--text-secondary);font-size:0.75rem;margin:1px 2px">+' + rest + '</span>';
+        }
+        tr.innerHTML =
+          '<td style="padding:6px 10px">' + (c.naam || '') + '</td>' +
+          '<td style="padding:6px 10px;text-align:right">' + (c.duur_minuten != null ? c.duur_minuten : '–') + '</td>' +
+          '<td style="padding:6px 10px">' + tagHtml + '</td>';
+        tbody.appendChild(tr);
+      });
+      container.style.display = 'block';
+    } catch (e) {
+      console.warn('[StudyTube] Cursussen laden mislukt:', e);
+    }
+  }
+
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -5213,22 +5257,54 @@
     var studytubeSyncBtn = document.getElementById('studytube-sync-btn');
     var studytubeSyncResult = document.getElementById('studytube-sync-result');
     if (studytubeSyncBtn) {
+      loadStudytubeCursussen();
       studytubeSyncBtn.addEventListener('click', async function () {
         studytubeSyncBtn.disabled = true;
         studytubeSyncBtn.textContent = 'Synchroniseren...';
         studytubeSyncResult.style.display = 'none';
         try {
-          var session = await supabaseClient.auth.getSession();
-          var token = session.data.session.access_token;
+          var { data: { session } } = await supabaseClient.auth.getSession();
+          if (!session) {
+            studytubeSyncResult.style.display = 'block';
+            studytubeSyncResult.style.color = 'var(--error)';
+            studytubeSyncResult.textContent = '❌ Niet gemachtigd — probeer opnieuw in te loggen';
+            studytubeSyncBtn.disabled = false;
+            studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+            return;
+          }
+          var controller = new AbortController();
+          var timeout = setTimeout(function () { controller.abort(); }, 30000);
           var res = await fetch(SUPABASE_URL + '/functions/v1/studytube-sync', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            headers: {
+              'Authorization': 'Bearer ' + session.access_token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ tenant_id: tenantId }),
+            signal: controller.signal
           });
+          clearTimeout(timeout);
+          if (!res.ok) {
+            studytubeSyncResult.style.display = 'block';
+            studytubeSyncResult.style.color = 'var(--error)';
+            if (res.status === 401) {
+              studytubeSyncResult.textContent = '❌ Niet gemachtigd — probeer opnieuw in te loggen';
+            } else if (res.status >= 500) {
+              studytubeSyncResult.textContent = '❌ Serverfout — controleer of StudyTube API actief is';
+            } else {
+              var errData = await res.json().catch(function () { return {}; });
+              studytubeSyncResult.textContent = '❌ ' + (errData.error || 'Fout ' + res.status);
+            }
+            studytubeSyncBtn.disabled = false;
+            studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+            return;
+          }
           var data = await res.json();
           studytubeSyncResult.style.display = 'block';
           if (data.cursussen_gesynchroniseerd !== undefined) {
             studytubeSyncResult.style.color = 'var(--success)';
             studytubeSyncResult.textContent = '✅ ' + data.cursussen_gesynchroniseerd + ' cursussen gesynchroniseerd.';
+            loadStudytubeCursussen();
           } else {
             studytubeSyncResult.style.color = 'var(--error)';
             studytubeSyncResult.textContent = '❌ ' + (data.error || 'Onbekende fout');
@@ -5236,7 +5312,11 @@
         } catch (err) {
           studytubeSyncResult.style.display = 'block';
           studytubeSyncResult.style.color = 'var(--error)';
-          studytubeSyncResult.textContent = '❌ Verbindingsfout: ' + err.message;
+          if (err.name === 'AbortError') {
+            studytubeSyncResult.textContent = '❌ Synchronisatie duurt te lang — probeer het later opnieuw';
+          } else {
+            studytubeSyncResult.textContent = '❌ Verbindingsfout: ' + err.message;
+          }
         }
         studytubeSyncBtn.disabled = false;
         studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';

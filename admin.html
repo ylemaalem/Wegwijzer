@@ -839,6 +839,21 @@
             StudyTube cursussen synchroniseren
           </button>
           <div id="studytube-sync-result" style="margin-top:8px;font-size:0.85rem;display:none"></div>
+          <div id="studytube-cursussen-container" style="display:none;margin-top:16px">
+            <div id="studytube-cursussen-header" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px"></div>
+            <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+              <table id="studytube-cursussen-tabel" style="width:100%;border-collapse:collapse;font-size:0.82rem">
+                <thead>
+                  <tr style="background:var(--bg-secondary);position:sticky;top:0;z-index:1">
+                    <th style="text-align:left;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border)">Cursusnaam</th>
+                    <th style="text-align:right;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">Duur (min)</th>
+                    <th style="text-align:left;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border)">Trefwoorden</th>
+                  </tr>
+                </thead>
+                <tbody id="studytube-cursussen-body"></tbody>
+              </table>
+            </div>
+          </div>
 
           <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
           <h3 style="font-size:1rem;font-weight:600;margin-bottom:12px;color:var(--text)">Functiegroepen</h3>
