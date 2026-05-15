@@ -736,7 +736,7 @@
           null, null, null
         );
       } else {
-        renderBotBericht(data.antwoord, data.conversation_id, null, null);
+        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || []);
         // Voeg antwoord toe aan conversatiehistorie
         conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
       }
@@ -785,7 +785,7 @@
     chatMessages.insertBefore(row, typingIndicator);
   }
 
-  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd) {
+  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd, trainingen) {
     var row = document.createElement('div');
     row.className = 'message-row message-row-bot';
 
@@ -838,6 +838,40 @@
       feedbackRow.appendChild(btnGoed);
       feedbackRow.appendChild(btnNietGoed);
       wrap.appendChild(feedbackRow);
+    }
+
+    // StudyTube trainingen
+    if (trainingen && trainingen.length > 0) {
+      var isExpliciet = trainingen[0].expliciet;
+      var trainingDiv = document.createElement('div');
+      if (isExpliciet) {
+        trainingDiv.className = 'trainingen-blok';
+        var trainingLabel = document.createElement('p');
+        trainingLabel.innerHTML = '<strong>Beschikbare trainingen:</strong>';
+        trainingDiv.appendChild(trainingLabel);
+        var trainingUl = document.createElement('ul');
+        trainingen.forEach(function (t) {
+          var li = document.createElement('li');
+          var duur = t.duur_minuten ? ' (' + t.duur_minuten + ' min)' : '';
+          if (t.deeplink_url) {
+            li.innerHTML = '📚 <a href="' + escapeHtml(t.deeplink_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.naam) + '</a>' + escapeHtml(duur);
+          } else {
+            li.textContent = '📚 ' + t.naam + duur;
+          }
+          trainingUl.appendChild(li);
+        });
+        trainingDiv.appendChild(trainingUl);
+      } else {
+        var t0 = trainingen[0];
+        var duur0 = t0.duur_minuten ? ' (' + t0.duur_minuten + ' min)' : '';
+        trainingDiv.className = 'training-hint';
+        if (t0.deeplink_url) {
+          trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training <a href="' + escapeHtml(t0.deeplink_url) + '" target="_blank" rel="noopener">\'' + escapeHtml(t0.naam) + '\'</a>' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small>';
+        } else {
+          trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training \'' + escapeHtml(t0.naam) + '\'' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small>';
+        }
+      }
+      wrap.appendChild(trainingDiv);
     }
 
     // Tijdstempel

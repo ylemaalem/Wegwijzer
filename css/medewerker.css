@@ -941,3 +941,24 @@
     max-height: 92vh;
   }
 }
+
+/* ---- StudyTube trainingen ---- */
+.trainingen-blok {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f0f5f5;
+  border-radius: 6px;
+  border-left: 3px solid var(--primary, #0D5C6B);
+}
+.trainingen-blok p { margin: 0 0 6px; font-size: 0.85rem; }
+.trainingen-blok ul { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.trainingen-blok li { font-size: 0.82rem; }
+.trainingen-blok a { color: var(--primary, #0D5C6B); text-decoration: underline; }
+
+.training-hint {
+  margin-top: 8px;
+  color: #666;
+  font-size: 0.78rem;
+  font-style: italic;
+}
+.training-hint a { color: var(--primary, #0D5C6B); text-decoration: underline; }

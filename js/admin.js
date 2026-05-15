@@ -5209,6 +5209,40 @@
 
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
 
+    // StudyTube sync knop
+    var studytubeSyncBtn = document.getElementById('studytube-sync-btn');
+    var studytubeSyncResult = document.getElementById('studytube-sync-result');
+    if (studytubeSyncBtn) {
+      studytubeSyncBtn.addEventListener('click', async function () {
+        studytubeSyncBtn.disabled = true;
+        studytubeSyncBtn.textContent = 'Synchroniseren...';
+        studytubeSyncResult.style.display = 'none';
+        try {
+          var session = await supabaseClient.auth.getSession();
+          var token = session.data.session.access_token;
+          var res = await fetch(SUPABASE_URL + '/functions/v1/studytube-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+          });
+          var data = await res.json();
+          studytubeSyncResult.style.display = 'block';
+          if (data.cursussen_gesynchroniseerd !== undefined) {
+            studytubeSyncResult.style.color = 'var(--success)';
+            studytubeSyncResult.textContent = '✅ ' + data.cursussen_gesynchroniseerd + ' cursussen gesynchroniseerd.';
+          } else {
+            studytubeSyncResult.style.color = 'var(--error)';
+            studytubeSyncResult.textContent = '❌ ' + (data.error || 'Onbekende fout');
+          }
+        } catch (err) {
+          studytubeSyncResult.style.display = 'block';
+          studytubeSyncResult.style.color = 'var(--error)';
+          studytubeSyncResult.textContent = '❌ Verbindingsfout: ' + err.message;
+        }
+        studytubeSyncBtn.disabled = false;
+        studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+      });
+    }
+
     // Logo en organisatienaam in admin header
     console.log('[Admin] logo_url uit settings:', waarden.logo_url || '(leeg)');
     var adminLogoContainer = document.getElementById('admin-logo-container');

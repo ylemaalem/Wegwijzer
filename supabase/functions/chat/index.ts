@@ -2732,8 +2732,47 @@ ${alleKennisbronnen}`;
       }
     }
 
+    // ---- 10. StudyTube trainingsverwijzing (strenge keyword-match) ----
+    let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; expliciet: boolean }> = [];
+    try {
+      const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "workshop", "module"];
+      const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
+
+      const { data: cursussen } = await supabaseAdmin
+        .from("studytube_cursussen")
+        .select("naam, duur_minuten, deeplink_url, trefwoorden")
+        .eq("tenant_id", profile.tenant_id);
+
+      if (cursussen && cursussen.length > 0) {
+        const vraagLower = vraag.toLowerCase();
+        const gescoord = cursussen.map((c: { naam: string; duur_minuten: number | null; deeplink_url: string | null; trefwoorden: string[] }) => {
+          const matches = (c.trefwoorden || []).filter((tw: string) => {
+            const twl = tw.toLowerCase();
+            // Controleer hele-woord match om false positives te vermijden
+            return new RegExp(`\\b${twl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(vraagLower);
+          }).length;
+          return { naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, matches };
+        });
+
+        if (isExpliciet) {
+          trainingen = gescoord
+            .filter((c) => c.matches >= 1)
+            .sort((a, b) => b.matches - a.matches)
+            .slice(0, 3)
+            .map((c) => ({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, expliciet: true }));
+        } else {
+          const beste = gescoord.filter((c) => c.matches >= 3).sort((a, b) => b.matches - a.matches)[0];
+          if (beste) {
+            trainingen = [{ naam: beste.naam, duur_minuten: beste.duur_minuten, deeplink_url: beste.deeplink_url, expliciet: false }];
+          }
+        }
+      }
+    } catch (stErr) {
+      console.warn("[StudyTube] Match fout:", stErr);
+    }
+
     return new Response(
-      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null }),
+      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
