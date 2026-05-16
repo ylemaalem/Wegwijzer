@@ -9,7 +9,8 @@ const STUDYTUBE_OAUTH_URL = "https://backend.studytube.nl/gateway/oauth/token";
 const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
-const BATCH_SIZE = 100;
+const HAIKU_BATCH_SIZE = 100;
+const EMBEDDING_BATCH_SIZE = 20;
 
 const STOPWOORDEN = new Set([
   "de", "het", "een", "en", "in", "van", "voor", "met", "op", "aan", "bij",
@@ -34,6 +35,7 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")!;
+  const openaiKey = Deno.env.get("OPENAI_API_KEY")!;
   const clientId = Deno.env.get("STUDYTUBE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("STUDYTUBE_CLIENT_SECRET")!;
 
@@ -102,8 +104,8 @@ Deno.serve(async (req) => {
     // ── 3. Trefwoorden genereren via Claude Haiku (één aanroep per batch van 100) ──
     const keywordMap = new Map<number, string[]>();
 
-    for (let i = 0; i < allCourses.length; i += BATCH_SIZE) {
-      const batch = allCourses.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < allCourses.length; i += HAIKU_BATCH_SIZE) {
+      const batch = allCourses.slice(i, i + HAIKU_BATCH_SIZE);
       const cursusList = batch.map((c) => `id: ${c.id}, naam: ${c.name}`).join("\n");
 
       const prompt = `Voor elke training hieronder: geef 8-12 Nederlandse trefwoorden die beschrijven waar de training INHOUDELIJK over gaat. Denk vanuit de medewerker: welke woorden zou iemand gebruiken als hij een vraag stelt over dit onderwerp? Niet de naam herhalen maar de betekenis beschrijven.
@@ -142,7 +144,7 @@ ${cursusList}`;
           }
         }
       } catch (e) {
-        console.warn(`[Sync] Haiku batch ${i}-${i + BATCH_SIZE} mislukt, fallback naar naam-parsing:`, e);
+        console.warn(`[Sync] Haiku batch ${i}-${i + HAIKU_BATCH_SIZE} mislukt, fallback naar naam-parsing:`, e);
       }
 
       // Fallback: voor cursussen zonder Haiku-trefwoorden, gebruik naam-parsing
@@ -153,7 +155,42 @@ ${cursusList}`;
       }
     }
 
-    // ── 4. Upsert in studytube_cursussen ──
+    // ── 4. Embeddings genereren via OpenAI (batches van 20) ──
+    const embeddingMap = new Map<number, number[]>();
+
+    for (let i = 0; i < allCourses.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = allCourses.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const inputs = batch.map((c) => {
+        const trefwoorden = keywordMap.get(c.id) || [];
+        return c.name + ": " + trefwoorden.join(", ");
+      });
+
+      try {
+        const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openaiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model: "text-embedding-3-small", input: inputs }),
+        });
+        if (embRes.ok) {
+          const embData = await embRes.json();
+          for (let j = 0; j < batch.length; j++) {
+            const emb = embData.data?.[j]?.embedding;
+            if (emb) {
+              embeddingMap.set(batch[j].id, emb);
+            }
+          }
+        } else {
+          console.warn(`[Sync] Embedding batch ${i}-${i + EMBEDDING_BATCH_SIZE} HTTP ${embRes.status}`);
+        }
+      } catch (e) {
+        console.warn(`[Sync] Embedding batch ${i}-${i + EMBEDDING_BATCH_SIZE} mislukt:`, e);
+      }
+    }
+
+    // ── 5. Upsert in studytube_cursussen ──
     const rows = allCourses.map((c) => ({
       tenant_id: tenantId,
       studytube_course_id: String(c.id),
@@ -161,6 +198,7 @@ ${cursusList}`;
       duur_minuten: c.duration ? Math.round(c.duration / 60) : null,
       deeplink_url: `${STUDYTUBE_DEEPLINK_BASE}/${c.id}`,
       trefwoorden: keywordMap.get(c.id) || [],
+      embedding: embeddingMap.has(c.id) ? JSON.stringify(embeddingMap.get(c.id)) : null,
       laatst_gesynchroniseerd: new Date().toISOString(),
     }));
 

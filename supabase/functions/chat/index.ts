@@ -2732,38 +2732,35 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing (strenge keyword-match) ----
-    let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; expliciet: boolean }> = [];
+    // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
+    let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
     try {
       const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "workshop", "module"];
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
 
-      const { data: cursussen } = await supabaseAdmin
-        .from("studytube_cursussen")
-        .select("naam, duur_minuten, deeplink_url, trefwoorden")
-        .eq("tenant_id", profile.tenant_id);
+      const openaiKeyForST = Deno.env.get("OPENAI_API_KEY");
+      if (openaiKeyForST) {
+        const vraagEmbedding = await generateEmbedding(vraag, openaiKeyForST);
+        if (vraagEmbedding) {
+          const threshold = isExpliciet ? 0.55 : 0.72;
+          const matchCount = isExpliciet ? 3 : 1;
 
-      if (cursussen && cursussen.length > 0) {
-        const vraagLower = vraag.toLowerCase();
-        const gescoord = cursussen.map((c: { naam: string; duur_minuten: number | null; deeplink_url: string | null; trefwoorden: string[] }) => {
-          const matches = (c.trefwoorden || []).filter((tw: string) => {
-            const twl = tw.toLowerCase();
-            // Controleer hele-woord match om false positives te vermijden
-            return new RegExp(`\\b${twl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(vraagLower);
-          }).length;
-          return { naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, matches };
-        });
+          const { data: cursusMatches, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+            query_embedding: JSON.stringify(vraagEmbedding),
+            tenant_id_input: profile.tenant_id,
+            match_threshold: threshold,
+            match_count: matchCount,
+          });
 
-        if (isExpliciet) {
-          trainingen = gescoord
-            .filter((c) => c.matches >= 1)
-            .sort((a, b) => b.matches - a.matches)
-            .slice(0, 3)
-            .map((c) => ({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, expliciet: true }));
-        } else {
-          const beste = gescoord.filter((c) => c.matches >= 3).sort((a, b) => b.matches - a.matches)[0];
-          if (beste) {
-            trainingen = [{ naam: beste.naam, duur_minuten: beste.duur_minuten, deeplink_url: beste.deeplink_url, expliciet: false }];
+          if (!stErr && cursusMatches && cursusMatches.length > 0) {
+            trainingen = cursusMatches.map((c: { naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number }) => ({
+              naam: c.naam,
+              duur_minuten: c.duur_minuten,
+              deeplink_url: c.deeplink_url,
+              similarity: c.similarity,
+              expliciet: isExpliciet,
+            }));
+            console.log("[StudyTube] Vector matches:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
           }
         }
       }
