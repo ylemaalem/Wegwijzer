@@ -5825,7 +5825,7 @@
         aanbevelingen: []
       };
 
-      // Vertrouwenscheck data — alleen gedeelde scores
+      // Weekcheck data — alleen gedeelde scores
       if (inclVertrouwen) {
         var vcResult = await supabaseClient.from('vertrouwens_scores').select('score, week_nummer').eq('gedeeld', true);
         var vcData = vcResult.data || [];
@@ -5910,7 +5910,7 @@
         }
       }
       if (secties.vertrouwen && r.vertrouwen) {
-        html += '<h4 style="margin-top:16px;color:var(--primary)">🤝 Vertrouwenscheck</h4>' +
+        html += '<h4 style="margin-top:16px;color:var(--primary)">🤝 Weekcheck</h4>' +
           '<p>Gemiddelde score: <strong>' + r.vertrouwen.gemiddelde + '/5</strong> (' + r.vertrouwen.aantal + ' metingen)</p>';
       }
       if (secties.quiz && r.quiz) {

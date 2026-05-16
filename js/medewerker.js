@@ -93,10 +93,9 @@
       checkWeekstartBriefing();
       checkKennisquiz();
     }
-    // Vertrouwenscheck loopt OOK door na week 6 / na afronding inwerktraject —
-    // gate zit nu op profile.vertrouwenscheck_actief en de startdatum.
-    // Alleen skip als startdatum nog in toekomst ligt.
-    if (profile.startdatum && weekNummer !== 0) {
+    // Weekcheck is voor ALLE medewerkers beschikbaar, altijd.
+    // Alleen skip als startdatum in de toekomst ligt (weekNummer === 0).
+    if (weekNummer !== 0) {
       checkVertrouwenscheck();
     }
     checkRolwissel();
@@ -168,12 +167,15 @@
     return null;
   }
 
-  // Welke (inwerk)week heeft op dit moment een actief VERTROUWENSCHECK-venster?
+  // Welke week heeft op dit moment een actief WEEKCHECK-venster?
   // Venster: vr 00:00 van week N t/m do 23:59 van week N+1.
-  // Loopt door OOK na week 6 — de check blijft wekelijks beschikbaar tenzij
+  // Loopt altijd door — de check blijft wekelijks beschikbaar tenzij
   // de medewerker hem expliciet uitschakelt via profile.vertrouwenscheck_actief.
   function actieveVertrouwenscheckWeek(startdatum) {
-    if (!startdatum) return null;
+    // Fallback naar account-aanmaakdatum als er geen startdatum is
+    var referentie = startdatum || (profile && profile.created_at);
+    if (!referentie) return null;
+    startdatum = referentie;
     var nu = new Date();
     var ma1 = maandagInwerkweek(startdatum, 1);
     if (!ma1) return null;
@@ -1188,7 +1190,7 @@
   }
 
   // =============================================
-  // VERTROUWENSCHECK (model: delen ja/nee)
+  // WEEKCHECK (model: delen ja/nee)
   // =============================================
 
   // Eénmalig dialoog na week 6: wil je de wekelijkse check blijven ontvangen?
@@ -1693,11 +1695,7 @@
     var bevestiging = document.getElementById('vc-toggle-bevestiging');
     if (!btn) return;
 
-    // Toon alleen voor medewerkers met een startdatum (anders niet relevant)
-    if (!profile.startdatum) {
-      btn.classList.add('hidden');
-      return;
-    }
+    // Weekcheck toggle is beschikbaar voor alle medewerkers
 
     function applyVisual() {
       var aan = profile.vertrouwenscheck_actief !== false;

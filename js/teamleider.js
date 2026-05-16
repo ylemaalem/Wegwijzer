@@ -642,7 +642,7 @@
   }
 
   // =============================================
-  // VERTROUWENSCHECK — alle gedeelde scores (inclusief na week 6) van
+  // WEEKCHECK — alle gedeelde scores (inclusief na week 6) van
   // medewerkers met vertrouwenscheck_actief = true
   // =============================================
   async function loadTeamVertrouwen() {
@@ -655,7 +655,7 @@
       return p.user_id && p.vertrouwenscheck_actief !== false;
     });
     if (actieveProfielen.length === 0) {
-      container.innerHTML = '<p class="no-data">Geen actieve vertrouwenscheck-deelnemers in jouw team.</p>';
+      container.innerHTML = '<p class="no-data">Geen actieve weekcheck-deelnemers in jouw team.</p>';
       return;
     }
     var teamUserIds = actieveProfielen.map(function (p) { return p.user_id; });
