@@ -9,7 +9,7 @@ const STUDYTUBE_OAUTH_URL = "https://backend.studytube.nl/gateway/oauth/token";
 const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
-const HAIKU_BATCH_SIZE = 100;
+const HAIKU_BATCH_SIZE = 50;
 const EMBEDDING_BATCH_SIZE = 20;
 
 const STOPWOORDEN = new Set([
@@ -34,10 +34,18 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")!;
-  const openaiKey = Deno.env.get("OPENAI_API_KEY")!;
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+  const openaiKey = Deno.env.get("OPENAI_API_KEY") || "";
   const clientId = Deno.env.get("STUDYTUBE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("STUDYTUBE_CLIENT_SECRET")!;
+
+  // Valideer API keys
+  if (!anthropicKey) {
+    console.error("[Sync] ANTHROPIC_API_KEY niet geconfigureerd");
+  }
+  if (!openaiKey) {
+    console.error("[Sync] OPENAI_API_KEY niet geconfigureerd");
+  }
 
   // ── Auth: controleer dat de aanroeper een admin is ──
   const authHeader = req.headers.get("Authorization") || "";
@@ -100,95 +108,139 @@ Deno.serve(async (req) => {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    console.log(`[Sync] ${allCourses.length} cursussen opgehaald van StudyTube API`);
 
-    // ── 3. Trefwoorden genereren via Claude Haiku (één aanroep per batch van 100) ──
+    // ── 3. Trefwoorden genereren via Claude Haiku (batches van 50) ──
     const keywordMap = new Map<number, string[]>();
+    let haikuSucces = 0;
+    let haikuFallback = 0;
 
-    for (let i = 0; i < allCourses.length; i += HAIKU_BATCH_SIZE) {
-      const batch = allCourses.slice(i, i + HAIKU_BATCH_SIZE);
-      const cursusList = batch.map((c) => `id: ${c.id}, naam: ${c.name}`).join("\n");
+    if (anthropicKey) {
+      for (let i = 0; i < allCourses.length; i += HAIKU_BATCH_SIZE) {
+        const batch = allCourses.slice(i, i + HAIKU_BATCH_SIZE);
+        const cursusList = batch.map((c) => `id: ${c.id}, naam: ${c.name}`).join("\n");
 
-      const prompt = `Voor elke training hieronder: geef 8-12 Nederlandse trefwoorden die beschrijven waar de training INHOUDELIJK over gaat. Denk vanuit de medewerker: welke woorden zou iemand gebruiken als hij een vraag stelt over dit onderwerp? Niet de naam herhalen maar de betekenis beschrijven.
+        const prompt = `Voor elke training hieronder: geef 8-12 Nederlandse trefwoorden die beschrijven waar de training INHOUDELIJK over gaat. Denk vanuit de medewerker: welke woorden zou iemand gebruiken als hij een vraag stelt over dit onderwerp? Niet de naam herhalen maar de betekenis beschrijven.
 
 Geef output ALLEEN als geldig JSON array, geen uitleg:
-[{ "id": "...", "trefwoorden": ["...", "..."] }]
+[{"id": 123, "trefwoorden": ["woord1", "woord2"]}]
 
 Trainingen:
 ${cursusList}`;
 
-      try {
-        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 4000,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        });
-        const haikuData = await haikuRes.json();
-        const tekst = haikuData.content?.[0]?.text || "[]";
+        try {
+          const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 8192,
+              messages: [{ role: "user", content: prompt }],
+            }),
+          });
 
-        const jsonMatch = tekst.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]) as Array<{ id: number | string; trefwoorden: string[] }>;
-          for (const entry of parsed) {
-            const entryId = typeof entry.id === "string" ? parseInt(entry.id, 10) : entry.id;
-            if (entryId && Array.isArray(entry.trefwoorden)) {
-              keywordMap.set(entryId, entry.trefwoorden.map((t: string) => t.toLowerCase().trim()));
+          if (!haikuRes.ok) {
+            const errText = await haikuRes.text();
+            console.error(`[Sync] Haiku batch ${i} HTTP ${haikuRes.status}: ${errText.substring(0, 300)}`);
+          } else {
+            const haikuData = await haikuRes.json();
+            const tekst = haikuData.content?.[0]?.text || "";
+            const stopReason = haikuData.stop_reason || "unknown";
+
+            if (stopReason === "max_tokens") {
+              console.warn(`[Sync] Haiku batch ${i} afgekapt (max_tokens bereikt)`);
+            }
+
+            if (!tekst) {
+              console.warn(`[Sync] Haiku batch ${i} lege response, data:`, JSON.stringify(haikuData).substring(0, 300));
+            } else {
+              const jsonMatch = tekst.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                try {
+                  const parsed = JSON.parse(jsonMatch[0]) as Array<{ id: number | string; trefwoorden: string[] }>;
+                  for (const entry of parsed) {
+                    const entryId = typeof entry.id === "string" ? parseInt(entry.id, 10) : entry.id;
+                    if (entryId && Array.isArray(entry.trefwoorden) && entry.trefwoorden.length > 0) {
+                      keywordMap.set(entryId, entry.trefwoorden.map((t: string) => t.toLowerCase().trim()));
+                      haikuSucces++;
+                    }
+                  }
+                } catch (parseErr) {
+                  console.error(`[Sync] Haiku batch ${i} JSON parse fout:`, parseErr, "tekst start:", tekst.substring(0, 200));
+                }
+              } else {
+                console.warn(`[Sync] Haiku batch ${i} geen JSON array gevonden in response, start:`, tekst.substring(0, 200));
+              }
             }
           }
+        } catch (e) {
+          console.error(`[Sync] Haiku batch ${i} exception:`, e);
         }
-      } catch (e) {
-        console.warn(`[Sync] Haiku batch ${i}-${i + HAIKU_BATCH_SIZE} mislukt, fallback naar naam-parsing:`, e);
-      }
 
-      // Fallback: voor cursussen zonder Haiku-trefwoorden, gebruik naam-parsing
-      for (const course of batch) {
-        if (!keywordMap.has(course.id)) {
-          keywordMap.set(course.id, fallbackTrefwoorden(course.name));
+        // Fallback: voor cursussen zonder Haiku-trefwoorden, gebruik naam-parsing
+        for (const course of batch) {
+          if (!keywordMap.has(course.id)) {
+            keywordMap.set(course.id, fallbackTrefwoorden(course.name));
+            haikuFallback++;
+          }
         }
+      }
+    } else {
+      // Geen API key — alles via fallback
+      for (const course of allCourses) {
+        keywordMap.set(course.id, fallbackTrefwoorden(course.name));
+        haikuFallback++;
       }
     }
+    console.log(`[Sync] Haiku trefwoorden gegenereerd voor ${haikuSucces} cursussen, fallback voor ${haikuFallback}`);
 
     // ── 4. Embeddings genereren via OpenAI (batches van 20) ──
     const embeddingMap = new Map<number, number[]>();
+    let embeddingSucces = 0;
 
-    for (let i = 0; i < allCourses.length; i += EMBEDDING_BATCH_SIZE) {
-      const batch = allCourses.slice(i, i + EMBEDDING_BATCH_SIZE);
-      const inputs = batch.map((c) => {
-        const trefwoorden = keywordMap.get(c.id) || [];
-        return c.name + ": " + trefwoorden.join(", ");
-      });
-
-      try {
-        const embRes = await fetch("https://api.openai.com/v1/embeddings", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${openaiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ model: "text-embedding-3-small", input: inputs }),
+    if (openaiKey) {
+      for (let i = 0; i < allCourses.length; i += EMBEDDING_BATCH_SIZE) {
+        const batch = allCourses.slice(i, i + EMBEDDING_BATCH_SIZE);
+        const inputs = batch.map((c) => {
+          const trefwoorden = keywordMap.get(c.id) || [];
+          return c.name + ": " + trefwoorden.join(", ");
         });
-        if (embRes.ok) {
-          const embData = await embRes.json();
-          for (let j = 0; j < batch.length; j++) {
-            const emb = embData.data?.[j]?.embedding;
-            if (emb) {
-              embeddingMap.set(batch[j].id, emb);
+
+        try {
+          const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openaiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ model: "text-embedding-3-small", input: inputs }),
+          });
+
+          if (!embRes.ok) {
+            const errText = await embRes.text();
+            console.error(`[Sync] Embedding batch ${i} HTTP ${embRes.status}: ${errText.substring(0, 300)}`);
+          } else {
+            const embData = await embRes.json();
+            for (let j = 0; j < batch.length; j++) {
+              const emb = embData.data?.[j]?.embedding;
+              if (emb && Array.isArray(emb)) {
+                embeddingMap.set(batch[j].id, emb);
+                embeddingSucces++;
+              }
             }
           }
-        } else {
-          console.warn(`[Sync] Embedding batch ${i}-${i + EMBEDDING_BATCH_SIZE} HTTP ${embRes.status}`);
+        } catch (e) {
+          console.error(`[Sync] Embedding batch ${i} exception:`, e);
         }
-      } catch (e) {
-        console.warn(`[Sync] Embedding batch ${i}-${i + EMBEDDING_BATCH_SIZE} mislukt:`, e);
       }
+    } else {
+      console.error("[Sync] Geen OPENAI_API_KEY — embeddings overgeslagen");
     }
+    console.log(`[Sync] OpenAI embeddings gegenereerd voor ${embeddingSucces} van ${allCourses.length} cursussen`);
 
     // ── 5. Upsert in studytube_cursussen ──
     const rows = allCourses.map((c) => ({
@@ -207,17 +259,25 @@ ${cursusList}`;
       .upsert(rows, { onConflict: "tenant_id,studytube_course_id" });
 
     if (upsertErr) {
+      console.error("[Sync] Upsert fout:", upsertErr.message);
       return new Response(JSON.stringify({ error: "Upsert mislukt: " + upsertErr.message }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log(`[Sync] Upsert voltooid voor ${allCourses.length} cursussen`);
+
     return new Response(
-      JSON.stringify({ cursussen_gesynchroniseerd: allCourses.length }),
+      JSON.stringify({
+        cursussen_gesynchroniseerd: allCourses.length,
+        haiku_trefwoorden: haikuSucces,
+        haiku_fallback: haikuFallback,
+        embeddings_gegenereerd: embeddingSucces,
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
-    console.error("[StudyTube Sync] Fout:", err);
+    console.error("[StudyTube Sync] Onverwachte fout:", err);
     return new Response(JSON.stringify({ error: "Synchronisatie mislukt: " + String(err) }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

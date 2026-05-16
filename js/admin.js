@@ -5284,7 +5284,7 @@
             return;
           }
           var controller = new AbortController();
-          var timeout = setTimeout(function () { controller.abort(); }, 60000);
+          var timeout = setTimeout(function () { controller.abort(); }, 300000);
           var res = await fetch(SUPABASE_URL + '/functions/v1/studytube-sync', {
             method: 'POST',
             headers: {
@@ -5315,7 +5315,12 @@
           studytubeSyncResult.style.display = 'block';
           if (data.cursussen_gesynchroniseerd !== undefined) {
             studytubeSyncResult.style.color = 'var(--success)';
-            studytubeSyncResult.textContent = '✅ ' + data.cursussen_gesynchroniseerd + ' cursussen gesynchroniseerd.';
+            var stats = '✅ ' + data.cursussen_gesynchroniseerd + ' cursussen gesynchroniseerd.';
+            if (data.embeddings_gegenereerd !== undefined) {
+              stats += ' (' + data.embeddings_gegenereerd + ' embeddings, ' + (data.haiku_trefwoorden || 0) + ' Haiku-trefwoorden)';
+            }
+            studytubeSyncResult.textContent = stats;
+            console.log('[StudyTube Sync] Stats:', JSON.stringify(data));
             loadStudytubeCursussen();
           } else {
             studytubeSyncResult.style.color = 'var(--error)';
