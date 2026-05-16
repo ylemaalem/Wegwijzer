@@ -5256,12 +5256,14 @@
     // StudyTube sync knop
     var studytubeSyncBtn = document.getElementById('studytube-sync-btn');
     var studytubeSyncResult = document.getElementById('studytube-sync-result');
+    var studytubeSyncSpinner = document.getElementById('studytube-sync-spinner');
     if (studytubeSyncBtn) {
       loadStudytubeCursussen();
       studytubeSyncBtn.addEventListener('click', async function () {
         studytubeSyncBtn.disabled = true;
-        studytubeSyncBtn.textContent = 'Synchroniseren...';
+        studytubeSyncBtn.textContent = 'Bezig met synchroniseren...';
         studytubeSyncResult.style.display = 'none';
+        if (studytubeSyncSpinner) studytubeSyncSpinner.style.display = 'inline-block';
         try {
           var { data: { session } } = await supabaseClient.auth.getSession();
           if (!session) {
@@ -5270,10 +5272,11 @@
             studytubeSyncResult.textContent = '❌ Niet gemachtigd — probeer opnieuw in te loggen';
             studytubeSyncBtn.disabled = false;
             studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+            if (studytubeSyncSpinner) studytubeSyncSpinner.style.display = 'none';
             return;
           }
           var controller = new AbortController();
-          var timeout = setTimeout(function () { controller.abort(); }, 30000);
+          var timeout = setTimeout(function () { controller.abort(); }, 60000);
           var res = await fetch(SUPABASE_URL + '/functions/v1/studytube-sync', {
             method: 'POST',
             headers: {
@@ -5297,6 +5300,7 @@
             }
             studytubeSyncBtn.disabled = false;
             studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+            if (studytubeSyncSpinner) studytubeSyncSpinner.style.display = 'none';
             return;
           }
           var data = await res.json();
@@ -5320,6 +5324,7 @@
         }
         studytubeSyncBtn.disabled = false;
         studytubeSyncBtn.textContent = 'StudyTube cursussen synchroniseren';
+        if (studytubeSyncSpinner) studytubeSyncSpinner.style.display = 'none';
       });
     }
 

@@ -8,7 +8,20 @@ const corsHeaders = {
 const STUDYTUBE_OAUTH_URL = "https://backend.studytube.nl/gateway/oauth/token";
 const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
-const BATCH_SIZE = 50; // cursussen per Claude-aanroep
+
+const STOPWOORDEN = new Set([
+  "de", "het", "een", "en", "in", "van", "voor", "met", "op", "aan", "bij",
+  "uit", "over", "naar", "als", "je", "zijn", "is", "dat", "te", "om", "hoe",
+  "wat", "wie", "er", "zo", "of", "maar", "ook", "al", "dan", "nog", "door",
+]);
+
+function genereerTrefwoorden(cursusnaam: string): string[] {
+  return cursusnaam
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOPWOORDEN.has(w));
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -18,7 +31,6 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")!;
   const clientId = Deno.env.get("STUDYTUBE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("STUDYTUBE_CLIENT_SECRET")!;
 
@@ -84,57 +96,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── 3. Trefwoorden genereren via Claude Haiku (in batches) ──
+    // ── 3. Trefwoorden genereren uit cursusnaam (snel, geen externe API) ──
     const keywordMap = new Map<number, string[]>();
-
-    for (let i = 0; i < allCourses.length; i += BATCH_SIZE) {
-      const batch = allCourses.slice(i, i + BATCH_SIZE);
-      const prompt = `Genereer voor elke cursus 5-10 kerntrefwoorden in het Nederlands (lowercase, enkelvoud waar mogelijk).
-Geef je antwoord als een valide JSON array met exact dit formaat, zonder extra tekst:
-[{"id": 123, "trefwoorden": ["woord1", "woord2"]}, ...]
-
-Cursussen:
-${batch.map((c) => `${c.id}: ${c.name}`).join("\n")}`;
-
-      try {
-        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 2048,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        });
-        const haikuData = await haikuRes.json();
-        const tekst = haikuData.content?.[0]?.text || "[]";
-
-        // Extraheer JSON uit de response (soms is er wat tekst omheen)
-        const jsonMatch = tekst.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]) as Array<{ id: number; trefwoorden: string[] }>;
-          for (const entry of parsed) {
-            if (entry.id && Array.isArray(entry.trefwoorden)) {
-              keywordMap.set(entry.id, entry.trefwoorden.map((t: string) => t.toLowerCase().trim()));
-            }
-          }
-        }
-      } catch (e) {
-        console.warn(`[Sync] Haiku batch ${i}-${i + BATCH_SIZE} mislukt:`, e);
-        // Fallback: genereer trefwoorden uit de naam zelf
-        for (const course of batch) {
-          const woorden = course.name
-            .toLowerCase()
-            .replace(/[^a-zA-Zàáâãäåæçèéêëìíîïðñòóôõöøùúûüý\s-]/g, " ")
-            .split(/[\s\-–]+/)
-            .filter((w) => w.length > 3 && !["voor", "over", "naar", "mijn", "zijn", "deze", "introductie", "inleiding", "naslag"].includes(w));
-          keywordMap.set(course.id, [...new Set(woorden)].slice(0, 8));
-        }
-      }
+    for (const course of allCourses) {
+      keywordMap.set(course.id, genereerTrefwoorden(course.name));
     }
 
     // ── 4. Upsert in studytube_cursussen ──

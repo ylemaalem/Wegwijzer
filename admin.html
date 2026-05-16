@@ -835,9 +835,12 @@
             Synchroniseer de trainingsbibliotheek van StudyTube. Na de sync worden relevante trainingen
             zichtbaar als tip onder chatantwoorden van medewerkers.
           </p>
-          <button class="btn btn-primary" id="studytube-sync-btn" style="max-width:260px">
-            StudyTube cursussen synchroniseren
-          </button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="btn btn-primary" id="studytube-sync-btn" style="max-width:260px">
+              StudyTube cursussen synchroniseren
+            </button>
+            <span id="studytube-sync-spinner" style="display:none;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></span>
+          </div>
           <div id="studytube-sync-result" style="margin-top:8px;font-size:0.85rem;display:none"></div>
           <div id="studytube-cursussen-container" style="display:none;margin-top:16px">
             <div id="studytube-cursussen-header" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px"></div>
