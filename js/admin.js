@@ -3793,12 +3793,20 @@
         feedbackBadge = '<span class="badge badge-geen">—</span>';
       }
 
+      // Sparring-detectie: vraag bevat 'spar' of antwoord begint met sparring-emoji
+      var isSparring = (c.vraag && c.vraag.toLowerCase().indexOf('spar') !== -1)
+        || (c.vraag && c.vraag.toLowerCase().indexOf('casus') !== -1)
+        || (c.antwoord && (c.antwoord.trimStart().indexOf('💬') === 0 || c.antwoord.trimStart().indexOf('💪') === 0));
+      var sparringLabel = isSparring
+        ? '<span style="display:inline-block;background:#7c3aed22;color:#7c3aed;font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600">💬 Sparring</span>'
+        : '';
+
       var antwoord = c.antwoord || '<em style="color:var(--error)">Niet beantwoord</em>';
 
       return '<tr onclick="window.showGesprekDetail(\'' + c.id + '\')" style="cursor:pointer">' +
         '<td style="white-space:nowrap">' + datum + '</td>' +
         '<td>' + escapeHtml(naam) + '</td>' +
-        '<td><div class="answer-preview">' + escapeHtml(c.vraag) + '</div></td>' +
+        '<td><div class="answer-preview">' + escapeHtml(c.vraag) + sparringLabel + '</div></td>' +
         '<td><div class="answer-preview">' + (c.antwoord ? escapeHtml(c.antwoord) : antwoord) + '</div></td>' +
         '<td>' + feedbackBadge + '</td>' +
         '</tr>';
