@@ -9,13 +9,15 @@ const STUDYTUBE_OAUTH_URL = "https://backend.studytube.nl/gateway/oauth/token";
 const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
+const BATCH_SIZE = 100;
+
 const STOPWOORDEN = new Set([
   "de", "het", "een", "en", "in", "van", "voor", "met", "op", "aan", "bij",
   "uit", "over", "naar", "als", "je", "zijn", "is", "dat", "te", "om", "hoe",
   "wat", "wie", "er", "zo", "of", "maar", "ook", "al", "dan", "nog", "door",
 ]);
 
-function genereerTrefwoorden(cursusnaam: string): string[] {
+function fallbackTrefwoorden(cursusnaam: string): string[] {
   return cursusnaam
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
@@ -31,6 +33,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")!;
   const clientId = Deno.env.get("STUDYTUBE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("STUDYTUBE_CLIENT_SECRET")!;
 
@@ -96,10 +99,58 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── 3. Trefwoorden genereren uit cursusnaam (snel, geen externe API) ──
+    // ── 3. Trefwoorden genereren via Claude Haiku (één aanroep per batch van 100) ──
     const keywordMap = new Map<number, string[]>();
-    for (const course of allCourses) {
-      keywordMap.set(course.id, genereerTrefwoorden(course.name));
+
+    for (let i = 0; i < allCourses.length; i += BATCH_SIZE) {
+      const batch = allCourses.slice(i, i + BATCH_SIZE);
+      const cursusList = batch.map((c) => `id: ${c.id}, naam: ${c.name}`).join("\n");
+
+      const prompt = `Voor elke training hieronder: geef 8-12 Nederlandse trefwoorden die beschrijven waar de training INHOUDELIJK over gaat. Denk vanuit de medewerker: welke woorden zou iemand gebruiken als hij een vraag stelt over dit onderwerp? Niet de naam herhalen maar de betekenis beschrijven.
+
+Geef output ALLEEN als geldig JSON array, geen uitleg:
+[{ "id": "...", "trefwoorden": ["...", "..."] }]
+
+Trainingen:
+${cursusList}`;
+
+      try {
+        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 4000,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        const haikuData = await haikuRes.json();
+        const tekst = haikuData.content?.[0]?.text || "[]";
+
+        const jsonMatch = tekst.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as Array<{ id: number | string; trefwoorden: string[] }>;
+          for (const entry of parsed) {
+            const entryId = typeof entry.id === "string" ? parseInt(entry.id, 10) : entry.id;
+            if (entryId && Array.isArray(entry.trefwoorden)) {
+              keywordMap.set(entryId, entry.trefwoorden.map((t: string) => t.toLowerCase().trim()));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[Sync] Haiku batch ${i}-${i + BATCH_SIZE} mislukt, fallback naar naam-parsing:`, e);
+      }
+
+      // Fallback: voor cursussen zonder Haiku-trefwoorden, gebruik naam-parsing
+      for (const course of batch) {
+        if (!keywordMap.has(course.id)) {
+          keywordMap.set(course.id, fallbackTrefwoorden(course.name));
+        }
+      }
     }
 
     // ── 4. Upsert in studytube_cursussen ──
