@@ -855,23 +855,19 @@
         trainingen.forEach(function (t) {
           var li = document.createElement('li');
           var duur = t.duur_minuten ? ' (' + t.duur_minuten + ' min)' : '';
-          if (t.deeplink_url) {
-            li.innerHTML = '📚 <a href="' + escapeHtml(t.deeplink_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.naam) + '</a>' + escapeHtml(duur);
-          } else {
-            li.textContent = '📚 ' + t.naam + duur;
-          }
+          li.textContent = '📚 ' + t.naam + duur + ' — beschikbaar via StudyTube';
           trainingUl.appendChild(li);
         });
         trainingDiv.appendChild(trainingUl);
+        var zoekTip = document.createElement('small');
+        zoekTip.style.color = '#666';
+        zoekTip.textContent = 'Open StudyTube via je browser en zoek op de naam.';
+        trainingDiv.appendChild(zoekTip);
       } else {
         var t0 = trainingen[0];
         var duur0 = t0.duur_minuten ? ' (' + t0.duur_minuten + ' min)' : '';
         trainingDiv.className = 'training-hint';
-        if (t0.deeplink_url) {
-          trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training <a href="' + escapeHtml(t0.deeplink_url) + '" target="_blank" rel="noopener">\'' + escapeHtml(t0.naam) + '\'</a>' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small>';
-        } else {
-          trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training \'' + escapeHtml(t0.naam) + '\'' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small>';
-        }
+        trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training \'' + escapeHtml(t0.naam) + '\'' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small><br><small style="color:#666">Open StudyTube via je browser en zoek op de naam.</small>';
       }
       wrap.appendChild(trainingDiv);
     }

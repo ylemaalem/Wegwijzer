@@ -2647,6 +2647,14 @@ ALGEMEEN:
 - Bij getallen, bedragen, tijden en hoeveelheden: herhaal ALTIJD de exacte waarde uit het document. Maak NOOIT zelf rekenvoorbeelden of vertalingen van getallen. Als het document '30 minuten' zegt, zeg dan '30 minuten' — niet 'een half uur' of andere omschrijvingen.
 - De regio van de medewerker staat vermeld in de persoonlijke gegevens. Houd je STRIKT aan die regio. Gebruik NOOIT WMO-trajecten, procedures of afspraken die gelden voor een andere regio dan de regio van deze medewerker.
 
+STUDYTUBE INTEGRATIE:
+Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN.
+Als een medewerker vraagt naar trainingen, cursussen of leeraanbod, zoekt Wegwijzer automatisch naar relevante trainingen.
+Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
+Als er een training gevonden is, staat die onderaan je antwoord als suggestie.
+Als er geen training gevonden is bij een expliciete trainingsvraag, zeg dan:
+"Ik heb geen passende training gevonden in de StudyTube bibliotheek van AHMN voor dit onderwerp. Je kunt zelf zoeken via app.studytube.nl"
+
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
   ✏️ Bron: handmatige correctie
@@ -2757,7 +2765,7 @@ ${alleKennisbronnen}`;
     // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
     try {
-      const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "workshop", "module"];
+      const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "ontwikkel", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "nascholing", "workshop", "module", "leeraanbod", "leerportaal", "bijleren", "cursus volgen", "training volgen", "is er een training", "zijn er trainingen", "trainingsaanbod"];
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
 
       const openaiKeyForST = Deno.env.get("OPENAI_API_KEY");
