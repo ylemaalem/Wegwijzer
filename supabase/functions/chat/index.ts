@@ -2583,7 +2583,23 @@ INSTRUCTIES:
 - Begin elk antwoord met een korte, vriendelijke openingszin met een passende emoji. Wissel af.
 - Gebruik in je antwoord af en toe een passende emoji (twee tot drie per antwoord is genoeg).
 
-PRIORITEITSREGEL: Raadpleeg ALTIJD eerst de kennisbank van de organisatie. Gebruik algemene kennis alleen als de kennisbank geen relevante informatie bevat. Als je twijfelt welke financieringsregeling (WMO, WLZ, BW, Jeugdwet) van toepassing is, zoek dan in de kennisbank op basis van de context van de vraag. NOEM NOOIT slechts één regeling als meerdere regelingen mogelijk van toepassing zijn. Bij afkortingen als BW: zoek altijd in de kennisbank wat dit betekent voor DEZE organisatie.
+PRIORITEITSREGEL: Raadpleeg ALTIJD eerst de kennisbank van de organisatie. Gebruik algemene kennis alleen als de kennisbank geen relevante informatie bevat.
+
+ORGANISATIESPECIFIEKE CONTEXT:
+Deze organisatie werkt uitsluitend met deze financieringsregelingen:
+- Wlz (Wet langdurige zorg)
+- Wmo (Wet maatschappelijke ondersteuning)
+- WMO Beschermd Wonen (afgekort als BW)
+
+NOEM NOOIT de volgende regelingen tenzij de medewerker ze zelf noemt:
+- Zvw (zorgverzekeringswet) — niet relevant voor deze organisatie
+- Jeugdwet — zelden relevant, alleen noemen als medewerker dit vraagt
+- Wajong, PGB als financieringsvorm — alleen op directe vraag
+
+Bij vragen over indicaties, herindicaties of financiering:
+Noem altijd de drie relevante regelingen: Wlz, Wmo en WMO BW.
+Zoek eerst in de kennisbank naar organisatie-specifieke documenten over deze regelingen.
+NOEM NOOIT slechts één regeling als meerdere regelingen mogelijk van toepassing zijn.
 
 VERBOD: Je mag NOOIT claimen dat je informatie 'onthoudt', 'opslaat' of 'noteert voor de toekomst'. Je hebt geen persistent geheugen buiten dit gesprek. Als een medewerker zegt 'onthoud dit': antwoord met: 'Ik kan informatie niet opslaan tussen gesprekken, maar je kunt dit toevoegen aan de kennisbank zodat ik het altijd weet.'
 
@@ -2745,11 +2761,16 @@ ${alleKennisbronnen}`;
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
 
       const openaiKeyForST = Deno.env.get("OPENAI_API_KEY");
-      if (openaiKeyForST) {
+      if (!openaiKeyForST) {
+        console.warn("[StudyTube] Geen OPENAI_API_KEY — overgeslagen");
+      } else {
         const vraagEmbedding = await generateEmbedding(vraag, openaiKeyForST);
-        if (vraagEmbedding) {
-          const threshold = isExpliciet ? 0.55 : 0.72;
-          const matchCount = isExpliciet ? 3 : 1;
+        if (!vraagEmbedding) {
+          console.warn("[StudyTube] Vraag embedding generatie mislukt voor:", vraag.substring(0, 80));
+        } else {
+          console.log("[StudyTube] Vraag embedding gegenereerd, isExpliciet:", isExpliciet);
+          const threshold = isExpliciet ? 0.55 : 0.60;
+          const matchCount = isExpliciet ? 3 : 3;
 
           const { data: cursusMatches, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
             query_embedding: JSON.stringify(vraagEmbedding),
@@ -2758,7 +2779,11 @@ ${alleKennisbronnen}`;
             match_count: matchCount,
           });
 
-          if (!stErr && cursusMatches && cursusMatches.length > 0) {
+          if (stErr) {
+            console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
+          } else if (!cursusMatches || cursusMatches.length === 0) {
+            console.log("[StudyTube] Geen matches boven threshold", threshold);
+          } else {
             trainingen = cursusMatches.map((c: { naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number }) => ({
               naam: c.naam,
               duur_minuten: c.duur_minuten,
@@ -2766,12 +2791,17 @@ ${alleKennisbronnen}`;
               similarity: c.similarity,
               expliciet: isExpliciet,
             }));
-            console.log("[StudyTube] Vector matches:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
+            // Impliciete matches: alleen tonen als similarity > 0.60
+            if (!isExpliciet) {
+              trainingen = trainingen.filter((t) => t.similarity > 0.60);
+              if (trainingen.length > 1) trainingen = [trainingen[0]];
+            }
+            console.log("[StudyTube] Trainingen in response:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
           }
         }
       }
     } catch (stErr) {
-      console.warn("[StudyTube] Match fout:", stErr);
+      console.error("[StudyTube] Exception:", stErr);
     }
 
     return new Response(
