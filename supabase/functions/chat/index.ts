@@ -2119,9 +2119,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isSparringRequest = body.sparring === true
       && Array.isArray(body.sparring_context)
       && body.sparring_context.length === 3;
+    const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "leren", "opleiding", "ontwikkelen", "leeraanbod", "nascholing"];
+    const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
     const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
-      || isSparringRequest;
+      || isSparringRequest
+      || isTrainingVraag;
 
     let vraagHash: string | null = null;
     if (!skipCache) {

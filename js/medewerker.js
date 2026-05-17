@@ -717,6 +717,7 @@
       });
 
       var data = await response.json();
+      console.log('[Wegwijzer] Chat response trainingen:', JSON.stringify(data.trainingen || []));
       typingIndicator.classList.add('hidden');
 
       if (data.soft_limit) {
