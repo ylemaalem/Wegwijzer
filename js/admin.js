@@ -3655,7 +3655,7 @@
     console.log('[loadGesprekken] start — tenantId:', tenantId);
     var result = await supabaseClient
       .from('conversations')
-      .select('id, vraag, antwoord, feedback, created_at, user_id')
+      .select('id, vraag, antwoord, feedback, created_at, user_id, studytube_trainingen')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -3803,11 +3803,17 @@
 
       var antwoord = c.antwoord || '<em style="color:var(--error)">Niet beantwoord</em>';
 
+      var trainingBadge = '';
+      if (c.studytube_trainingen && c.studytube_trainingen.length > 0) {
+        var namen = c.studytube_trainingen.map(function (t) { return t.naam; }).join(', ');
+        trainingBadge = '<div class="admin-training-badge">🎓 ' + escapeHtml(namen) + '</div>';
+      }
+
       return '<tr onclick="window.showGesprekDetail(\'' + c.id + '\')" style="cursor:pointer">' +
         '<td style="white-space:nowrap">' + datum + '</td>' +
         '<td>' + escapeHtml(naam) + '</td>' +
         '<td><div class="answer-preview">' + escapeHtml(c.vraag) + sparringLabel + '</div></td>' +
-        '<td><div class="answer-preview">' + (c.antwoord ? escapeHtml(c.antwoord) : antwoord) + '</div></td>' +
+        '<td><div class="answer-preview">' + (c.antwoord ? escapeHtml(c.antwoord) : antwoord) + trainingBadge + '</div></td>' +
         '<td>' + feedbackBadge + '</td>' +
         '</tr>';
     }).join('');
@@ -3835,6 +3841,17 @@
 
     document.getElementById('detail-vraag').textContent = c.vraag;
     document.getElementById('detail-antwoord').textContent = c.antwoord || 'Niet beantwoord';
+
+    var detailTraining = document.getElementById('detail-training');
+    if (detailTraining) {
+      if (c.studytube_trainingen && c.studytube_trainingen.length > 0) {
+        var namen = c.studytube_trainingen.map(function (t) { return t.naam + (t.duur_minuten ? ' (' + t.duur_minuten + ' min)' : ''); }).join(', ');
+        detailTraining.innerHTML = '<div class="admin-training-badge">🎓 Geadviseerde training(en): ' + escapeHtml(namen) + '</div>';
+        detailTraining.style.display = 'block';
+      } else {
+        detailTraining.style.display = 'none';
+      }
+    }
 
     var fb = document.getElementById('detail-feedback');
     if (c.feedback === 'goed') {

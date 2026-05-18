@@ -597,3 +597,13 @@
   .org-switcher-label { display: none; }
   .org-switcher-add { font-size: 0.72rem; padding: 5px 10px; }
 }
+
+.admin-training-badge {
+  background: #E8F4F7;
+  border-left: 3px solid #0D5C6B;
+  padding: 6px 10px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #0D5C6B;
+  border-radius: 4px;
+}
