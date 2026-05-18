@@ -2818,18 +2818,23 @@ ${alleKennisbronnen}`;
                 body: JSON.stringify({
                   model: "claude-haiku-4-5-20251001",
                   max_tokens: 100,
-                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen is het MEEST relevant voor deze vraag?\nKies er maximaal 1. Als geen enkele relevant is, antwoord dan met: geen\n\nTrainingen:\n${namenLijst}\n\nAntwoord met ALLEEN de exacte naam van de training of het woord geen.` }],
+                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 2. Als geen enkele relevant is, antwoord dan met: geen\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.\n\nTrainingen:\n${namenLijst}` }],
                 }),
               });
               if (haikuSelectRes.ok) {
                 const haikuData = await haikuSelectRes.json();
-                const gekozen = (haikuData.content?.[0]?.text || "").trim();
-                console.log("[StudyTube] Haiku koos:", gekozen);
-                if (gekozen && gekozen.toLowerCase() !== "geen") {
-                  const match = kandidaten.find((c: { naam: string }) => gekozen.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(gekozen.toLowerCase()));
-                  if (match) {
-                    trainingen = [{ naam: match.naam, duur_minuten: match.duur_minuten, deeplink_url: match.deeplink_url, similarity: match.similarity, expliciet: false }];
-                    console.log("[StudyTube] Impliciete match via Haiku:", match.naam);
+                const gekozenTekst = (haikuData.content?.[0]?.text || "").trim();
+                console.log("[StudyTube] Haiku koos:", gekozenTekst);
+                if (gekozenTekst && gekozenTekst.toLowerCase() !== "geen") {
+                  const regels = gekozenTekst.split("\n").map((r: string) => r.replace(/^\d+\.\s*/, "").trim()).filter((r: string) => r.length > 0);
+                  for (const regel of regels) {
+                    const match = kandidaten.find((c: { naam: string }) => regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
+                    if (match && !trainingen.some((t) => t.naam === match.naam)) {
+                      trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten, deeplink_url: match.deeplink_url, similarity: match.similarity, expliciet: false });
+                    }
+                  }
+                  if (trainingen.length > 0) {
+                    console.log("[StudyTube] Impliciete matches via Haiku:", trainingen.map((t) => t.naam).join(", "));
                   }
                 }
               }
