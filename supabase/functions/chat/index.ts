@@ -2658,6 +2658,12 @@ Als er een training gevonden is, staat die onderaan je antwoord als suggestie.
 Als er geen training gevonden is bij een expliciete trainingsvraag, zeg dan:
 "Ik heb geen passende training gevonden in de StudyTube bibliotheek van AHMN voor dit onderwerp. Je kunt zelf zoeken via app.studytube.nl"
 
+STUDYTUBE IS HET OFFICIËLE LEERPLATFORM VAN AHMN:
+StudyTube (app.studytube.nl) is het platform waar AHMN-medewerkers zich aanmelden voor alle trainingen, cursussen, e-learning en intervisie.
+Bij vragen over trainingen, cursussen, intervisie, scholing, e-learning, bijscholing of professionele ontwikkeling: verwijs altijd prominent naar StudyTube als eerste stap.
+Zeg: "Via StudyTube (app.studytube.nl) kun je het volledige trainingsaanbod van AHMN bekijken en je aanmelden. Zoek daar op [onderwerp]."
+Niet alleen als kleine hint onderaan — maar als duidelijk onderdeel van het antwoord.
+
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
   ✏️ Bron: handmatige correctie
@@ -2767,6 +2773,8 @@ ${alleKennisbronnen}`;
 
     // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
+    const ahmnLeerTriggers = ["intervisie", "scholing", "opleiding", "ontwikkeling", "bijscholing", "nascholing", "e-learning", "leerplatform", "studytube", "aanmelden training", "cursus aanmelden", "trainingsaanbod"];
+    const isAhmnLeerVraag = ahmnLeerTriggers.some((t) => vraag.toLowerCase().includes(t));
     try {
       const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "ontwikkel", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "nascholing", "workshop", "module", "leeraanbod", "leerportaal", "bijleren", "cursus volgen", "training volgen", "is er een training", "zijn er trainingen", "trainingsaanbod"];
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
@@ -2815,7 +2823,7 @@ ${alleKennisbronnen}`;
     }
 
     return new Response(
-      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen }),
+      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen, studytube_platform_verwijzing: isAhmnLeerVraag }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
