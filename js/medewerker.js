@@ -324,7 +324,7 @@
     try {
       var result = await supabaseClient
         .from('conversations')
-        .select('id, vraag, antwoord, feedback, created_at')
+        .select('id, vraag, antwoord, feedback, created_at, studytube_trainingen')
         .order('created_at', { ascending: true });
 
       if (result.error || !result.data) {
@@ -349,7 +349,7 @@
 
         // Bot antwoord
         if (conv.antwoord) {
-          renderBotBericht(conv.antwoord, conv.id, conv.feedback, tijd);
+          renderBotBericht(conv.antwoord, conv.id, conv.feedback, tijd, conv.studytube_trainingen || []);
         }
       });
 
