@@ -2119,7 +2119,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isSparringRequest = body.sparring === true
       && Array.isArray(body.sparring_context)
       && body.sparring_context.length === 3;
-    const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "leren", "opleiding", "ontwikkelen", "leeraanbod", "nascholing"];
+    const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "e-learning", "nascholing", "scholing"];
     const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
     const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
@@ -2770,7 +2770,7 @@ ${alleKennisbronnen}`;
     // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
     try {
-      const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "ontwikkel", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "nascholing", "workshop", "module", "leeraanbod", "leerportaal", "bijleren", "cursus volgen", "training volgen", "is er een training", "zijn er trainingen", "trainingsaanbod"];
+      const trainingsTriggers = ["training", "cursus", "studytube", "e-learning", "elearning", "e learning", "nascholing", "scholing", "is er een training", "zijn er trainingen", "trainingsaanbod", "cursus volgen", "training volgen"];
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
 
       const openaiKeyForST = Deno.env.get("OPENAI_API_KEY");
