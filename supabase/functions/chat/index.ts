@@ -2780,7 +2780,7 @@ ${alleKennisbronnen}`;
           console.warn("[StudyTube] Vraag embedding generatie mislukt voor:", vraag.substring(0, 80));
         } else {
           console.log("[StudyTube] Vraag embedding gegenereerd, isExpliciet:", isExpliciet);
-          const threshold = isExpliciet ? 0.45 : 0.50;
+          const threshold = isExpliciet ? 0.35 : 0.40;
           const matchCount = isExpliciet ? 3 : 3;
 
           const { data: cursusMatches, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
@@ -2803,7 +2803,7 @@ ${alleKennisbronnen}`;
               expliciet: isExpliciet,
             }));
             if (!isExpliciet) {
-              trainingen = trainingen.filter((t) => t.similarity > 0.50);
+              trainingen = trainingen.filter((t) => t.similarity > 0.40);
               if (trainingen.length > 1) trainingen = [trainingen[0]];
             }
             console.log("[StudyTube] Trainingen in response:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
