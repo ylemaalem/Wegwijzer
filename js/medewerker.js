@@ -739,7 +739,7 @@
           null, null, null
         );
       } else {
-        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || [], data.studytube_platform_verwijzing || false);
+        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || []);
         // Voeg antwoord toe aan conversatiehistorie
         conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
       }
@@ -788,7 +788,7 @@
     chatMessages.insertBefore(row, typingIndicator);
   }
 
-  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd, trainingen, studytubePlatform) {
+  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd, trainingen) {
     var row = document.createElement('div');
     row.className = 'message-row message-row-bot';
 
@@ -805,14 +805,6 @@
     bubble.className = 'chat-bubble chat-bubble-bot';
     bubble.innerHTML = formatAntwoord(tekst);
     wrap.appendChild(bubble);
-
-    // StudyTube platform verwijzing
-    if (studytubePlatform) {
-      var platformDiv = document.createElement('div');
-      platformDiv.className = 'studytube-platform-blok';
-      platformDiv.innerHTML = '<strong>🎓 Trainingsaanbod AHMN via StudyTube</strong><br>Alle trainingen, cursussen en intervisie van AHMN staan op StudyTube. Ga naar <strong>app.studytube.nl</strong> om het aanbod te bekijken en je aan te melden.';
-      wrap.appendChild(platformDiv);
-    }
 
     // Feedback knoppen
     if (conversationId) {

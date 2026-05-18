@@ -962,12 +962,3 @@
   font-style: italic;
 }
 .training-hint a { color: var(--primary, #0D5C6B); text-decoration: underline; }
-
-.studytube-platform-blok {
-  background: #E8F4F7;
-  border-left: 3px solid #0D5C6B;
-  padding: 10px 14px;
-  margin: 8px 0;
-  border-radius: 4px;
-  font-size: 13px;
-}

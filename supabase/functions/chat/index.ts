@@ -2651,18 +2651,14 @@ ALGEMEEN:
 - De regio van de medewerker staat vermeld in de persoonlijke gegevens. Houd je STRIKT aan die regio. Gebruik NOOIT WMO-trajecten, procedures of afspraken die gelden voor een andere regio dan de regio van deze medewerker.
 
 STUDYTUBE INTEGRATIE:
-Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN.
-Als een medewerker vraagt naar trainingen, cursussen of leeraanbod, zoekt Wegwijzer automatisch naar relevante trainingen.
+Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN (app.studytube.nl). Dit is het officiële leerplatform waar medewerkers zich aanmelden voor trainingen, cursussen, e-learning en intervisie.
 Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
-Als er een training gevonden is, staat die onderaan je antwoord als suggestie.
-Als er geen training gevonden is bij een expliciete trainingsvraag, zeg dan:
-"Ik heb geen passende training gevonden in de StudyTube bibliotheek van AHMN voor dit onderwerp. Je kunt zelf zoeken via app.studytube.nl"
 
-STUDYTUBE IS HET OFFICIËLE LEERPLATFORM VAN AHMN:
-StudyTube (app.studytube.nl) is het platform waar AHMN-medewerkers zich aanmelden voor alle trainingen, cursussen, e-learning en intervisie.
-Bij vragen over trainingen, cursussen, intervisie, scholing, e-learning, bijscholing of professionele ontwikkeling: verwijs altijd prominent naar StudyTube als eerste stap.
-Zeg: "Via StudyTube (app.studytube.nl) kun je het volledige trainingsaanbod van AHMN bekijken en je aanmelden. Zoek daar op [onderwerp]."
-Niet alleen als kleine hint onderaan — maar als duidelijk onderdeel van het antwoord.
+STUDYTUBE VERMELDING VERBOD IN ANTWOORD:
+Noem StudyTube, app.studytube.nl of trainingsaanbod NOOIT zelf in je antwoord. Het systeem toont automatisch relevante trainingen onderaan elk antwoord als die beschikbaar zijn.
+Jouw taak is alleen het inhoudelijke antwoord geven.
+Verwijs ook NIET naar zoektermen op StudyTube — dat doet het systeem.
+Uitzondering: als een medewerker expliciet vraagt of iets op StudyTube staat, dan mag je zeggen dat het systeem trainingen toont als die beschikbaar zijn.
 
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
@@ -2773,8 +2769,6 @@ ${alleKennisbronnen}`;
 
     // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
-    const ahmnLeerTriggers = ["intervisie", "scholing", "opleiding", "ontwikkeling", "bijscholing", "nascholing", "e-learning", "leerplatform", "studytube", "aanmelden training", "cursus aanmelden", "trainingsaanbod"];
-    const isAhmnLeerVraag = ahmnLeerTriggers.some((t) => vraag.toLowerCase().includes(t));
     try {
       const trainingsTriggers = ["training", "cursus", "studytube", "studie", "leren", "opleiding", "ontwikkelen", "ontwikkel", "verdiepen", "verbeteren in", "beter worden in", "kennis opbouwen over", "e-learning", "e learning", "elearning", "leertraject", "scholing", "bijscholing", "nascholing", "workshop", "module", "leeraanbod", "leerportaal", "bijleren", "cursus volgen", "training volgen", "is er een training", "zijn er trainingen", "trainingsaanbod"];
       const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
@@ -2823,7 +2817,7 @@ ${alleKennisbronnen}`;
     }
 
     return new Response(
-      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen, studytube_platform_verwijzing: isAhmnLeerVraag }),
+      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
