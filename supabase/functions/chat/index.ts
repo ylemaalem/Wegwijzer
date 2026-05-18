@@ -2777,13 +2777,39 @@ ${alleKennisbronnen}`;
       if (!openaiKeyForST) {
         console.warn("[StudyTube] Geen OPENAI_API_KEY — overgeslagen");
       } else {
-        const vraagEmbedding = await generateEmbedding(vraag, openaiKeyForST);
+        let embeddingInput = vraag;
+        const threshold = isExpliciet ? 0.35 : 0.50;
+        const matchCount = isExpliciet ? 3 : 1;
+
+        if (!isExpliciet) {
+          try {
+            const zoektermenRes = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 50,
+                messages: [{ role: "user", content: "Geef maximaal 3 Nederlandse zoektermen (elk 1-2 woorden) die het kernonderwerp van deze vraag beschrijven voor het zoeken naar een training. Alleen de termen, gescheiden door komma, geen uitleg. Vraag: " + vraag }],
+              }),
+            });
+            if (zoektermenRes.ok) {
+              const zoektermenData = await zoektermenRes.json();
+              const zoektermen = zoektermenData.content?.[0]?.text || "";
+              if (zoektermen) {
+                embeddingInput = zoektermen.split(",").map((t: string) => t.trim().toLowerCase()).join(" ");
+                console.log("[StudyTube] Haiku zoektermen:", embeddingInput);
+              }
+            }
+          } catch (e) {
+            console.warn("[StudyTube] Zoektermen extractie mislukt, val terug op vraag:", e);
+          }
+        }
+
+        const vraagEmbedding = await generateEmbedding(embeddingInput, openaiKeyForST);
         if (!vraagEmbedding) {
-          console.warn("[StudyTube] Vraag embedding generatie mislukt voor:", vraag.substring(0, 80));
+          console.warn("[StudyTube] Embedding generatie mislukt voor:", embeddingInput.substring(0, 80));
         } else {
-          console.log("[StudyTube] Vraag embedding gegenereerd, isExpliciet:", isExpliciet);
-          const threshold = isExpliciet ? 0.35 : 0.46;
-          const matchCount = isExpliciet ? 3 : 1;
+          console.log("[StudyTube] Embedding gegenereerd, isExpliciet:", isExpliciet, "input:", embeddingInput.substring(0, 80));
 
           const { data: cursusMatches, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
             query_embedding: JSON.stringify(vraagEmbedding),
@@ -2804,9 +2830,8 @@ ${alleKennisbronnen}`;
               similarity: c.similarity,
               expliciet: isExpliciet,
             }));
-            if (!isExpliciet) {
-              trainingen = trainingen.filter((t) => t.similarity > 0.46);
-              if (trainingen.length > 1) trainingen = [trainingen[0]];
+            if (!isExpliciet && trainingen.length > 1) {
+              trainingen = [trainingen[0]];
             }
             console.log("[StudyTube] Trainingen in response:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
           }
