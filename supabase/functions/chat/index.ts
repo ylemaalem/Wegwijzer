@@ -2767,83 +2767,45 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing (semantisch vectorzoeken) ----
-    let trainingen: Array<{ naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number; expliciet: boolean }> = [];
+    // ---- 10. StudyTube trainingsverwijzing (Haiku selectie uit volledige cursuslijst) ----
+    let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
     try {
-      const trainingsTriggers = ["training", "cursus", "studytube", "e-learning", "elearning", "e learning", "nascholing", "scholing", "is er een training", "zijn er trainingen", "trainingsaanbod", "cursus volgen", "training volgen"];
-      const isExpliciet = trainingsTriggers.some((t) => vraag.toLowerCase().includes(t));
-
-      const openaiKeyForST = Deno.env.get("OPENAI_API_KEY");
-      if (!openaiKeyForST) {
-        console.warn("[StudyTube] Geen OPENAI_API_KEY — overgeslagen");
-      } else {
-        const vraagEmbedding = await generateEmbedding(vraag, openaiKeyForST);
-        if (!vraagEmbedding) {
-          console.warn("[StudyTube] Embedding generatie mislukt voor:", vraag.substring(0, 80));
-        } else if (isExpliciet) {
-          // Expliciete vragen: directe semantic search
-          const { data: cursusMatches, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
-            query_embedding: JSON.stringify(vraagEmbedding),
-            tenant_id_input: profile.tenant_id,
-            match_threshold: 0.35,
-            match_count: 3,
-          });
-          if (stErr) {
-            console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
-          } else if (cursusMatches && cursusMatches.length > 0) {
-            trainingen = cursusMatches.map((c: { naam: string; duur_minuten: number | null; deeplink_url: string | null; similarity: number }) => ({
-              naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, similarity: c.similarity, expliciet: true,
-            }));
-            console.log("[StudyTube] Expliciete matches:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
-          } else {
-            console.log("[StudyTube] Geen expliciete matches boven 0.35");
-          }
-        } else {
-          // Impliciete vragen: Haiku zoektermen → embedding → semantic search
-          try {
-            const zoektermenRes = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-              body: JSON.stringify({
-                model: "claude-haiku-4-5-20251001",
-                max_tokens: 80,
-                messages: [{ role: "user", content: `Geef 3-5 Nederlandse zoektermen die de KERNBEHOEFTE beschrijven van deze vraag, geschikt voor het vinden van een relevante training. Denk vanuit wat iemand wil leren of ontwikkelen. Geef alleen de termen gescheiden door komma, geen uitleg, geen nummering.\n\nVraag: ${vraag}` }],
-              }),
-            });
-            if (!zoektermenRes.ok) {
-              console.warn("[StudyTube] Haiku zoektermen mislukt:", zoektermenRes.status);
-            } else {
-              const zoektermenData = await zoektermenRes.json();
-              const zoektermen = (zoektermenData.content?.[0]?.text || "").trim();
-              console.log("[StudyTube] Haiku zoektermen:", zoektermen);
-              if (zoektermen) {
-                const zoekEmbedding = await generateEmbedding(zoektermen, openaiKeyForST);
-                if (!zoekEmbedding) {
-                  console.warn("[StudyTube] Embedding generatie mislukt voor zoektermen");
-                } else {
-                  const { data: kandidaten, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
-                    query_embedding: JSON.stringify(zoekEmbedding),
-                    tenant_id_input: profile.tenant_id,
-                    match_threshold: 0.46,
-                    match_count: 20,
-                  });
-                  if (stErr) {
-                    console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
-                  } else if (kandidaten && kandidaten.length > 0) {
-                    console.log("[StudyTube] Impliciete kandidaten:", kandidaten.slice(0, 5).map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
-                    for (const c of kandidaten.slice(0, 2)) {
-                      trainingen.push({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, similarity: c.similarity, expliciet: false });
-                    }
-                    console.log("[StudyTube] Impliciete matches:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
-                  } else {
-                    console.log("[StudyTube] Geen impliciete kandidaten boven 0.46");
-                  }
-                }
+      const { data: alleCursussen, error: cursErr } = await supabaseAdmin
+        .from("studytube_cursussen")
+        .select("naam, duur_minuten")
+        .eq("tenant_id", profile.tenant_id);
+      if (cursErr) {
+        console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
+      } else if (alleCursussen && alleCursussen.length > 0) {
+        console.log("[StudyTube] " + alleCursussen.length + " cursussen geladen, Haiku selecteert...");
+        const cursusNamen = alleCursussen.map((c: { naam: string }) => c.naam).join("\n");
+        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 150,
+            messages: [{ role: "user", content: `Een zorgmedewerker stelt de volgende vraag: ${vraag}\n\nHieronder staat een lijst van ${alleCursussen.length} beschikbare trainingen.\nWelke trainingen zijn INHOUDELIJK het meest relevant voor deze vraag?\n\nRegels:\n- Kies maximaal 3 trainingen\n- Kies ALLEEN trainingen die echt inhoudelijk relevant zijn\n- Bij een abstracte titel zoals "Nee is ook een antwoord": denk na over de waarschijnlijke inhoud\n- Als GEEN enkele training relevant is: antwoord met alleen het woord GEEN\n- Antwoord met ALLEEN de exacte cursusnamen, elk op een nieuwe regel\n\nTrainingen:\n${cursusNamen}` }],
+          }),
+        });
+        if (haikuRes.ok) {
+          const haikuData = await haikuRes.json();
+          const gekozen = (haikuData.content?.[0]?.text || "").trim();
+          console.log("[StudyTube] Haiku koos:", gekozen);
+          if (gekozen && gekozen.toUpperCase() !== "GEEN") {
+            const regels = gekozen.split("\n").map((r: string) => r.replace(/^\d+[\.\)]\s*/, "").replace(/^[-•]\s*/, "").trim()).filter((r: string) => r.length > 0);
+            for (const regel of regels) {
+              const match = alleCursussen.find((c: { naam: string }) => regel.toLowerCase() === c.naam.toLowerCase() || regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
+              if (match && !trainingen.some((t) => t.naam === match.naam)) {
+                trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten });
               }
             }
-          } catch (e) {
-            console.warn("[StudyTube] Impliciete matching mislukt:", e);
+            if (trainingen.length > 0) {
+              console.log("[StudyTube] Geselecteerd:", trainingen.map((t) => t.naam).join(", "));
+            }
           }
+        } else {
+          console.warn("[StudyTube] Haiku selectie mislukt:", haikuRes.status);
         }
       }
     } catch (stErr) {
