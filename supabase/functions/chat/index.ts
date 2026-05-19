@@ -2785,7 +2785,7 @@ ${alleKennisbronnen}`;
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
             max_tokens: 150,
-            messages: [{ role: "user", content: `Een zorgmedewerker stelt de volgende vraag: ${vraag}\n\nHieronder staat een lijst van ${alleCursussen.length} beschikbare trainingen.\nWelke trainingen zijn INHOUDELIJK het meest relevant voor deze vraag?\n\nRegels:\n- Kies maximaal 3 trainingen\n- Kies ALLEEN trainingen die echt inhoudelijk relevant zijn\n- Bij een abstracte titel zoals "Nee is ook een antwoord": denk na over de waarschijnlijke inhoud\n- Als GEEN enkele training relevant is: antwoord met alleen het woord GEEN\n- Antwoord met ALLEEN de exacte cursusnamen, elk op een nieuwe regel\n\nTrainingen:\n${cursusNamen}` }],
+            messages: [{ role: "user", content: `Een zorgmedewerker bij AHMN stelt de volgende vraag: ${vraag}\n\nWelke van de onderstaande trainingen zijn DIRECT en INHOUDELIJK relevant voor precies dit onderwerp?\n\nWees STRENG:\n- Kies alleen trainingen die specifiek gaan over het onderwerp van de vraag\n- Algemene trainingen over leiderschap, communicatie of persoonlijke ontwikkeling zijn alleen relevant als de vraag daar SPECIFIEK over gaat\n- Naslag, inleidingen, studiewijzers en handvaten zijn zelden de beste keuze\n- Liever 1 goede match dan 3 matige matches\n- Maximaal 3, maar kies er minder als niet genoeg relevant zijn\n- Als NIETS relevant is: antwoord met alleen GEEN\n\nAntwoord met ALLEEN de exacte cursusnamen, elk op een nieuwe regel.\n\nTrainingen:\n${cursusNamen}` }],
           }),
         });
         if (haikuRes.ok) {
