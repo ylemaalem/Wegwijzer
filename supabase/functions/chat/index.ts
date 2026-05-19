@@ -2818,7 +2818,7 @@ ${alleKennisbronnen}`;
                 body: JSON.stringify({
                   model: "claude-haiku-4-5-20251001",
                   max_tokens: 100,
-                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 3. Als geen enkele relevant is, antwoord dan met: geen\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.\n\nTrainingen:\n${namenLijst}` }],
+                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 3. Als geen enkele relevant is, antwoord dan met: geen\n\nLET OP: Sommige trainingen hebben abstracte of metaforische namen.\nDenk na over wat de training waarschijnlijk inhoudt op basis van de naam.\nBijvoorbeeld: een training genaamd "Nee is ook een antwoord" gaat waarschijnlijk over assertiviteit en grenzen stellen.\nKies op basis van INHOUDELIJKE relevantie, niet op basis van hoe beschrijvend de titel is.\n\nTrainingen:\n${namenLijst}\n\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.` }],
                 }),
               });
               if (haikuSelectRes.ok) {
