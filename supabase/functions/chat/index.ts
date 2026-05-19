@@ -2767,45 +2767,76 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing (Haiku selectie uit volledige cursuslijst) ----
+    // ---- 10. StudyTube trainingsverwijzing (zoektermen + tekstmatch + Haiku selectie) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
     try {
-      const { data: alleCursussen, error: cursErr } = await supabaseAdmin
-        .from("studytube_cursussen")
-        .select("naam, duur_minuten")
-        .eq("tenant_id", profile.tenant_id);
-      if (cursErr) {
-        console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
-      } else if (alleCursussen && alleCursussen.length > 0) {
-        console.log("[StudyTube] " + alleCursussen.length + " cursussen geladen, Haiku selecteert...");
-        const cursusNamen = alleCursussen.map((c: { naam: string }) => c.naam).join("\n");
-        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 150,
-            messages: [{ role: "user", content: `Een zorgmedewerker stelt de volgende vraag: ${vraag}\n\nWelke van de onderstaande trainingen zijn het meest relevant voor deze vraag?\nKies maximaal 3. Als geen enkele relevant is: antwoord met alleen GEEN.\n\nVOORBEELDEN van goede matches:\n- Vraag over nee zeggen of grenzen stellen → Nee is ook een antwoord, Nu ik! (assertiviteit voor beginners)\n- Vraag over agressief gedrag → Omgaan met agressie, Moeilijk Verstaanbaar Gedrag\n- Vraag over rapporteren → Rapporteren - Introductie, Methodisch werken\n- Vraag over medicijnen → Basis medicatiekennis, Medicatieveiligheid\n- Vraag over reiskosten of verlof → GEEN (dit zijn organisatievragen, geen trainingsonderwerpen)\n- Vraag over ziekmelden → GEEN\n- Vraag over wie is mijn teamleider → GEEN\n\nKies gerust 2 of 3 als meerdere trainingen relevant zijn.\nEen training met een abstracte of metaforische naam kan heel relevant zijn.\nBijvoorbeeld: "Nee is ook een antwoord" gaat over assertiviteit en grenzen stellen.\n\nAntwoord met ALLEEN de exacte cursusnamen uit de lijst, elk op een nieuwe regel.\n\nTrainingen:\n${cursusNamen}` }],
-          }),
-        });
-        if (haikuRes.ok) {
-          const haikuData = await haikuRes.json();
-          const gekozen = (haikuData.content?.[0]?.text || "").trim();
-          console.log("[StudyTube] Haiku koos:", gekozen);
-          if (gekozen && gekozen.toUpperCase() !== "GEEN") {
-            const regels = gekozen.split("\n").map((r: string) => r.replace(/^\d+[\.\)]\s*/, "").replace(/^[-•]\s*/, "").trim()).filter((r: string) => r.length > 0);
-            for (const regel of regels) {
-              const match = alleCursussen.find((c: { naam: string }) => regel.toLowerCase() === c.naam.toLowerCase() || regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
-              if (match && !trainingen.some((t) => t.naam === match.naam)) {
-                trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten });
+      // Stap 1: Haiku extraheert zoektermen
+      const ztResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 100,
+          messages: [{ role: "user", content: `Geef 5-8 losse Nederlandse zoektermen die het kernonderwerp van deze vraag beschrijven. Denk vanuit wat iemand wil leren. Geef alleen de termen gescheiden door komma.\n\nVraag: ${vraag}` }],
+        }),
+      });
+      if (!ztResponse.ok) {
+        console.warn("[StudyTube] Haiku zoektermen mislukt:", ztResponse.status);
+      } else {
+        const ztData = await ztResponse.json();
+        const zoektermen = (ztData.content?.[0]?.text || "").split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 1);
+        console.log("[StudyTube] Zoektermen:", zoektermen.join(", "));
+
+        if (zoektermen.length > 0) {
+          // Stap 2: Haal alle cursussen op en filter op zoektermen
+          const { data: alleCursussen, error: cursErr } = await supabaseAdmin
+            .from("studytube_cursussen")
+            .select("naam, duur_minuten")
+            .eq("tenant_id", profile.tenant_id);
+          if (cursErr) {
+            console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
+          } else if (alleCursussen && alleCursussen.length > 0) {
+            const gefilterdeMatches = alleCursussen.filter((c: { naam: string }) =>
+              zoektermen.some((t: string) => c.naam.toLowerCase().includes(t))
+            );
+            console.log("[StudyTube] Tekstmatches:", gefilterdeMatches.length, gefilterdeMatches.map((c: { naam: string }) => c.naam));
+
+            if (gefilterdeMatches.length > 0 && gefilterdeMatches.length <= 3) {
+              // Weinig matches: toon direct
+              trainingen = gefilterdeMatches.map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
+              console.log("[StudyTube] Direct getoond:", trainingen.map((t) => t.naam).join(", "));
+            } else if (gefilterdeMatches.length > 3) {
+              // Stap 3: Haiku selecteert uit kleine lijst
+              const selectieRes = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+                body: JSON.stringify({
+                  model: "claude-haiku-4-5-20251001",
+                  max_tokens: 150,
+                  messages: [{ role: "user", content: `Een zorgmedewerker stelt deze vraag: ${vraag}\n\nWelke van deze trainingen zijn het meest relevant? Kies maximaal 3.\nAls geen enkele relevant is: antwoord met GEEN.\nAntwoord met ALLEEN de exacte cursusnamen, elk op een nieuwe regel.\n\nTrainingen:\n${gefilterdeMatches.map((c: { naam: string }) => c.naam).join("\n")}` }],
+                }),
+              });
+              if (selectieRes.ok) {
+                const selectieData = await selectieRes.json();
+                const gekozen = (selectieData.content?.[0]?.text || "").trim();
+                console.log("[StudyTube] Haiku koos:", gekozen);
+                if (gekozen && gekozen.toUpperCase() !== "GEEN") {
+                  const regels = gekozen.split("\n").map((r: string) => r.replace(/^\d+[\.\)]\s*/, "").replace(/^[-•]\s*/, "").trim()).filter((r: string) => r.length > 0);
+                  for (const regel of regels) {
+                    const match = gefilterdeMatches.find((c: { naam: string }) => regel.toLowerCase() === c.naam.toLowerCase() || regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
+                    if (match && !trainingen.some((t) => t.naam === match.naam)) {
+                      trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten });
+                    }
+                  }
+                  if (trainingen.length > 0) {
+                    console.log("[StudyTube] Geselecteerd:", trainingen.map((t) => t.naam).join(", "));
+                  }
+                }
+              } else {
+                console.warn("[StudyTube] Haiku selectie mislukt:", selectieRes.status);
               }
             }
-            if (trainingen.length > 0) {
-              console.log("[StudyTube] Geselecteerd:", trainingen.map((t) => t.naam).join(", "));
-            }
           }
-        } else {
-          console.warn("[StudyTube] Haiku selectie mislukt:", haikuRes.status);
         }
       }
     } catch (stErr) {
