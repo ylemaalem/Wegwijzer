@@ -2797,7 +2797,10 @@ ${alleKennisbronnen}`;
             console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
           } else if (alleCursussen && alleCursussen.length > 0) {
             const gefilterdeMatches = alleCursussen.filter((c: { naam: string }) =>
-              zoektermen.some((t: string) => c.naam.toLowerCase().includes(t))
+              zoektermen.some((t: string) => {
+                const woorden = t.split(" ").filter((w: string) => w.length > 2);
+                return woorden.length > 0 && woorden.some((w: string) => c.naam.toLowerCase().includes(w));
+              })
             );
             console.log("[StudyTube] Tekstmatches:", gefilterdeMatches.length, gefilterdeMatches.map((c: { naam: string }) => c.naam));
 
