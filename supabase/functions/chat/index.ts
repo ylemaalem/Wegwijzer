@@ -2799,47 +2799,25 @@ ${alleKennisbronnen}`;
             console.log("[StudyTube] Geen expliciete matches boven 0.35");
           }
         } else {
-          // Impliciete vragen: semantic pre-filter + Haiku selectie
+          // Impliciete vragen: semantic search top 20, filter op threshold 0.45, max 2
           const { data: kandidaten, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
             query_embedding: JSON.stringify(vraagEmbedding),
             tenant_id_input: profile.tenant_id,
             match_threshold: 0.30,
-            match_count: 10,
+            match_count: 20,
           });
           if (stErr) {
             console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
           } else if (kandidaten && kandidaten.length > 0) {
-            const namenLijst = kandidaten.map((c: { naam: string }, i: number) => `${i + 1}. ${c.naam}`).join("\n");
             console.log("[StudyTube] Pre-filter kandidaten:", kandidaten.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
-            try {
-              const haikuSelectRes = await fetch("https://api.anthropic.com/v1/messages", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
-                body: JSON.stringify({
-                  model: "claude-haiku-4-5-20251001",
-                  max_tokens: 100,
-                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 3. Als geen enkele relevant is, antwoord dan met: geen\n\nLET OP: Sommige trainingen hebben abstracte of metaforische namen.\nDenk na over wat de training waarschijnlijk inhoudt op basis van de naam.\nBijvoorbeeld: een training genaamd "Nee is ook een antwoord" gaat waarschijnlijk over assertiviteit en grenzen stellen.\nKies op basis van INHOUDELIJKE relevantie, niet op basis van hoe beschrijvend de titel is.\n\nTrainingen:\n${namenLijst}\n\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.` }],
-                }),
-              });
-              if (haikuSelectRes.ok) {
-                const haikuData = await haikuSelectRes.json();
-                const gekozenTekst = (haikuData.content?.[0]?.text || "").trim();
-                console.log("[StudyTube] Haiku koos:", gekozenTekst);
-                if (gekozenTekst && gekozenTekst.toLowerCase() !== "geen") {
-                  const regels = gekozenTekst.split("\n").map((r: string) => r.replace(/^\d+\.\s*/, "").trim()).filter((r: string) => r.length > 0);
-                  for (const regel of regels) {
-                    const match = kandidaten.find((c: { naam: string }) => regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
-                    if (match && !trainingen.some((t) => t.naam === match.naam)) {
-                      trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten, deeplink_url: match.deeplink_url, similarity: match.similarity, expliciet: false });
-                    }
-                  }
-                  if (trainingen.length > 0) {
-                    console.log("[StudyTube] Impliciete matches via Haiku:", trainingen.map((t) => t.naam).join(", "));
-                  }
-                }
-              }
-            } catch (e) {
-              console.warn("[StudyTube] Haiku selectie mislukt:", e);
+            const relevante = kandidaten.filter((c: { similarity: number }) => c.similarity >= 0.45);
+            for (const c of relevante.slice(0, 2)) {
+              trainingen.push({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, similarity: c.similarity, expliciet: false });
+            }
+            if (trainingen.length > 0) {
+              console.log("[StudyTube] Impliciete matches (>=0.45):", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
+            } else {
+              console.log("[StudyTube] Geen impliciete kandidaten boven 0.45");
             }
           } else {
             console.log("[StudyTube] Geen impliciete kandidaten boven 0.30");
