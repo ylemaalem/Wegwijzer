@@ -2799,28 +2799,50 @@ ${alleKennisbronnen}`;
             console.log("[StudyTube] Geen expliciete matches boven 0.35");
           }
         } else {
-          // Impliciete vragen: semantic search top 20, filter op threshold 0.45, max 2
-          const { data: kandidaten, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
-            query_embedding: JSON.stringify(vraagEmbedding),
-            tenant_id_input: profile.tenant_id,
-            match_threshold: 0.30,
-            match_count: 20,
-          });
-          if (stErr) {
-            console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
-          } else if (kandidaten && kandidaten.length > 0) {
-            console.log("[StudyTube] Pre-filter kandidaten:", kandidaten.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
-            const relevante = kandidaten.filter((c: { similarity: number }) => c.similarity >= 0.45);
-            for (const c of relevante.slice(0, 2)) {
-              trainingen.push({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, similarity: c.similarity, expliciet: false });
-            }
-            if (trainingen.length > 0) {
-              console.log("[StudyTube] Impliciete matches (>=0.45):", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
+          // Impliciete vragen: Haiku zoektermen → embedding → semantic search
+          try {
+            const zoektermenRes = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 80,
+                messages: [{ role: "user", content: `Geef 3-5 Nederlandse zoektermen die de KERNBEHOEFTE beschrijven van deze vraag, geschikt voor het vinden van een relevante training. Denk vanuit wat iemand wil leren of ontwikkelen. Geef alleen de termen gescheiden door komma, geen uitleg, geen nummering.\n\nVraag: ${vraag}` }],
+              }),
+            });
+            if (!zoektermenRes.ok) {
+              console.warn("[StudyTube] Haiku zoektermen mislukt:", zoektermenRes.status);
             } else {
-              console.log("[StudyTube] Geen impliciete kandidaten boven 0.45");
+              const zoektermenData = await zoektermenRes.json();
+              const zoektermen = (zoektermenData.content?.[0]?.text || "").trim();
+              console.log("[StudyTube] Haiku zoektermen:", zoektermen);
+              if (zoektermen) {
+                const zoekEmbedding = await generateEmbedding(zoektermen, openaiKeyForST);
+                if (!zoekEmbedding) {
+                  console.warn("[StudyTube] Embedding generatie mislukt voor zoektermen");
+                } else {
+                  const { data: kandidaten, error: stErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+                    query_embedding: JSON.stringify(zoekEmbedding),
+                    tenant_id_input: profile.tenant_id,
+                    match_threshold: 0.46,
+                    match_count: 20,
+                  });
+                  if (stErr) {
+                    console.error("[StudyTube] RPC fout:", stErr.message, stErr.code);
+                  } else if (kandidaten && kandidaten.length > 0) {
+                    console.log("[StudyTube] Impliciete kandidaten:", kandidaten.slice(0, 5).map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
+                    for (const c of kandidaten.slice(0, 2)) {
+                      trainingen.push({ naam: c.naam, duur_minuten: c.duur_minuten, deeplink_url: c.deeplink_url, similarity: c.similarity, expliciet: false });
+                    }
+                    console.log("[StudyTube] Impliciete matches:", trainingen.map((t) => `${t.naam} (${t.similarity.toFixed(3)})`).join(", "));
+                  } else {
+                    console.log("[StudyTube] Geen impliciete kandidaten boven 0.46");
+                  }
+                }
+              }
             }
-          } else {
-            console.log("[StudyTube] Geen impliciete kandidaten boven 0.30");
+          } catch (e) {
+            console.warn("[StudyTube] Impliciete matching mislukt:", e);
           }
         }
       }
