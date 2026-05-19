@@ -845,31 +845,34 @@
 
     // StudyTube trainingen
     if (trainingen && trainingen.length > 0) {
-      var isExpliciet = trainingen[0].expliciet;
       var trainingDiv = document.createElement('div');
-      if (isExpliciet) {
-        trainingDiv.className = 'trainingen-blok';
-        var trainingLabel = document.createElement('p');
-        trainingLabel.innerHTML = '<strong>Beschikbare trainingen:</strong>';
-        trainingDiv.appendChild(trainingLabel);
-        var trainingUl = document.createElement('ul');
-        trainingen.forEach(function (t) {
-          var li = document.createElement('li');
-          var duur = t.duur_minuten ? ' (' + t.duur_minuten + ' min)' : '';
-          li.textContent = '📚 ' + t.naam + duur + ' — beschikbaar via StudyTube';
-          trainingUl.appendChild(li);
-        });
-        trainingDiv.appendChild(trainingUl);
-        var zoekTip = document.createElement('small');
-        zoekTip.style.color = '#666';
-        zoekTip.textContent = 'Open StudyTube via je browser en zoek op de naam.';
-        trainingDiv.appendChild(zoekTip);
-      } else {
-        var t0 = trainingen[0];
-        var duur0 = t0.duur_minuten ? ' (' + t0.duur_minuten + ' min)' : '';
-        trainingDiv.className = 'training-hint';
-        trainingDiv.innerHTML = '<small>💡 Wist je dat? Er is hierover ook de training \'' + escapeHtml(t0.naam) + '\'' + escapeHtml(duur0) + ' beschikbaar via StudyTube.</small><br><small style="color:#666">Open StudyTube via je browser en zoek op de naam.</small>';
-      }
+      trainingDiv.className = 'training-blok';
+      var header = document.createElement('div');
+      header.className = 'training-header';
+      header.textContent = '🎓 Relevante trainingen via StudyTube';
+      trainingDiv.appendChild(header);
+      var items = document.createElement('div');
+      items.className = 'training-items';
+      trainingen.forEach(function (t) {
+        var item = document.createElement('div');
+        item.className = 'training-item';
+        var naam = document.createElement('span');
+        naam.className = 'training-naam';
+        naam.textContent = t.naam;
+        item.appendChild(naam);
+        if (t.duur_minuten) {
+          var duur = document.createElement('span');
+          duur.className = 'training-duur';
+          duur.textContent = t.duur_minuten + ' min';
+          item.appendChild(duur);
+        }
+        items.appendChild(item);
+      });
+      trainingDiv.appendChild(items);
+      var footer = document.createElement('div');
+      footer.className = 'training-footer';
+      footer.textContent = 'Open StudyTube via je browser en zoek op de naam.';
+      trainingDiv.appendChild(footer);
       wrap.appendChild(trainingDiv);
     }
 

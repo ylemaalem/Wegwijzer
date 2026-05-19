@@ -2818,7 +2818,7 @@ ${alleKennisbronnen}`;
                 body: JSON.stringify({
                   model: "claude-haiku-4-5-20251001",
                   max_tokens: 100,
-                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 2. Als geen enkele relevant is, antwoord dan met: geen\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.\n\nTrainingen:\n${namenLijst}` }],
+                  messages: [{ role: "user", content: `Een zorgmedewerker stelde deze vraag: ${vraag}\n\nWelke van onderstaande trainingen zijn het MEEST relevant voor deze vraag?\nKies er maximaal 3. Als geen enkele relevant is, antwoord dan met: geen\nGeef alleen de exacte namen, gescheiden door een nieuwe regel.\n\nTrainingen:\n${namenLijst}` }],
                 }),
               });
               if (haikuSelectRes.ok) {

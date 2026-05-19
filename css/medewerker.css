@@ -943,22 +943,43 @@
 }
 
 /* ---- StudyTube trainingen ---- */
-.trainingen-blok {
+.training-blok {
   margin-top: 12px;
-  padding: 10px 12px;
-  background: #f0f5f5;
-  border-radius: 6px;
-  border-left: 3px solid var(--primary, #0D5C6B);
+  background: #E8F4F7;
+  border-left: 4px solid #0D5C6B;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
 }
-.trainingen-blok p { margin: 0 0 6px; font-size: 0.85rem; }
-.trainingen-blok ul { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.trainingen-blok li { font-size: 0.82rem; }
-.trainingen-blok a { color: var(--primary, #0D5C6B); text-decoration: underline; }
-
-.training-hint {
+.training-header {
+  font-weight: 700;
+  color: #0D5C6B;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.training-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #d0e8ed;
+}
+.training-item:last-child {
+  border-bottom: none;
+}
+.training-naam {
+  font-weight: 600;
+  color: #1A2B35;
+}
+.training-duur {
+  color: #64748B;
+  font-size: 12px;
+  white-space: nowrap;
+  margin-left: 12px;
+}
+.training-footer {
   margin-top: 8px;
-  color: #666;
-  font-size: 0.78rem;
+  font-size: 11px;
+  color: #64748B;
   font-style: italic;
 }
-.training-hint a { color: var(--primary, #0D5C6B); text-decoration: underline; }
