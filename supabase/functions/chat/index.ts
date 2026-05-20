@@ -2767,62 +2767,71 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing (zoektermen + tekstmatch + score) ----
+    // ---- 10. StudyTube trainingsverwijzing ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
     try {
-      // Stap 1: Haiku extraheert zoektermen
-      const ztResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 100,
-          messages: [{ role: "user", content: `Geef 5-8 zoektermen voor het vinden van een relevante training.\nGeef EERST de letterlijke kernwoorden uit de vraag (bijv nee, agressie, medicatie).\nGeef DAARNA abstracte begrippen die hetzelfde onderwerp beschrijven.\nElke term maximaal 1 woord, gescheiden door komma, geen uitleg.\n\nVraag: ${vraag}` }],
-        }),
-      });
-      if (!ztResponse.ok) {
-        console.warn("[StudyTube] Haiku zoektermen mislukt:", ztResponse.status);
-      } else {
-        const ztData = await ztResponse.json();
-        const zoektermen = (ztData.content?.[0]?.text || "").split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 1);
-        console.log("[StudyTube] Zoektermen:", zoektermen.join(", "));
+      // Stap 1: Woorden uit de vraag extraheren
+      const stopwoorden = new Set(["ik","je","jij","hij","zij","wij","ze","we","het","de","een","er","is","was","zijn","ben","wordt","werd","kan","kon","wil","wilt","zou","zal","heb","hebt","heeft","had","doe","doet","mag","moet","ga","gaat","kom","komt","in","op","aan","van","voor","met","naar","over","uit","bij","door","om","tot","na","te","per","als","dan","maar","of","en","want","dus","toch","nog","al","ook","wel","niet","geen","meer","veel","heel","erg","wat","wie","waar","hoe","wanneer","waarom","welk","welke","dit","dat","deze","die","zo","hier","daar","nu","toen","me","mij","mijn"]);
+      const generiekeWoorden = new Set(["ontwikkelen","leren","verbeteren","werken","worden","maken","gaan","komen","doen","krijgen","willen","kunnen","moeten","volgen","zoeken","graag","beter","goed","gaat","iets","even","beetje","best","verder","meer"]);
+      const vraagWoorden = vraag.toLowerCase().replace(/[^a-zà-ÿ\s]/g, "").split(/\s+/).filter((w: string) => w.length > 2 && !stopwoorden.has(w) && !generiekeWoorden.has(w));
+      console.log("[StudyTube] Vraagwoorden:", vraagWoorden.join(", "));
 
-        if (zoektermen.length > 0) {
-          // Stap 2: Haal alle cursussen op en filter op zoektermen
-          const { data: alleCursussen, error: cursErr } = await supabaseAdmin
-            .from("studytube_cursussen")
-            .select("naam, duur_minuten")
-            .eq("tenant_id", profile.tenant_id);
-          if (cursErr) {
-            console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
-          } else if (alleCursussen && alleCursussen.length > 0) {
-            const subModuleIndicators = ["- Inleiding", "- Naslag", "- Handvat", "- Toets", "- Powershot", "- Booster", "- Casus", "- Reflectieopdracht", "- Reflectie", "- Praktijkopdracht", "- Studiewijzer", "- Trainershandleiding", "- Teamopdracht", "- Casuistiek", "(Optioneel)"];
-            const gescoord = alleCursussen
-              .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)))
-              .map((c: { naam: string; duur_minuten: number | null }) => {
-                const score = zoektermen.filter((t: string) => {
-                  const woorden = t.split(" ").filter((w: string) => w.length > 2);
-                  return woorden.length > 0 && woorden.some((w: string) => {
-                    const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
-                    return regex.test(c.naam);
-                  });
-                }).length;
-                return { naam: c.naam, duur_minuten: c.duur_minuten, score, hasDash: c.naam.includes(" - ") };
-              }).filter((c: { score: number }) => c.score > 0);
+      // Stap 2: Haiku voegt 3 vakinhoudelijke termen toe
+      let haikuTermen: string[] = [];
+      try {
+        const ztResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 50,
+            messages: [{ role: "user", content: `Geef PRECIES 3 specifieke Nederlandse zoektermen voor deze zorgvraag. Alleen vakinhoudelijke kernwoorden. VERBODEN woorden: communicatie, ontwikkeling, leiderschap, samenwerking, professioneel, persoonlijk, vaardigheden, begeleiding, ondersteuning, gesprek. Elk woord los, gescheiden door komma, geen uitleg.\n\nVraag: ${vraag}` }],
+          }),
+        });
+        if (ztResp.ok) {
+          const ztData = await ztResp.json();
+          haikuTermen = (ztData.content?.[0]?.text || "").split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2 && !generiekeWoorden.has(t));
+        }
+      } catch (e) { console.log("[StudyTube] Haiku fout:", e); }
+      console.log("[StudyTube] Haiku termen:", haikuTermen.join(", "));
 
-            gescoord.sort((a: { score: number; naam: string; hasDash: boolean }, b: { score: number; naam: string; hasDash: boolean }) => {
-              if (b.score !== a.score) return b.score - a.score;
-              if (a.hasDash !== b.hasDash) return a.hasDash ? 1 : -1;
-              return a.naam.length - b.naam.length;
-            });
+      // Stap 3: Combineer vraagwoorden + Haiku termen (dedupliceer)
+      const alleZoektermen = [...new Set([...vraagWoorden, ...haikuTermen])];
+      console.log("[StudyTube] Alle zoektermen:", alleZoektermen.join(", "));
 
-            console.log("[StudyTube] Matches:", gescoord.slice(0, 5).map((c: { naam: string; score: number }) => `${c.naam} (${c.score})`).join(", "));
+      // Stap 4: Haal alle cursussen op
+      const { data: alleCursussen, error: cursErr } = await supabaseAdmin
+        .from("studytube_cursussen")
+        .select("naam, duur_minuten")
+        .eq("tenant_id", profile.tenant_id);
+      if (cursErr) {
+        console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
+      } else if (alleCursussen && alleCursussen.length > 0 && alleZoektermen.length > 0) {
+        // Stap 5+6: Word-boundary matching + sub-module filter
+        const subModuleIndicators = ["- Inleiding","- Naslag","- Handvat","- Toets","- Powershot","- Booster","- Casus","- Reflectieopdracht","- Reflectie","- Praktijkopdracht","- Studiewijzer","- Trainershandleiding","- Teamopdracht","- Casuistiek","- Casuïstiek","(Optioneel)","- Introductie (Optioneel)","- Ervaringsverhalen","- Handvat(online)","- Game","- Zelfscan","- Toolkit","- Videocasus","- Documentaireserie","- Intervisie","- Chatbot","- Kwaliteit","- Organisatiehandleiding","- Instructie","- Protocol","- Richtlijnen","- PowerPoint","- Jouw"];
+        const wordMatch = (w: string, naam: string): boolean => {
+          try {
+            const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+            return regex.test(naam);
+          } catch { return false; }
+        };
+        const gescoord = alleCursussen
+          .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)))
+          .map((c: { naam: string; duur_minuten: number | null }) => {
+            const score = alleZoektermen.filter((t: string) => {
+              const woorden = t.split(" ").filter((w: string) => w.length > 2);
+              return woorden.length > 0 && woorden.some((w: string) => wordMatch(w, c.naam));
+            }).length;
+            const dashes = (c.naam.match(/-/g) || []).length;
+            return { naam: c.naam, duur_minuten: c.duur_minuten, score, dashes };
+          })
+          .filter((c: { score: number }) => c.score > 0)
+          .sort((a: { score: number; dashes: number; naam: string }, b: { score: number; dashes: number; naam: string }) => b.score - a.score || a.dashes - b.dashes || a.naam.length - b.naam.length);
 
-            trainingen = gescoord.slice(0, 3).map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
-            if (trainingen.length > 0) {
-              console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
-            }
-          }
+        console.log("[StudyTube] Matches:", gescoord.slice(0, 5).map((c: { naam: string; score: number }) => `${c.naam} (${c.score})`).join(", "));
+        trainingen = gescoord.slice(0, 3).map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
+        if (trainingen.length > 0) {
+          console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
         }
       }
     } catch (stErr) {
