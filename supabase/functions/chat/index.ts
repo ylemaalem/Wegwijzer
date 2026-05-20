@@ -2777,7 +2777,7 @@ ${alleKennisbronnen}`;
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 100,
-          messages: [{ role: "user", content: `Geef 5-8 losse Nederlandse zoektermen die het kernonderwerp van deze vraag beschrijven. Denk vanuit wat iemand wil leren. Geef alleen de termen gescheiden door komma.\n\nVraag: ${vraag}` }],
+          messages: [{ role: "user", content: `Geef 5-8 zoektermen voor het vinden van een relevante training.\nGeef EERST de letterlijke kernwoorden uit de vraag (bijv nee, agressie, medicatie).\nGeef DAARNA abstracte begrippen die hetzelfde onderwerp beschrijven.\nElke term maximaal 1 woord, gescheiden door komma, geen uitleg.\n\nVraag: ${vraag}` }],
         }),
       });
       if (!ztResponse.ok) {
@@ -2796,16 +2796,23 @@ ${alleKennisbronnen}`;
           if (cursErr) {
             console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
           } else if (alleCursussen && alleCursussen.length > 0) {
-            const gescoord = alleCursussen.map((c: { naam: string; duur_minuten: number | null }) => {
-              const score = zoektermen.filter((t: string) => {
-                const woorden = t.split(" ").filter((w: string) => w.length > 2);
-                return woorden.length > 0 && woorden.some((w: string) => c.naam.toLowerCase().includes(w));
-              }).length;
-              return { naam: c.naam, duur_minuten: c.duur_minuten, score };
-            }).filter((c: { score: number }) => c.score > 0);
+            const subModuleIndicators = ["- Inleiding", "- Naslag", "- Handvat", "- Toets", "- Powershot", "- Booster", "- Casus", "- Reflectieopdracht", "- Reflectie", "- Praktijkopdracht", "- Studiewijzer", "- Trainershandleiding", "- Teamopdracht", "- Casuistiek", "(Optioneel)"];
+            const gescoord = alleCursussen
+              .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)))
+              .map((c: { naam: string; duur_minuten: number | null }) => {
+                const score = zoektermen.filter((t: string) => {
+                  const woorden = t.split(" ").filter((w: string) => w.length > 2);
+                  return woorden.length > 0 && woorden.some((w: string) => {
+                    const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+                    return regex.test(c.naam);
+                  });
+                }).length;
+                return { naam: c.naam, duur_minuten: c.duur_minuten, score, hasDash: c.naam.includes(" - ") };
+              }).filter((c: { score: number }) => c.score > 0);
 
-            gescoord.sort((a: { score: number; naam: string }, b: { score: number; naam: string }) => {
+            gescoord.sort((a: { score: number; naam: string; hasDash: boolean }, b: { score: number; naam: string; hasDash: boolean }) => {
               if (b.score !== a.score) return b.score - a.score;
+              if (a.hasDash !== b.hasDash) return a.hasDash ? 1 : -1;
               return a.naam.length - b.naam.length;
             });
 
