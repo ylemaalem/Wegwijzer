@@ -2767,7 +2767,7 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing (zoektermen + tekstmatch + Haiku selectie) ----
+    // ---- 10. StudyTube trainingsverwijzing (zoektermen + tekstmatch + score) ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
     try {
       // Stap 1: Haiku extraheert zoektermen
@@ -2796,48 +2796,24 @@ ${alleKennisbronnen}`;
           if (cursErr) {
             console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
           } else if (alleCursussen && alleCursussen.length > 0) {
-            const gefilterdeMatches = alleCursussen.filter((c: { naam: string }) =>
-              zoektermen.some((t: string) => {
+            const gescoord = alleCursussen.map((c: { naam: string; duur_minuten: number | null }) => {
+              const score = zoektermen.filter((t: string) => {
                 const woorden = t.split(" ").filter((w: string) => w.length > 2);
                 return woorden.length > 0 && woorden.some((w: string) => c.naam.toLowerCase().includes(w));
-              })
-            );
-            console.log("[StudyTube] Tekstmatches:", gefilterdeMatches.length, gefilterdeMatches.map((c: { naam: string }) => c.naam));
+              }).length;
+              return { naam: c.naam, duur_minuten: c.duur_minuten, score };
+            }).filter((c: { score: number }) => c.score > 0);
 
-            if (gefilterdeMatches.length > 0 && gefilterdeMatches.length <= 3) {
-              // Weinig matches: toon direct
-              trainingen = gefilterdeMatches.map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
-              console.log("[StudyTube] Direct getoond:", trainingen.map((t) => t.naam).join(", "));
-            } else if (gefilterdeMatches.length > 3) {
-              // Stap 3: Haiku selecteert uit kleine lijst
-              const selectieRes = await fetch("https://api.anthropic.com/v1/messages", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-                body: JSON.stringify({
-                  model: "claude-haiku-4-5-20251001",
-                  max_tokens: 150,
-                  messages: [{ role: "user", content: `Een zorgmedewerker stelt deze vraag: ${vraag}\n\nWelke van deze trainingen zijn het meest relevant? Kies maximaal 3.\nAls geen enkele relevant is: antwoord met GEEN.\nAntwoord met ALLEEN de exacte cursusnamen, elk op een nieuwe regel.\n\nTrainingen:\n${gefilterdeMatches.map((c: { naam: string }) => c.naam).join("\n")}` }],
-                }),
-              });
-              if (selectieRes.ok) {
-                const selectieData = await selectieRes.json();
-                const gekozen = (selectieData.content?.[0]?.text || "").trim();
-                console.log("[StudyTube] Haiku koos:", gekozen);
-                if (gekozen && gekozen.toUpperCase() !== "GEEN") {
-                  const regels = gekozen.split("\n").map((r: string) => r.replace(/^\d+[\.\)]\s*/, "").replace(/^[-•]\s*/, "").trim()).filter((r: string) => r.length > 0);
-                  for (const regel of regels) {
-                    const match = gefilterdeMatches.find((c: { naam: string }) => regel.toLowerCase() === c.naam.toLowerCase() || regel.toLowerCase().includes(c.naam.toLowerCase()) || c.naam.toLowerCase().includes(regel.toLowerCase()));
-                    if (match && !trainingen.some((t) => t.naam === match.naam)) {
-                      trainingen.push({ naam: match.naam, duur_minuten: match.duur_minuten });
-                    }
-                  }
-                  if (trainingen.length > 0) {
-                    console.log("[StudyTube] Geselecteerd:", trainingen.map((t) => t.naam).join(", "));
-                  }
-                }
-              } else {
-                console.warn("[StudyTube] Haiku selectie mislukt:", selectieRes.status);
-              }
+            gescoord.sort((a: { score: number; naam: string }, b: { score: number; naam: string }) => {
+              if (b.score !== a.score) return b.score - a.score;
+              return a.naam.length - b.naam.length;
+            });
+
+            console.log("[StudyTube] Matches:", gescoord.slice(0, 5).map((c: { naam: string; score: number }) => `${c.naam} (${c.score})`).join(", "));
+
+            trainingen = gescoord.slice(0, 3).map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
+            if (trainingen.length > 0) {
+              console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
             }
           }
         }
