@@ -2772,7 +2772,7 @@ ${alleKennisbronnen}`;
     try {
       // Stap 1: Woorden uit de vraag extraheren
       const stopwoorden = new Set(["ik","je","jij","hij","zij","wij","ze","we","het","de","een","er","is","was","zijn","ben","wordt","werd","kan","kon","wil","wilt","zou","zal","heb","hebt","heeft","had","doe","doet","mag","moet","ga","gaat","kom","komt","in","op","aan","van","voor","met","naar","over","uit","bij","door","om","tot","na","te","per","als","dan","maar","of","en","want","dus","toch","nog","al","ook","wel","niet","geen","meer","veel","heel","erg","wat","wie","waar","hoe","wanneer","waarom","welk","welke","dit","dat","deze","die","zo","hier","daar","nu","toen","me","mij","mijn"]);
-      const generiekeWoorden = new Set(["ontwikkelen","leren","verbeteren","werken","worden","maken","gaan","komen","doen","krijgen","willen","kunnen","moeten","volgen","zoeken","graag","beter","goed","gaat","iets","even","beetje","best","verder","meer"]);
+      const generiekeWoorden = new Set(["ontwikkelen","leren","verbeteren","werken","worden","maken","gaan","komen","doen","krijgen","willen","kunnen","moeten","volgen","zoeken","graag","beter","goed","gaat","iets","even","beetje","best","verder","meer","client","cliënt","clienten","cliënten","medewerker","medewerkers","team","organisatie","collega","begeleider","begeleiding","zorg","hulp","vraag","situatie","probleem"]);
       const vraagWoorden = vraag.toLowerCase().replace(/[^a-zà-ÿ\s]/g, "").split(/\s+/).filter((w: string) => w.length > 2 && !stopwoorden.has(w) && !generiekeWoorden.has(w));
       console.log("[StudyTube] Vraagwoorden:", vraagWoorden.join(", "));
 
@@ -2808,7 +2808,7 @@ ${alleKennisbronnen}`;
         console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
       } else if (alleCursussen && alleCursussen.length > 0 && alleZoektermen.length > 0) {
         // Stap 5+6: Word-boundary matching + sub-module filter
-        const subModuleIndicators = ["- Inleiding","- Naslag","- Handvat","- Toets","- Powershot","- Booster","- Casus","- Reflectieopdracht","- Reflectie","- Praktijkopdracht","- Studiewijzer","- Trainershandleiding","- Teamopdracht","- Casuistiek","- Casuïstiek","(Optioneel)","- Introductie (Optioneel)","- Ervaringsverhalen","- Handvat(online)","- Game","- Zelfscan","- Toolkit","- Videocasus","- Documentaireserie","- Intervisie","- Chatbot","- Kwaliteit","- Organisatiehandleiding","- Instructie","- Protocol","- Richtlijnen","- PowerPoint","- Jouw"];
+        const subModuleIndicators = ["- Inleiding","- Naslag","- Handvat","- Toets","- Powershot","- Booster","- Casus","- Reflectieopdracht","- Reflectie","- Reflecteren","- Praktijkopdracht","- Studiewijzer","- Trainershandleiding","- Teamopdracht","- Casuistiek","- Casuïstiek","(Optioneel)","- Introductie (Optioneel)","- Ervaringsverhalen","- Handvat(online)","- Game","- Zelfscan","- Toolkit","- Videocasus","- Documentaireserie","- Intervisie","- Chatbot","- Kwaliteit","- Organisatiehandleiding","- Instructie","- Protocol","- Richtlijnen","- PowerPoint","- Jouw","- Samen onderzoeken","- Wat gebeurt er","- Normen en waarden","- Jouw medicatiebeleid","- De Meldcode in jouw","- Mijn"];
         const wordMatch = (w: string, naam: string): boolean => {
           try {
             const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
@@ -2816,7 +2816,7 @@ ${alleKennisbronnen}`;
           } catch { return false; }
         };
         const gescoord = alleCursussen
-          .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)))
+          .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)) && (c.naam.match(/-/g) || []).length < 2)
           .map((c: { naam: string; duur_minuten: number | null }) => {
             const score = alleZoektermen.filter((t: string) => {
               const woorden = t.split(" ").filter((w: string) => w.length > 2);
