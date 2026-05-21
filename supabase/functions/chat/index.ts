@@ -2770,6 +2770,29 @@ ${alleKennisbronnen}`;
     // ---- 10. StudyTube trainingsverwijzing ----
     let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
     try {
+      // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
+      let trainingRelevant = false;
+      try {
+        const relRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 5,
+            messages: [{ role: "user", content: `Is deze vraag een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij: vakinhoudelijke thema's, persoonlijke ontwikkeling, zorginhoudelijke kennis, professionele vaardigheden.\nTrainingen zijn NIET zinvol bij: procesvragen (hoe registreer ik X), systeemvragen (hoe log ik in, waar vind ik X), eenwoordvragen, administratieve vragen, pauze/verlof/rooster vragen.\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
+          }),
+        });
+        if (relRes.ok) {
+          const relData = await relRes.json();
+          const antwoord = (relData.content?.[0]?.text || "").trim().toUpperCase();
+          trainingRelevant = antwoord.startsWith("JA");
+          console.log("[StudyTube] Relevantie-check:", antwoord);
+        }
+      } catch (e) { console.log("[StudyTube] Relevantie-check fout:", e); }
+
+      if (!trainingRelevant) {
+        console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
+      } else {
       // Stap 1: Woorden uit de vraag extraheren
       const stopwoorden = new Set(["ik","je","jij","hij","zij","wij","ze","we","het","de","een","er","is","was","zijn","ben","wordt","werd","kan","kon","wil","wilt","zou","zal","heb","hebt","heeft","had","doe","doet","mag","moet","ga","gaat","kom","komt","in","op","aan","van","voor","met","naar","over","uit","bij","door","om","tot","na","te","per","als","dan","maar","of","en","want","dus","toch","nog","al","ook","wel","niet","geen","meer","veel","heel","erg","wat","wie","waar","hoe","wanneer","waarom","welk","welke","dit","dat","deze","die","zo","hier","daar","nu","toen","me","mij","mijn"]);
       const generiekeWoorden = new Set(["ontwikkelen","leren","verbeteren","werken","worden","maken","gaan","komen","doen","krijgen","willen","kunnen","moeten","volgen","zoeken","graag","beter","goed","gaat","iets","even","beetje","best","verder","meer","client","cliënt","clienten","cliënten","medewerker","medewerkers","team","organisatie","collega","begeleider","begeleiding","zorg","hulp","vraag","situatie","probleem"]);
@@ -2834,6 +2857,7 @@ ${alleKennisbronnen}`;
           console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
         }
       }
+      } // einde else trainingRelevant
     } catch (stErr) {
       console.error("[StudyTube] Exception:", stErr);
     }
