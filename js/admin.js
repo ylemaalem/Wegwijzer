@@ -3793,10 +3793,10 @@
         feedbackBadge = '<span class="badge badge-geen">—</span>';
       }
 
-      // Sparring-detectie: vraag bevat 'spar' of antwoord begint met sparring-emoji
+      // Sparring-detectie: alleen op basis van de vraag
       var isSparring = (c.vraag && c.vraag.toLowerCase().indexOf('spar') !== -1)
         || (c.vraag && c.vraag.toLowerCase().indexOf('casus') !== -1)
-        || (c.antwoord && (c.antwoord.trimStart().indexOf('💬') === 0 || c.antwoord.trimStart().indexOf('💪') === 0));
+        || (c.vraag && c.vraag.toLowerCase().indexOf('denk mee') !== -1);
       var sparringLabel = isSparring
         ? '<span style="display:inline-block;background:#7c3aed22;color:#7c3aed;font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600">💬 Sparring</span>'
         : '';

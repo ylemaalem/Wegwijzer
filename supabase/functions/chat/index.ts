@@ -2657,6 +2657,26 @@ NAH, LVB, MVB, GGZ, autisme, ADHD, dementie, epilepsie, diabetes, Wlz, Wmo, BW, 
 Bij deze begrippen: geef DIRECT een inhoudelijk antwoord. Sluit af met: "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"
 Stel NOOIT verduidelijkingsvragen bij herkenbare zorgbegrippen, diagnoses of afkortingen.
 
+ZORGAFKORTINGEN — ALTIJD ZORGINHOUDELIJK INTERPRETEREN:
+NAH = Niet-Aangeboren Hersenletsel (doelgroep gehandicaptenzorg)
+LVB = Licht Verstandelijke Beperking
+MVB = Matig Verstandelijke Beperking
+EVB = Ernstig Verstandelijke Beperking
+GGZ = Geestelijke Gezondheidszorg
+HAP = Huisartsenpost
+MDO = Multidisciplinair Overleg
+BHV = Bedrijfshulpverlening
+ONS = elektronisch zorgsysteem van Nedap
+PGB = Persoonsgebonden Budget
+WLZ = Wet Langdurige Zorg
+WMO = Wet Maatschappelijke Ondersteuning
+BW = Beschermd Wonen (onderdeel WMO)
+ZZP = Zorgzwaartepakket
+AVG = Algemene Verordening Gegevensbescherming
+Bij twijfel: geef altijd de meest gebruikelijke zorginterpretatie.
+Vraag NOOIT om verduidelijking bij bekende zorgafkortingen.
+Stel NOOIT verduidelijkingsvragen bij afkortingen die in bovenstaande lijst staan.
+
 STUDYTUBE INTEGRATIE:
 Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN (app.studytube.nl). Dit is het officiële leerplatform waar medewerkers zich aanmelden voor trainingen, cursussen, e-learning en intervisie.
 Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
@@ -2786,7 +2806,7 @@ ${alleKennisbronnen}`;
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
             max_tokens: 5,
-            messages: [{ role: "user", content: `Is deze vraag een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij: vakinhoudelijke thema's, persoonlijke ontwikkeling, zorginhoudelijke kennis, professionele vaardigheden.\nTrainingen zijn NIET zinvol bij: procesvragen (hoe registreer ik X), systeemvragen (hoe log ik in, waar vind ik X), eenwoordvragen, administratieve vragen, pauze/verlof/rooster vragen.\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
+            messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die beginnen met "Wat is", "Hoe werk", "Hoe ga ik om met"\n\nTrainingen zijn NIET zinvol bij:\n- Procesvragen (hoe registreer ik X in ONS)\n- Systeemvragen (hoe log ik in, hoe installeer ik)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Eenwoordvragen zonder zorginhoudelijke context\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
           }),
         });
         if (relRes.ok) {
