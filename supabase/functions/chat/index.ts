@@ -2849,34 +2849,32 @@ ${alleKennisbronnen}`;
       const alleZoektermen = [...new Set([...vraagWoorden, ...haikuTermen])];
       console.log("[StudyTube] Alle zoektermen:", alleZoektermen.join(", "));
 
-      // Stap 4: Haal alle cursussen op
+      // Stap 4: Haal alle cursussen op (met beschrijving voor matching)
       const { data: alleCursussen, error: cursErr } = await supabaseAdmin
         .from("studytube_cursussen")
-        .select("naam, duur_minuten")
+        .select("naam, duur_minuten, beschrijving")
         .eq("tenant_id", profile.tenant_id);
       if (cursErr) {
         console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
       } else if (alleCursussen && alleCursussen.length > 0 && alleZoektermen.length > 0) {
-        // Stap 5+6: Word-boundary matching + sub-module filter
-        const subModuleIndicators = ["- Inleiding","- Naslag","- Handvat","- Toets","- Powershot","- Booster","- Casus","- Reflectieopdracht","- Reflectie","- Reflecteren","- Praktijkopdracht","- Studiewijzer","- Trainershandleiding","- Teamopdracht","- Casuistiek","- Casuïstiek","(Optioneel)","- Introductie (Optioneel)","- Ervaringsverhalen","- Handvat(online)","- Game","- Zelfscan","- Toolkit","- Videocasus","- Documentaireserie","- Intervisie","- Chatbot","- Kwaliteit","- Organisatiehandleiding","- Instructie","- Protocol","- Richtlijnen","- PowerPoint","- Jouw","- Samen onderzoeken","- Wat gebeurt er","- Normen en waarden","- Jouw medicatiebeleid","- De Meldcode in jouw","- Mijn"];
-        const wordMatch = (w: string, naam: string): boolean => {
+        // Stap 5+6: Word-boundary matching op beschrijving (fallback naar naam)
+        const wordMatch = (w: string, tekst: string): boolean => {
           try {
             const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
-            return regex.test(naam);
+            return regex.test(tekst);
           } catch { return false; }
         };
         const gescoord = alleCursussen
-          .filter((c: { naam: string }) => !subModuleIndicators.some((ind) => c.naam.includes(ind)) && (c.naam.match(/-/g) || []).length < 2)
-          .map((c: { naam: string; duur_minuten: number | null }) => {
+          .map((c: { naam: string; duur_minuten: number | null; beschrijving: string | null }) => {
+            const matchTekst = c.beschrijving || c.naam;
             const score = alleZoektermen.filter((t: string) => {
               const woorden = t.split(" ").filter((w: string) => w.length > 2);
-              return woorden.length > 0 && woorden.some((w: string) => wordMatch(w, c.naam));
+              return woorden.length > 0 && woorden.some((w: string) => wordMatch(w, matchTekst));
             }).length;
-            const dashes = (c.naam.match(/-/g) || []).length;
-            return { naam: c.naam, duur_minuten: c.duur_minuten, score, dashes };
+            return { naam: c.naam, duur_minuten: c.duur_minuten, score };
           })
           .filter((c: { score: number }) => c.score > 0)
-          .sort((a: { score: number; dashes: number; naam: string }, b: { score: number; dashes: number; naam: string }) => b.score - a.score || a.dashes - b.dashes || a.naam.length - b.naam.length);
+          .sort((a: { score: number; naam: string }, b: { score: number; naam: string }) => b.score - a.score || a.naam.length - b.naam.length);
 
         console.log("[StudyTube] Matches:", gescoord.slice(0, 5).map((c: { naam: string; score: number }) => `${c.naam} (${c.score})`).join(", "));
         trainingen = gescoord.slice(0, 3).map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));

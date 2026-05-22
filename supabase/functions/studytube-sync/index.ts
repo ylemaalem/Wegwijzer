@@ -10,6 +10,7 @@ const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
 const EMBEDDING_BATCH_SIZE = 20;
+const BESCHRIJVING_BATCH_SIZE = 50;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -131,11 +132,64 @@ Deno.serve(async (req) => {
     }
     console.log(`[Sync] OpenAI embeddings gegenereerd voor ${embeddingSucces} van ${allCourses.length} cursussen`);
 
+    // ── 4. Beschrijvingen genereren via Haiku (batches van 50) ──
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+    const beschrijvingMap = new Map<number, string>();
+    let beschrijvingSucces = 0;
+
+    if (anthropicKey) {
+      for (let i = 0; i < allCourses.length; i += BESCHRIJVING_BATCH_SIZE) {
+        const batch = allCourses.slice(i, i + BESCHRIJVING_BATCH_SIZE);
+        const namenLijst = batch.map((c, idx) => `${idx + 1}. ${c.name}`).join("\n");
+
+        try {
+          const descRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 4096,
+              messages: [{ role: "user", content: `Genereer voor elke training hieronder een korte beschrijving (max 15 woorden) met relevante zoekwoorden waar een zorgmedewerker op zou zoeken. Focus op: doelgroep, methodiek, vaardigheid, ziektebeeld. Gebruik Nederlandse zorgtermen en synoniemen.\n\nFormaat: één regel per training, genummerd.\nVoorbeeld:\n1. Omgaan met agressie, grensoverschrijdend gedrag, de-escalatie, veiligheid\n2. NAH niet-aangeboren hersenletsel, cognitieve beperkingen, revalidatie\n\nTrainingen:\n${namenLijst}` }],
+            }),
+          });
+
+          if (descRes.ok) {
+            const descData = await descRes.json();
+            const tekst = descData.content?.[0]?.text || "";
+            const regels = tekst.split("\n").filter((r: string) => r.trim().length > 0);
+            for (const regel of regels) {
+              const match = regel.match(/^(\d+)\.\s*(.+)/);
+              if (match) {
+                const idx = parseInt(match[1], 10) - 1;
+                if (idx >= 0 && idx < batch.length) {
+                  beschrijvingMap.set(batch[idx].id, match[2].trim());
+                  beschrijvingSucces++;
+                }
+              }
+            }
+          } else {
+            const errText = await descRes.text();
+            console.error(`[Sync] Beschrijving batch ${i} HTTP ${descRes.status}: ${errText.substring(0, 300)}`);
+          }
+        } catch (e) {
+          console.error(`[Sync] Beschrijving batch ${i} exception:`, e);
+        }
+      }
+    } else {
+      console.warn("[Sync] Geen ANTHROPIC_API_KEY — beschrijvingen overgeslagen");
+    }
+    console.log(`[Sync] Beschrijvingen gegenereerd voor ${beschrijvingSucces} van ${allCourses.length} cursussen`);
+
     // ── 5. Upsert in studytube_cursussen ──
     const rows = allCourses.map((c) => ({
       tenant_id: tenantId,
       studytube_course_id: String(c.id),
       naam: c.name,
+      beschrijving: beschrijvingMap.get(c.id) || null,
       duur_minuten: c.duration ? Math.round(c.duration / 60) : null,
       deeplink_url: `${STUDYTUBE_DEEPLINK_BASE}/${c.id}`,
       trefwoorden: [],
@@ -160,6 +214,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         cursussen_gesynchroniseerd: allCourses.length,
         embeddings_gegenereerd: embeddingSucces,
+        beschrijvingen_gegenereerd: beschrijvingSucces,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
