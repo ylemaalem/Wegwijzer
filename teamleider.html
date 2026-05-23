@@ -250,13 +250,15 @@
 
         <form id="tl-aanvraag-form" novalidate>
           <div class="form-group">
-            <label class="form-label" for="tl-aanvraag-naam">Naam</label>
+            <label class="form-label" for="tl-aanvraag-naam">Naam <span class="required-star">*</span></label>
             <input class="form-input" type="text" id="tl-aanvraag-naam" placeholder="Volledige naam" required>
+            <div class="field-error-msg" id="tla-err-naam">Dit veld is verplicht</div>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="tl-aanvraag-email">Werkmail</label>
+            <label class="form-label" for="tl-aanvraag-email">Werkmail <span class="required-star">*</span></label>
             <input class="form-input" type="email" id="tl-aanvraag-email" placeholder="naam@werkmail.nl" required>
+            <div class="field-error-msg" id="tla-err-email">Dit veld is verplicht</div>
           </div>
 
           <div class="form-group">
@@ -285,14 +287,15 @@
 
           <!-- HR: dropdown met alle teams van tenant -->
           <div class="form-group tla-zorg-field" id="tla-team-dropdown-group" style="display:none">
-            <label class="form-label" for="tla-team-dropdown">Team</label>
+            <label class="form-label" for="tla-team-dropdown">Team <span class="required-star">*</span> <span style="font-weight:400;font-size:0.78rem;color:var(--text-muted)">Minimaal één verplicht</span></label>
             <select class="form-input" id="tla-team-dropdown">
               <option value="">Kies een team</option>
             </select>
+            <div class="field-error-msg" id="tla-err-team-dropdown">Vul minimaal een team of afdeling in</div>
           </div>
 
           <div class="form-group tla-zorg-field" id="tla-teams-checkbox-group">
-            <label class="form-label">Teams</label>
+            <label class="form-label">Teams <span class="required-star">*</span> <span style="font-weight:400;font-size:0.78rem;color:var(--text-muted)">Minimaal één verplicht</span></label>
             <div id="tla-teams" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Almere"> Team Almere</label>
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team Veluwe 1"> Team Veluwe 1</label>
@@ -305,6 +308,7 @@
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team FAN"> Team FAN</label>
               <label style="display:flex;align-items:center;gap:4px;font-size:0.88rem"><input type="checkbox" name="tla-teams" value="Team FANMN"> Team FANMN</label>
             </div>
+            <div class="field-error-msg" id="tla-err-teams">Vul minimaal een team of afdeling in</div>
           </div>
 
           <div class="form-group tla-zorg-field">
@@ -327,10 +331,11 @@
           </div>
 
           <div class="form-group tla-kantoor-field" style="display:none">
-            <label class="form-label" for="tla-afdeling">Afdeling</label>
+            <label class="form-label" for="tla-afdeling">Afdeling <span class="required-star">*</span> <span style="font-weight:400;font-size:0.78rem;color:var(--text-muted)">Minimaal één verplicht</span></label>
             <select class="form-input" id="tla-afdeling">
               <option value="">Geen / n.v.t.</option>
             </select>
+            <div class="field-error-msg" id="tla-err-afdeling">Vul minimaal een team of afdeling in</div>
           </div>
 
           <div class="form-group tla-zorg-field">
@@ -345,6 +350,8 @@
             </label>
             <p class="section-subtitle" style="margin-bottom:0;font-size:0.75rem;margin-top:4px">Niet aanvinken = medewerker start direct in kennisassistent modus</p>
           </div>
+
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 8px"><span class="required-star">*</span> Verplichte velden</p>
 
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="tl-aanvraag-cancel">Annuleren</button>
@@ -361,7 +368,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/teamleider.js?v=15"></script>
+  <script src="js/teamleider.js?v=16"></script>
 
 </body>
 </html>

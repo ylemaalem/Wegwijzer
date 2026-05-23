@@ -232,6 +232,26 @@ body {
   color: var(--text-muted);
 }
 
+.form-input.field-error {
+  border-color: #d32f2f;
+}
+
+.field-error-msg {
+  color: #d32f2f;
+  font-size: 0.78rem;
+  margin-top: 4px;
+  display: none;
+}
+
+.field-error-msg.show {
+  display: block;
+}
+
+.required-star {
+  color: #d32f2f;
+  margin-left: 2px;
+}
+
 /* ---- Knoppen ---- */
 .btn {
   display: inline-flex;

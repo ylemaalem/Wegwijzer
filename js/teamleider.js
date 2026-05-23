@@ -1005,6 +1005,8 @@
     btn.addEventListener('click', function () {
       form.reset();
       alertBox.className = 'alert';
+      document.querySelectorAll('#tl-aanvraag-form .field-error').forEach(function (el) { el.classList.remove('field-error'); });
+      document.querySelectorAll('#tl-aanvraag-form .field-error-msg').forEach(function (el) { el.classList.remove('show'); });
       updateTlaFormFields('');
       if (einddatumGroup) einddatumGroup.style.display = 'none';
       // Teamleider: pre-select eigen teams. HR: geen pre-select (kiest zelf).
@@ -1024,12 +1026,33 @@
       modal.classList.remove('show');
     });
 
+    function clearFieldError(inputEl, errId) {
+      if (inputEl) inputEl.classList.remove('field-error');
+      var errEl = document.getElementById(errId);
+      if (errEl) errEl.classList.remove('show');
+    }
+
+    function setFieldError(inputEl, errId, msg) {
+      if (inputEl) inputEl.classList.add('field-error');
+      var errEl = document.getElementById(errId);
+      if (errEl) { if (msg) errEl.textContent = msg; errEl.classList.add('show'); }
+    }
+
+    var naamInput = document.getElementById('tl-aanvraag-naam');
+    var emailInput = document.getElementById('tl-aanvraag-email');
+    naamInput.addEventListener('input', function () { clearFieldError(naamInput, 'tla-err-naam'); });
+    emailInput.addEventListener('input', function () { clearFieldError(emailInput, 'tla-err-email'); });
+
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       alertBox.className = 'alert';
 
-      var naam = document.getElementById('tl-aanvraag-naam').value.trim();
-      var email = document.getElementById('tl-aanvraag-email').value.trim();
+      // Clear all previous errors
+      document.querySelectorAll('#tl-aanvraag-form .field-error').forEach(function (el) { el.classList.remove('field-error'); });
+      document.querySelectorAll('#tl-aanvraag-form .field-error-msg').forEach(function (el) { el.classList.remove('show'); });
+
+      var naam = naamInput.value.trim();
+      var email = emailInput.value.trim();
       var fg = document.getElementById('tl-aanvraag-functiegroep').value;
       var startdatum = document.getElementById('tl-aanvraag-startdatum') ? document.getElementById('tl-aanvraag-startdatum').value : '';
       var werkuren = document.getElementById('tl-aanvraag-werkuren').value.trim();
@@ -1046,9 +1069,54 @@
         team = teams.join(', ');
       }
 
-      if (!naam || !email || !fg) {
-        alertBox.className = 'alert alert-error show';
-        alertMsg.textContent = 'Vul alle verplichte velden in.';
+      // Afdeling ophalen (kantoor)
+      var afdelingEl = document.getElementById('tla-afdeling');
+      var afdeling = afdelingEl ? afdelingEl.value : '';
+
+      // Bepaal of kantoor of zorg
+      var fgData = allFunctiegroepen.find(function (f) { return f.code === fg; });
+      var isKantoor = fgData && fgData.is_kantoor;
+
+      // Inline validatie
+      var errors = [];
+      var firstErrorEl = null;
+
+      if (!naam) {
+        setFieldError(naamInput, 'tla-err-naam');
+        errors.push('naam');
+        if (!firstErrorEl) firstErrorEl = naamInput;
+      }
+
+      var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email) {
+        setFieldError(emailInput, 'tla-err-email', 'Dit veld is verplicht');
+        errors.push('email');
+        if (!firstErrorEl) firstErrorEl = emailInput;
+      } else if (!emailRegex.test(email)) {
+        setFieldError(emailInput, 'tla-err-email', 'Vul een geldig emailadres in');
+        errors.push('email');
+        if (!firstErrorEl) firstErrorEl = emailInput;
+      }
+
+      // Team of afdeling: minstens één moet ingevuld zijn
+      if (isKantoor) {
+        if (!afdeling) {
+          setFieldError(afdelingEl, 'tla-err-afdeling');
+          errors.push('afdeling');
+          if (!firstErrorEl) firstErrorEl = afdelingEl;
+        }
+      } else if (fg) {
+        if (!team) {
+          var teamErrId = tlRol === 'hr' ? 'tla-err-team-dropdown' : 'tla-err-teams';
+          var teamInputEl = tlRol === 'hr' ? document.getElementById('tla-team-dropdown') : null;
+          setFieldError(teamInputEl, teamErrId);
+          errors.push('team');
+          if (!firstErrorEl && teamInputEl) firstErrorEl = teamInputEl;
+        }
+      }
+
+      if (errors.length > 0) {
+        if (firstErrorEl) firstErrorEl.focus();
         return;
       }
 
