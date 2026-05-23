@@ -1753,6 +1753,15 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           "document_aanvraag"
         );
 
+        // Email notificatie naar admin
+        const notifUrl3 = Deno.env.get("SUPABASE_URL") + "/functions/v1/admin-notificatie";
+        const ws3 = Deno.env.get("ADMIN_WEBHOOK_SECRET") || "";
+        fetch(notifUrl3, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-webhook-secret": ws3 },
+          body: JSON.stringify({ type: "document_aanvraag", vraag: body.vraag_tekst }),
+        }).catch((e: unknown) => console.warn("[DocAanvraag] Notificatie fout:", e));
+
         return new Response(JSON.stringify({ saved: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[DocAanvraag] Fout:", err);
@@ -1978,6 +1987,46 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       }
     }
 
+    // ---- Privacy verzoek notificatie (email naar admin) ----
+    if (body.notify_privacy_verzoek) {
+      try {
+        const notifUrlPv = Deno.env.get("SUPABASE_URL") + "/functions/v1/admin-notificatie";
+        const wsPv = Deno.env.get("ADMIN_WEBHOOK_SECRET") || "";
+        await fetch(notifUrlPv, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-webhook-secret": wsPv },
+          body: JSON.stringify({ type: "privacy_verzoek", naam: body.pv_naam || "", email: body.pv_email || "", verzoek_type: body.pv_type || "" }),
+        });
+      } catch (e) { console.warn("[PrivacyNotif] fout:", e); }
+
+      // Audit log
+      await logAuditEvent(
+        supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+        "PRIVACY_VERZOEK_ONTVANGEN", "privacy_verzoek", null,
+        { naam: body.pv_naam, email: body.pv_email, type: body.pv_type },
+      );
+
+      return new Response(JSON.stringify({ notified: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ---- Privacy audit logging ----
+    if (body.privacy_audit && body.verzoek_id) {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      try {
+        const actie = body.actie === "afgehandeld" ? "PRIVACY_VERZOEK_AFGEHANDELD" : "PRIVACY_VERZOEK_ONTVANGEN";
+        await logAuditEvent(
+          supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+          actie, "privacy_verzoek", body.verzoek_id,
+          body.details || null,
+        );
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: "Audit log mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     // ---- Gebruiker permanent verwijderen ----
     if (body.delete_user && body.delete_user_id) {
       if (profile.role !== "admin") {
@@ -2153,12 +2202,28 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
             .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedAntwoordVoorDb })
             .select("id")
             .single();
+          const cacheUpdateFields: Record<string, unknown> = { laatste_actief: new Date().toISOString() };
+          const cacheIsEerste = !profile.eerste_login_op;
+          if (cacheIsEerste) cacheUpdateFields.eerste_login_op = new Date().toISOString();
           supabaseAdmin
             .from("profiles")
-            .update({ laatste_actief: new Date().toISOString() })
+            .update(cacheUpdateFields)
             .eq("id", profile.id)
             .then((r: { error: { message: string } | null }) => {
               if (r.error) console.error("[laatste_actief] update fout:", r.error.message);
+              if (cacheIsEerste && !r.error) {
+                const notifUrl2 = Deno.env.get("SUPABASE_URL") + "/functions/v1/admin-notificatie";
+                const ws2 = Deno.env.get("ADMIN_WEBHOOK_SECRET") || "";
+                fetch(notifUrl2, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "x-webhook-secret": ws2 },
+                  body: JSON.stringify({
+                    type: "eerste_login",
+                    medewerker_naam: profile.naam || profile.email || "Onbekend",
+                    datum: new Date().toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" }),
+                  }),
+                }).catch((e: unknown) => console.warn("[EersteLogin] Notificatie fout:", e));
+              }
             });
           console.log("[Cache] HIT voor user", user.id);
           return new Response(
@@ -2779,12 +2844,30 @@ ${alleKennisbronnen}`;
     if (convError) console.error("Conversation opslaan mislukt:", convError);
 
     // ---- 9b. Last online — adoptiesignaal voor teamleider ----
+    const updateFields: Record<string, unknown> = { laatste_actief: new Date().toISOString() };
+    const isEersteLogin = !profile.eerste_login_op;
+    if (isEersteLogin) {
+      updateFields.eerste_login_op = new Date().toISOString();
+    }
     supabaseAdmin
       .from("profiles")
-      .update({ laatste_actief: new Date().toISOString() })
+      .update(updateFields)
       .eq("id", profile.id)
       .then((r: { error: { message: string } | null }) => {
         if (r.error) console.error("[laatste_actief] update fout:", r.error.message);
+        if (isEersteLogin && !r.error) {
+          const notifUrl = Deno.env.get("SUPABASE_URL") + "/functions/v1/admin-notificatie";
+          const webhookSecret = Deno.env.get("ADMIN_WEBHOOK_SECRET") || "";
+          fetch(notifUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-webhook-secret": webhookSecret },
+            body: JSON.stringify({
+              type: "eerste_login",
+              medewerker_naam: profile.naam || profile.email || "Onbekend",
+              datum: new Date().toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" }),
+            }),
+          }).catch((e: unknown) => console.warn("[EersteLogin] Notificatie fout:", e));
+        }
       });
 
     // ---- 9c. gebruik_count incrementeren per document (fire-and-forget) ----

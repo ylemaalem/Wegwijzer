@@ -170,6 +170,13 @@
     initSuggestieDelegation();
     initRoiWidget();
     initPushSubscription();
+
+    // Polling: badges vernieuwen elke 60 seconden
+    setInterval(function () {
+      loadPrivacyVerzoeken();
+      loadDocumentAanvragen();
+      loadKennissuggesties();
+    }, 60000);
   });
 
   // =============================================
@@ -2898,12 +2905,12 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Kon medewerkers niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="no-data">Kon medewerkers niet laden.</td></tr>';
       return;
     }
 
@@ -2921,7 +2928,7 @@
     if (allConversations.length > 0) renderGesprekken();
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Nog geen medewerkers.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="no-data">Nog geen medewerkers.</td></tr>';
       return;
     }
 
@@ -2969,6 +2976,10 @@
         ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
         : '';
 
+      var eersteLogin = p.eerste_login_op
+        ? '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>'
+        : '<span style="color:var(--text-muted)">Nog niet ingelogd</span>';
+
       return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
@@ -2978,6 +2989,7 @@
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
         '<td>' + escapeHtml(p.teamleider_naam || '-') + '</td>' +
         '<td>' + sd + '</td>' +
+        '<td>' + eersteLogin + '</td>' +
         '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
@@ -3279,7 +3291,7 @@
 
       try {
         // Uitnodiging via Edge Function (service role key) met 10s timeout
-        console.log('[Invite] Start voor:', email);
+        console.log('[Invite] Start voor:', email, '| afdeling:', afdeling || '(leeg)');
         var session = await supabaseClient.auth.getSession();
         if (!session.data.session) {
           alertBox.className = 'alert alert-error show';
@@ -3372,10 +3384,9 @@
 
         // Update profiel met extra velden
         if (inviteData.user_id) {
-          var updateData = { startdatum: startdatum || null, account_type: accountType };
+          var updateData = { startdatum: startdatum || null, account_type: accountType, afdeling: afdeling || null };
           if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
           if (werkuren) updateData.werkuren = werkuren;
-          if (afdeling) updateData.afdeling = afdeling;
           var inwerkCheckbox = document.getElementById('invite-inwerktraject-actief');
           if (inwerkCheckbox) updateData.inwerktraject_actief = inwerkCheckbox.checked;
           if (einddatum) updateData.einddatum = einddatum;
@@ -6160,6 +6171,9 @@
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
+    var nieuw = (result.data || []).filter(function (pv) { return pv.status === 'ontvangen'; }).length;
+    updateTabBadge('privacy', nieuw);
+
     if (!result.data || result.data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="no-data">Geen privacy verzoeken.</td></tr>';
       return;
@@ -6183,7 +6197,8 @@
       if (pv.status !== 'afgehandeld') {
         acties = '<button class="btn-icon" onclick="window.handlePrivacyInzage(\'' + escapeHtml(pv.email) + '\')" title="Inzage (export)">📋</button>' +
           '<button class="btn-icon btn-icon-danger" onclick="window.handlePrivacyVerwijdering(\'' + pv.id + '\', \'' + escapeHtml(pv.email) + '\')" title="Verwijdering">🗑️</button>' +
-          '<button class="btn-icon" onclick="window.handlePrivacyCorrectie(\'' + escapeHtml(pv.email) + '\')" title="Correctie (profiel)">✏️</button>';
+          '<button class="btn-icon" onclick="window.handlePrivacyCorrectie(\'' + escapeHtml(pv.email) + '\')" title="Correctie (profiel)">✏️</button>' +
+          '<button class="btn btn-primary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-top:4px" onclick="window.handlePrivacyAfgehandeld(\'' + pv.id + '\', \'' + escapeHtml(pv.naam) + '\', \'' + escapeHtml(pv.email) + '\', \'' + escapeHtml(pv.type) + '\')">✅ Markeer als afgehandeld</button>';
       }
 
       return '<tr>' +
@@ -6220,7 +6235,7 @@
       })
     };
 
-    // Download als JSON
+    // Download als JSON (status wordt NIET automatisch gewijzigd)
     var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -6228,10 +6243,6 @@
     a.download = 'privacy_export_' + email.replace(/@/g, '_') + '.json';
     a.click();
     URL.revokeObjectURL(url);
-
-    // Update status
-    await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('tenant_id', tenantId).match({ email: email, type: 'inzage' });
-    loadPrivacyVerzoeken();
   };
 
   window.handlePrivacyVerwijdering = async function (id, email) {
@@ -6261,6 +6272,32 @@
     }
   };
 
+  window.handlePrivacyAfgehandeld = async function (id, naam, email, type) {
+    if (!confirm('Weet je zeker dat dit verzoek volledig is afgehandeld?')) return;
+    await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('id', id);
+
+    // Audit log via chat edge function
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+      await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          privacy_audit: true,
+          verzoek_id: id,
+          actie: 'afgehandeld',
+          details: { naam: naam, email: email, type: type, afgehandeld_door: currentUserEmail }
+        })
+      });
+    } catch (e) {
+      console.warn('[Privacy] Audit log fout:', e);
+    }
+
+    await logAudit('PRIVACY_VERZOEK_AFGEHANDELD', 'privacy_verzoek', id, { naam: naam, email: email, type: type });
+    loadPrivacyVerzoeken();
+  };
+
   // =============================================
   // AUDIT LOG
   // =============================================
@@ -6277,6 +6314,8 @@
     INSTELLINGEN_OPGESLAGEN: 'Instellingen opgeslagen',
     DOC_AANVRAAG_GEPUBLICEERD: 'Doc. aanvraag gepubliceerd',
     DOC_AANVRAAG_AFGEWEZEN: 'Doc. aanvraag afgewezen',
+    PRIVACY_VERZOEK_ONTVANGEN: 'Privacyverzoek ontvangen',
+    PRIVACY_VERZOEK_AFGEHANDELD: 'Privacyverzoek afgehandeld',
   };
 
   var auditLogLoaded = false;

@@ -1798,6 +1798,19 @@
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Je verzoek is ontvangen. We behandelen het binnen 30 dagen.';
         setTimeout(function () { modal.style.display = 'none'; }, 3000);
+
+        // Notificeer admin via edge function (fire-and-forget)
+        try {
+          var session = await supabaseClient.auth.getSession();
+          var token = session.data.session ? session.data.session.access_token : null;
+          if (token) {
+            fetch(SUPABASE_URL + '/functions/v1/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({ notify_privacy_verzoek: true, pv_naam: naam, pv_email: email, pv_type: type })
+            }).catch(function () {});
+          }
+        } catch (e) { /* negeer */ }
       }
     });
   })();
