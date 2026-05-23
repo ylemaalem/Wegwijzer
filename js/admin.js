@@ -48,6 +48,33 @@
     }
   }
 
+  function updateBeschrijvingVoortgang(metBeschrijving, totaal) {
+    var statusEl = document.getElementById('studytube-beschrijving-status');
+    var labelEl = document.getElementById('st-beschrijving-label');
+    var pctEl = document.getElementById('st-beschrijving-pct');
+    var barEl = document.getElementById('st-beschrijving-bar');
+    var hintEl = document.getElementById('st-beschrijving-hint');
+    if (!statusEl || !labelEl) return;
+
+    statusEl.style.display = 'block';
+    var pct = totaal > 0 ? Math.round((metBeschrijving / totaal) * 100) : 0;
+    labelEl.textContent = 'Beschrijvingen: ' + metBeschrijving + ' / ' + totaal;
+    pctEl.textContent = pct + '%';
+    barEl.style.width = pct + '%';
+    barEl.style.background = pct >= 100 ? 'var(--success)' : 'var(--primary)';
+
+    var nog = totaal - metBeschrijving;
+    if (nog > 0) {
+      hintEl.innerHTML = '⚠️ Nog ' + nog + ' cursussen zonder beschrijving. Klik op synchroniseren om de volgende batch te verwerken.';
+      hintEl.style.color = '#e65100';
+    } else if (totaal > 0) {
+      hintEl.innerHTML = '✅ Alle ' + totaal + ' cursussen hebben een beschrijving. Synchronisatie volledig afgerond.';
+      hintEl.style.color = 'var(--success)';
+    } else {
+      hintEl.textContent = '';
+    }
+  }
+
   async function loadStudytubeCursussen() {
     if (!tenantId) return;
     var container = document.getElementById('studytube-cursussen-container');
@@ -57,7 +84,7 @@
     try {
       var { data: cursussen, error } = await supabaseClient
         .from('studytube_cursussen')
-        .select('naam, duur_minuten, trefwoorden, laatst_gesynchroniseerd')
+        .select('naam, duur_minuten, trefwoorden, laatst_gesynchroniseerd, beschrijving')
         .eq('tenant_id', tenantId)
         .order('naam');
       if (error || !cursussen || cursussen.length === 0) {
@@ -67,6 +94,10 @@
       var laatst = cursussen[0].laatst_gesynchroniseerd;
       var datum = laatst ? new Date(laatst).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–';
       header.textContent = cursussen.length + ' cursussen gesynchroniseerd — laatst bijgewerkt: ' + datum;
+
+      var metBeschrijving = cursussen.filter(function (c) { return c.beschrijving; }).length;
+      updateBeschrijvingVoortgang(metBeschrijving, cursussen.length);
+
       tbody.innerHTML = '';
       cursussen.forEach(function (c) {
         var tr = document.createElement('tr');
@@ -5342,12 +5373,25 @@
           var data = await res.json();
           studytubeSyncResult.style.display = 'block';
           if (data.cursussen_gesynchroniseerd !== undefined) {
-            studytubeSyncResult.style.color = 'var(--success)';
-            var stats = '✅ ' + data.cursussen_gesynchroniseerd + ' cursussen gesynchroniseerd.';
-            if (data.embeddings_gegenereerd !== undefined) {
-              stats += ' (' + data.embeddings_gegenereerd + ' embeddings, ' + (data.haiku_trefwoorden || 0) + ' Haiku-trefwoorden)';
-            }
-            studytubeSyncResult.textContent = stats;
+            var totaal = data.cursussen_gesynchroniseerd || 0;
+            var beschrijvingenDeze = data.beschrijvingen_gegenereerd || 0;
+            var nogZonder = data.nog_zonder_beschrijving || 0;
+            var beschrijvingenKlaar = totaal - nogZonder;
+
+            var html = '<div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px;border-left:4px solid var(--success)">';
+            html += '<strong style="color:var(--success)">✅ Synchronisatie voltooid</strong><br><br>';
+            html += '<div style="display:grid;grid-template-columns:auto auto;gap:2px 16px;font-size:0.85rem">';
+            html += '<span>Cursussen totaal:</span><strong>' + totaal + '</strong>';
+            html += '<span>Beschrijvingen deze sync:</span><strong>' + beschrijvingenDeze + '</strong>';
+            html += '<span>Beschrijvingen klaar:</span><strong>' + beschrijvingenKlaar + ' / ' + totaal + '</strong>';
+            html += '<span>Nog te verwerken:</span><strong>' + nogZonder + '</strong>';
+            html += '</div></div>';
+
+            studytubeSyncResult.innerHTML = html;
+            studytubeSyncResult.style.color = '';
+
+            updateBeschrijvingVoortgang(beschrijvingenKlaar, totaal);
+
             console.log('[StudyTube Sync] Stats:', JSON.stringify(data));
             loadStudytubeCursussen();
           } else {
