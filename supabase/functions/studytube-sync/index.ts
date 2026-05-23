@@ -11,6 +11,9 @@ const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
 const EMBEDDING_BATCH_SIZE = 20;
 const BESCHRIJVING_BATCH_SIZE = 50;
+// Max cursussen waarvoor beschrijvingen worden gegenereerd per sync-aanroep.
+// Bij 849 bestaande cursussen zonder beschrijving worden ze in meerdere syncs opgebouwd.
+const MAX_BESCHRIJVING_PER_SYNC = 100;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -23,12 +26,12 @@ Deno.serve(async (req) => {
   const openaiKey = Deno.env.get("OPENAI_API_KEY") || "";
   const clientId = Deno.env.get("STUDYTUBE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("STUDYTUBE_CLIENT_SECRET")!;
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
 
-  if (!openaiKey) {
-    console.error("[Sync] OPENAI_API_KEY niet geconfigureerd");
-  }
+  if (!openaiKey) console.error("[Sync] OPENAI_API_KEY niet geconfigureerd");
+  if (!anthropicKey) console.warn("[Sync] ANTHROPIC_API_KEY niet geconfigureerd — beschrijvingen overgeslagen");
 
-  // ── Auth: controleer dat de aanroeper een admin is ──
+  // ── Auth ──
   const authHeader = req.headers.get("Authorization") || "";
   const supabaseUser = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -56,7 +59,22 @@ Deno.serve(async (req) => {
   const tenantId = profile.tenant_id as string;
 
   try {
-    // ── 1. OAuth token ophalen ──
+    // ── 1. Bestaande cursussen ophalen uit DB (voor delta-detectie) ──
+    const { data: bestaandRows } = await supabaseAdmin
+      .from("studytube_cursussen")
+      .select("studytube_course_id, embedding, beschrijving")
+      .eq("tenant_id", tenantId);
+
+    const bestaandMap = new Map<string, { heeftEmbedding: boolean; heeftBeschrijving: boolean }>();
+    for (const r of bestaandRows ?? []) {
+      bestaandMap.set(String(r.studytube_course_id), {
+        heeftEmbedding: !!r.embedding,
+        heeftBeschrijving: !!r.beschrijving,
+      });
+    }
+    console.log(`[Sync] ${bestaandMap.size} cursussen al in DB`);
+
+    // ── 2. OAuth token ophalen ──
     const tokenRes = await fetch(STUDYTUBE_OAUTH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -71,7 +89,7 @@ Deno.serve(async (req) => {
     const token = tokenData.access_token as string;
     const apiHeaders = { Authorization: `Bearer ${token}`, Accept: "application/json" };
 
-    // ── 2. Alle cursussen ophalen (gepagineerd) ──
+    // ── 3. Alle cursussen ophalen van StudyTube (gepagineerd) ──
     let allCourses: Array<{ id: number; name: string; duration: number }> = [];
     let page = 1;
     while (true) {
@@ -91,25 +109,28 @@ Deno.serve(async (req) => {
     }
     console.log(`[Sync] ${allCourses.length} cursussen opgehaald van StudyTube API`);
 
-    // ── 3. Embeddings genereren via OpenAI op basis van cursusnaam ──
+    // Splits in nieuw (geen embedding) en bestaand
+    const nieuweCursussen = allCourses.filter((c) => !bestaandMap.get(String(c.id))?.heeftEmbedding);
+    const zonderBeschrijving = allCourses
+      .filter((c) => !bestaandMap.get(String(c.id))?.heeftBeschrijving)
+      .slice(0, MAX_BESCHRIJVING_PER_SYNC);
+
+    console.log(`[Sync] ${nieuweCursussen.length} nieuwe cursussen (embedding nodig), ${zonderBeschrijving.length} zonder beschrijving (max ${MAX_BESCHRIJVING_PER_SYNC} deze sync)`);
+
+    // ── 4. Embeddings ALLEEN voor nieuwe cursussen ──
     const embeddingMap = new Map<number, number[]>();
     let embeddingSucces = 0;
 
-    if (openaiKey) {
-      for (let i = 0; i < allCourses.length; i += EMBEDDING_BATCH_SIZE) {
-        const batch = allCourses.slice(i, i + EMBEDDING_BATCH_SIZE);
+    if (openaiKey && nieuweCursussen.length > 0) {
+      for (let i = 0; i < nieuweCursussen.length; i += EMBEDDING_BATCH_SIZE) {
+        const batch = nieuweCursussen.slice(i, i + EMBEDDING_BATCH_SIZE);
         const inputs = batch.map((c) => c.name);
-
         try {
           const embRes = await fetch("https://api.openai.com/v1/embeddings", {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${openaiKey}`,
-              "Content-Type": "application/json",
-            },
+            headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({ model: "text-embedding-3-small", input: inputs }),
           });
-
           if (!embRes.ok) {
             const errText = await embRes.text();
             console.error(`[Sync] Embedding batch ${i} HTTP ${embRes.status}: ${errText.substring(0, 300)}`);
@@ -127,21 +148,17 @@ Deno.serve(async (req) => {
           console.error(`[Sync] Embedding batch ${i} exception:`, e);
         }
       }
-    } else {
-      console.error("[Sync] Geen OPENAI_API_KEY — embeddings overgeslagen");
     }
-    console.log(`[Sync] OpenAI embeddings gegenereerd voor ${embeddingSucces} van ${allCourses.length} cursussen`);
+    console.log(`[Sync] Embeddings gegenereerd voor ${embeddingSucces} nieuwe cursussen`);
 
-    // ── 4. Beschrijvingen genereren via Haiku (batches van 50) ──
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+    // ── 5. Beschrijvingen voor cursussen zonder beschrijving (max MAX_BESCHRIJVING_PER_SYNC) ──
     const beschrijvingMap = new Map<number, string>();
     let beschrijvingSucces = 0;
 
-    if (anthropicKey) {
-      for (let i = 0; i < allCourses.length; i += BESCHRIJVING_BATCH_SIZE) {
-        const batch = allCourses.slice(i, i + BESCHRIJVING_BATCH_SIZE);
+    if (anthropicKey && zonderBeschrijving.length > 0) {
+      for (let i = 0; i < zonderBeschrijving.length; i += BESCHRIJVING_BATCH_SIZE) {
+        const batch = zonderBeschrijving.slice(i, i + BESCHRIJVING_BATCH_SIZE);
         const namenLijst = batch.map((c, idx) => `${idx + 1}. ${c.name}`).join("\n");
-
         try {
           const descRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -156,7 +173,6 @@ Deno.serve(async (req) => {
               messages: [{ role: "user", content: `Genereer voor elke training hieronder een korte beschrijving (max 15 woorden) met relevante zoekwoorden waar een zorgmedewerker op zou zoeken. Focus op: doelgroep, methodiek, vaardigheid, ziektebeeld. Gebruik Nederlandse zorgtermen en synoniemen.\n\nFormaat: één regel per training, genummerd.\nVoorbeeld:\n1. Omgaan met agressie, grensoverschrijdend gedrag, de-escalatie, veiligheid\n2. NAH niet-aangeboren hersenletsel, cognitieve beperkingen, revalidatie\n\nTrainingen:\n${namenLijst}` }],
             }),
           });
-
           if (descRes.ok) {
             const descData = await descRes.json();
             const tekst = descData.content?.[0]?.text || "";
@@ -179,42 +195,67 @@ Deno.serve(async (req) => {
           console.error(`[Sync] Beschrijving batch ${i} exception:`, e);
         }
       }
-    } else {
-      console.warn("[Sync] Geen ANTHROPIC_API_KEY — beschrijvingen overgeslagen");
     }
-    console.log(`[Sync] Beschrijvingen gegenereerd voor ${beschrijvingSucces} van ${allCourses.length} cursussen`);
+    console.log(`[Sync] Beschrijvingen gegenereerd voor ${beschrijvingSucces} cursussen`);
 
-    // ── 5. Upsert in studytube_cursussen ──
-    const rows = allCourses.map((c) => ({
-      tenant_id: tenantId,
-      studytube_course_id: String(c.id),
-      naam: c.name,
-      beschrijving: beschrijvingMap.get(c.id) || null,
-      duur_minuten: c.duration ? Math.round(c.duration / 60) : null,
-      deeplink_url: `${STUDYTUBE_DEEPLINK_BASE}/${c.id}`,
-      trefwoorden: [],
-      embedding: embeddingMap.has(c.id) ? JSON.stringify(embeddingMap.get(c.id)) : null,
-      laatst_gesynchroniseerd: new Date().toISOString(),
-    }));
+    // ── 6. Upsert ALLE cursussen (naam/duur/deeplink altijd bijwerken) ──
+    // Embedding: alleen meesturen voor nieuwe cursussen; bestaande behouden hun waarde via upsert
+    const rows = allCourses.map((c) => {
+      const idStr = String(c.id);
+      const isNieuw = !bestaandMap.get(idStr)?.heeftEmbedding;
+      const beschrijving = beschrijvingMap.has(c.id) ? beschrijvingMap.get(c.id)! : undefined;
 
-    const { error: upsertErr } = await supabaseAdmin
-      .from("studytube_cursussen")
-      .upsert(rows, { onConflict: "tenant_id,studytube_course_id" });
+      const row: Record<string, unknown> = {
+        tenant_id: tenantId,
+        studytube_course_id: idStr,
+        naam: c.name,
+        duur_minuten: c.duration ? Math.round(c.duration / 60) : null,
+        deeplink_url: `${STUDYTUBE_DEEPLINK_BASE}/${c.id}`,
+        trefwoorden: [],
+        laatst_gesynchroniseerd: new Date().toISOString(),
+      };
 
-    if (upsertErr) {
-      console.error("[Sync] Upsert fout:", upsertErr.message);
-      return new Response(JSON.stringify({ error: "Upsert mislukt: " + upsertErr.message }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // Embedding alleen meesturen als nieuw en gegenereerd
+      if (isNieuw && embeddingMap.has(c.id)) {
+        row.embedding = JSON.stringify(embeddingMap.get(c.id));
+      }
+
+      // Beschrijving alleen meesturen als nieuw gegenereerd (anders niet overschrijven)
+      if (beschrijving !== undefined) {
+        row.beschrijving = beschrijving;
+      }
+
+      return row;
+    });
+
+    // Upsert in batches van 200 om payload-limieten te vermijden
+    const UPSERT_BATCH = 200;
+    for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
+      const batch = rows.slice(i, i + UPSERT_BATCH);
+      const { error: upsertErr } = await supabaseAdmin
+        .from("studytube_cursussen")
+        .upsert(batch, { onConflict: "tenant_id,studytube_course_id" });
+      if (upsertErr) {
+        console.error(`[Sync] Upsert batch ${i} fout:`, upsertErr.message);
+        return new Response(JSON.stringify({ error: "Upsert mislukt: " + upsertErr.message }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
-    console.log(`[Sync] Upsert voltooid voor ${allCourses.length} cursussen`);
+    const nogZonderBeschrijving = allCourses.filter((c) =>
+      !beschrijvingMap.has(c.id) && !bestaandMap.get(String(c.id))?.heeftBeschrijving
+    ).length;
+
+    console.log(`[Sync] Voltooid. ${allCourses.length} cursussen bijgewerkt, ${embeddingSucces} nieuwe embeddings, ${beschrijvingSucces} beschrijvingen. Nog ${nogZonderBeschrijving} zonder beschrijving.`);
 
     return new Response(
       JSON.stringify({
         cursussen_gesynchroniseerd: allCourses.length,
+        nieuwe_cursussen: nieuweCursussen.length,
         embeddings_gegenereerd: embeddingSucces,
         beschrijvingen_gegenereerd: beschrijvingSucces,
+        nog_zonder_beschrijving: nogZonderBeschrijving,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
