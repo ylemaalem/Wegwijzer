@@ -2878,7 +2878,28 @@ ${alleKennisbronnen}`;
     }
 
     // ---- 10. StudyTube trainingsverwijzing ----
+    const geenInfoZinnen = [
+      "ik vind geen informatie",
+      "ik vind hier geen informatie",
+      "ik vind hier geen specifieke informatie",
+      "staat niet in de kennisbank",
+      "niet in onze documenten",
+      "niet in de kennisbank",
+      "geen relevante informatie",
+      "geen specifieke informatie",
+      "raad ik aan dit na te vragen",
+      "controleer dit bij je leidinggevende",
+      "neem contact op met je leidinggevende",
+      "kan ik je hier niet mee helpen",
+    ];
+    const antwoordLower = antwoord.toLowerCase();
+    const antwoordIsInhoudelijk = HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
+    if (!antwoordIsInhoudelijk) {
+      console.log(`[StudyTube] Overgeslagen: antwoord niet inhoudelijk (kennisbank_match=${HEEFT_KENNISBANK_MATCH})`);
+    }
+
     let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
+    if (antwoordIsInhoudelijk) {
     try {
       // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
       let trainingRelevant = false;
@@ -2969,6 +2990,7 @@ ${alleKennisbronnen}`;
     } catch (stErr) {
       console.error("[StudyTube] Exception:", stErr);
     }
+    } // einde antwoordIsInhoudelijk
 
     if (trainingen.length > 0 && conversation?.id) {
       supabaseAdmin.from("conversations").update({ studytube_trainingen: trainingen }).eq("id", conversation.id).then(() => {}).catch(() => {});
