@@ -3042,24 +3042,25 @@
   window.deleteMedewerker = async function (profileId, userId) {
     if (!confirm('Weet je zeker dat je deze medewerker wilt verwijderen? Dit verwijdert ook alle gesprekken en het account.')) return;
 
-    // Verwijder profiel (cascade verwijdert conversations)
-    await supabaseClient.from('profiles').delete().eq('id', profileId);
-
-    // Verwijder auth account permanent via Edge Function
-    if (userId) {
-      try {
-        var session = await supabaseClient.auth.getSession();
-        var token = session.data.session.access_token;
-        var delResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-          body: JSON.stringify({ delete_user: true, delete_user_id: userId })
-        });
-        var delData = await delResponse.json();
-        console.log('[Delete] Auth account:', delData.deleted ? 'verwijderd' : 'fout: ' + (delData.error || ''));
-      } catch (err) {
-        console.error('[Delete] Auth verwijdering mislukt:', err);
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+      var delResponse = await fetch(SUPABASE_URL + '/functions/v1/verwijder-gebruiker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ user_id: userId, profile_id: profileId })
+      });
+      var delData = await delResponse.json();
+      if (!delData.deleted) {
+        console.error('[Delete] Verwijdering mislukt:', delData.error);
+        alert('Verwijdering mislukt: ' + (delData.error || 'onbekende fout'));
+        return;
       }
+      console.log('[Delete] Medewerker en auth-account verwijderd');
+    } catch (err) {
+      console.error('[Delete] Exception:', err);
+      alert('Verwijdering mislukt — probeer het opnieuw.');
+      return;
     }
 
     await logAudit('MEDEWERKER_VERWIJDERD', 'medewerker', profileId, { user_id: userId });
