@@ -4607,6 +4607,20 @@
         .update({ vraag: nieuweVraag, antwoord: nieuwAntwoord })
         .eq('id', id);
       if (result.error) { alert('Opslaan mislukt: ' + result.error.message); return; }
+
+      // Embedding regenereren (fire-and-forget)
+      supabaseClient.auth.getSession().then(function (s) {
+        var token = s.data.session && s.data.session.access_token;
+        if (!token) return;
+        fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ generate_kb_embedding: true, kb_item_id: id, tekst: nieuweVraag + ' ' + nieuwAntwoord })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          console.log('[KennisItem] Embedding:', d.embedding_updated ? 'bijgewerkt' : 'fout: ' + (d.error || ''));
+        }).catch(function (e) { console.error('[KennisItem] Embedding fout:', e); });
+      });
+
       loadVerbeterpunten();
     });
     vraagInput.focus();

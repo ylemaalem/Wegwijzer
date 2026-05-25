@@ -2043,6 +2043,32 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       }
     }
 
+    // ---- Embedding regenereren voor kennisbank item ----
+    if (body.generate_kb_embedding && body.kb_item_id) {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const openaiKey = Deno.env.get("OPENAI_API_KEY");
+      const tekst = ((body.tekst as string) || "").trim();
+      if (!openaiKey || !tekst) {
+        return new Response(JSON.stringify({ error: "OpenAI key of tekst ontbreekt" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const embedding = await generateEmbedding(tekst, openaiKey);
+      if (!embedding) {
+        return new Response(JSON.stringify({ error: "Embedding genereren mislukt", embedding_updated: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { error: kbEmbErr } = await supabaseAdmin
+        .from("kennisbank_items")
+        .update({ embedding: JSON.stringify(embedding) })
+        .eq("id", body.kb_item_id)
+        .eq("tenant_id", profile.tenant_id);
+      if (kbEmbErr) {
+        return new Response(JSON.stringify({ error: kbEmbErr.message, embedding_updated: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      console.log("[KennisEmbedding] Bijgewerkt voor item:", body.kb_item_id);
+      return new Response(JSON.stringify({ embedding_updated: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Rate limit uitbreiden
     if (extend_limit && profile.role === "medewerker") {
       await supabaseAdmin.from("rate_extensions").upsert({ profile_id: profile.id, datum: todayStr }, { onConflict: "profile_id,datum" });
