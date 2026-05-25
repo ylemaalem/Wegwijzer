@@ -957,45 +957,52 @@
     // Headings (### Titel of ## Titel)
     escaped = escaped.replace(/^#{2,3}\s+(.+)$/gm, '<h3>$1</h3>');
 
-    // Bold **tekst** → oranje via CSS
+    // Bold **tekst**
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // Genummerde lijsten: tijdelijk markeren zodat ze niet in <ul> belanden
+    escaped = escaped.replace(/^\d+\.\s+(.+)$/gm, '\x00OL\x00$1\x00/OL\x00');
 
     // Bullet lists (regels die beginnen met - of •)
     escaped = escaped.replace(/^[\-•]\s+(.+)$/gm, '<li>$1</li>');
-    // Groepeer opeenvolgende <li>'s in <ul>
-    escaped = escaped.replace(/((<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
 
-    // Genummerde lists
-    escaped = escaped.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    // Groepeer opeenvolgende bullet <li>'s in <ul>
+    escaped = escaped.replace(/((<li>[^\n]*<\/li>\n?)+)/g, '<ul>$1</ul>');
 
-    // Paragrafen (dubbele newlines → sectie-scheiding, enkele newlines → spatie of niets)
+    // Groepeer opeenvolgende OL-markers in <ol>
+    escaped = escaped.replace(/(\x00OL\x00[^\n]*\x00\/OL\x00\n?)+/g, function (match) {
+      var items = match.replace(/\x00OL\x00([^\n]*)\x00\/OL\x00\n?/g, '<li>$1</li>');
+      return '<ol>' + items + '</ol>';
+    });
+
+    // Paragrafen: dubbele newlines → sectie-scheiding
     escaped = escaped.replace(/\n\n+/g, '</p><p>');
-    // Enkele newlines na list items of headings: verwijderen (al afgehandeld door HTML tags)
+    // Newlines direct na block-elementen verwijderen
     escaped = escaped.replace(/(<\/li>)\n/g, '$1');
-    escaped = escaped.replace(/(<\/ul>)\n/g, '$1');
+    escaped = escaped.replace(/(<\/[uo]l>)\n/g, '$1');
     escaped = escaped.replace(/(<\/h3>)\n/g, '$1');
+    // Overige enkele newlines → <br>
     escaped = escaped.replace(/\n/g, '<br>');
     escaped = '<p>' + escaped + '</p>';
 
-    // Opruimen
+    // Opruimen: voorkom <p> om block-level elementen
     escaped = escaped.replace(/<p><\/p>/g, '');
     escaped = escaped.replace(/<p>(<h3>)/g, '$1');
     escaped = escaped.replace(/(<\/h3>)<\/p>/g, '$1');
-    escaped = escaped.replace(/<p>(<ul>)/g, '$1');
-    escaped = escaped.replace(/(<\/ul>)<\/p>/g, '$1');
+    escaped = escaped.replace(/<p>(<[uo]l>)/g, '$1');
+    escaped = escaped.replace(/(<\/[uo]l>)<\/p>/g, '$1');
 
-    // URLs klikbaar maken (http:// en https://)
+    // URLs klikbaar maken
     escaped = escaped.replace(
       /(https?:\/\/[^\s<>"')\]]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary);word-break:break-all">$1</a>'
     );
 
-    // Bronvermelding visueel scheiden (_Bron: ..._ of *Bron: ...*)
+    // Bronvermelding visueel scheiden
     escaped = escaped.replace(
       /<em>Bron:(.*?)<\/em>/g,
       '<div class="bron-vermelding">Bron:$1</div>'
     );
-    // Fallback: als het niet als <em> gerenderd is maar als plain tekst
     escaped = escaped.replace(
       /(?:<p>|<br>)?\s*_Bron:\s*(.*?)_\s*(?:<\/p>)?$/,
       '<div class="bron-vermelding">Bron: $1</div>'

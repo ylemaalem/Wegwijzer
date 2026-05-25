@@ -370,7 +370,7 @@
   padding: 10px 14px;
   border-radius: 16px;
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.6;
   word-wrap: break-word;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -433,11 +433,11 @@
 .chat-bubble-bot ul li {
   padding-left: 18px;
   position: relative;
-  margin-bottom: 0.1em;
+  margin-bottom: 0.35em;
 }
 
 .chat-bubble-bot ol li {
-  margin-bottom: 0.1em;
+  margin-bottom: 0.35em;
 }
 
 /* ---- Bronvermelding ---- */
@@ -463,7 +463,6 @@
 }
 
 .chat-bubble-bot ol li {
-  margin-bottom: 0;
   padding-top: 1px;
   padding-bottom: 1px;
 }
