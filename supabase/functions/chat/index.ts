@@ -1457,6 +1457,15 @@ ${vraagLijst}${trendGedekteContext}`;
         if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
         if (inviteAfdeling) userData.afdeling = inviteAfdeling;
 
+        // Verwijder bestaande auth user zodat re-invite als fresh invite werkt
+        const { data: existingForInvite } = await supabaseAdmin.auth.admin.listUsers();
+        const existingAuthUser = existingForInvite?.users?.find((u: { email: string }) => u.email === inviteEmail);
+        if (existingAuthUser) {
+          console.log("[Invite] Bestaande auth user verwijderd voor fresh invite:", inviteEmail);
+          await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
+          await new Promise(r => setTimeout(r, 500));
+        }
+
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
           data: userData,
           redirectTo: redirectUrl,
@@ -1506,42 +1515,38 @@ ${vraagLijst}${trendGedekteContext}`;
         const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
         const existingUser = existingUsers?.users?.find((u: { email: string }) => u.email === resendEmail);
 
+        // Haal bestaande profiel rol op voor re-invite metadata
+        const { data: resendProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("role")
+          .eq("tenant_id", profile.tenant_id)
+          .ilike("email", resendEmail)
+          .maybeSingle();
+        const resendRole = resendProfile?.role || "medewerker";
+
         if (existingUser) {
-          const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-            type: "recovery",
-            email: resendEmail,
-            options: { redirectTo: resendRedirect || undefined },
-          });
+          // Verwijder auth user zodat nieuwe invite werkt voor ongeactiveerde accounts
+          console.log("[Resend] Verwijder bestaande auth user voor fresh invite:", resendEmail);
+          await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
+          await new Promise(r => setTimeout(r, 500));
+        }
 
-          if (linkError) {
-            return new Response(
-              JSON.stringify({ error: linkError.message }),
-              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          }
+        const { data: invData, error: invError } = await supabaseAdmin.auth.admin.inviteUserByEmail(resendEmail, {
+          data: { role: resendRole, naam: resendNaam, tenant_id: profile.tenant_id },
+          redirectTo: resendRedirect || undefined,
+        });
 
+        if (invError) {
           return new Response(
-            JSON.stringify({ success: true, message: "Wachtwoord-reset mail verstuurd" }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        } else {
-          const { data: invData, error: invError } = await supabaseAdmin.auth.admin.inviteUserByEmail(resendEmail, {
-            data: { role: "teamleider", naam: resendNaam, tenant_id: profile.tenant_id },
-            redirectTo: resendRedirect || undefined,
-          });
-
-          if (invError) {
-            return new Response(
-              JSON.stringify({ error: invError.message }),
-              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          }
-
-          return new Response(
-            JSON.stringify({ success: true, message: "Uitnodigingsmail verstuurd" }),
+            JSON.stringify({ error: invError.message }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        return new Response(
+          JSON.stringify({ success: true, message: existingUser ? "Nieuwe activatielink verstuurd" : "Uitnodigingsmail verstuurd" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       } catch (err) {
         console.error("[Resend] Exception:", err);
         return new Response(
