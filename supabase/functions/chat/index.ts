@@ -159,9 +159,9 @@ function normalizeQuestion(vraag: string): string {
   return vraag.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!,]/g, '');
 }
 
-async function hashQuestion(tenantId: string, userId: string, vraag: string): Promise<string> {
+async function hashQuestion(tenantId: string, userId: string, vraag: string, functiegroep?: string): Promise<string> {
   const normalized = normalizeQuestion(vraag);
-  const data = `${tenantId}:${userId}:${normalized}`;
+  const data = `${tenantId}:${userId}:${functiegroep || 'none'}:${normalized}`;
   const encoder = new TextEncoder();
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1742,7 +1742,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // ---- Document aanvraag insert ----
     if (body.generate_document_concept && body.vraag_tekst) {
       try {
-        await supabaseAdmin.from("document_aanvragen").insert({ user_id: user.id, vraag: body.vraag_tekst });
+        await supabaseAdmin.from("document_aanvragen").insert({ user_id: user.id, vraag: body.vraag_tekst, tenant_id: profile.tenant_id });
 
         // Push naar tenant admins
         const { data: admins } = await supabaseAdmin.from("profiles")
@@ -2204,15 +2204,21 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let vraagHash: string | null = null;
     if (!skipCache) {
       try {
-        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag);
-        const { data: cachedEntry } = await supabaseAdmin
+        const userFg = profile.functiegroep || null;
+        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg);
+        let cacheQuery = supabaseAdmin
           .from("response_cache")
           .select("antwoord")
           .eq("tenant_id", profile.tenant_id)
           .eq("user_id", user.id)
           .eq("vraag_hash", vraagHash)
-          .gt("expires_at", new Date().toISOString())
-          .maybeSingle();
+          .gt("expires_at", new Date().toISOString());
+        if (userFg) {
+          cacheQuery = cacheQuery.eq("functiegroep", userFg);
+        } else {
+          cacheQuery = cacheQuery.is("functiegroep", null);
+        }
+        const { data: cachedEntry } = await cacheQuery.maybeSingle();
 
         if (cachedEntry?.antwoord) {
           // Cache-hit: gesprek nog wel loggen + laatste_actief bijwerken
@@ -2844,6 +2850,7 @@ ${alleKennisbronnen}`;
           vraag_hash: vraagHash,
           antwoord: antwoord,
           expires_at: expiresAt,
+          functiegroep: profile.functiegroep || null,
         }, { onConflict: "tenant_id,user_id,vraag_hash" });
       } catch (cacheErr) {
         console.warn("[Cache] Write faalde:", cacheErr);

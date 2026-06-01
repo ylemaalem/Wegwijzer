@@ -5681,19 +5681,24 @@
 
     var naam = prompt('Naam:', fg.naam);
     if (naam === null) return;
-    var code = prompt('Code (steekwoorden, komma-gescheiden):', fg.code);
-    if (code === null) return;
     var beschrijving = prompt('Beschrijving (voor AI prompt):', fg.beschrijving || '');
     if (beschrijving === null) return;
     var isKantoor = confirm('Is dit kantoorpersoneel? (OK = ja, Annuleren = nee)');
 
-    await supabaseClient.from('functiegroepen').update({
+    var sanitizedCode = naam.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || fg.code;
+
+    var updateResult = await supabaseClient.from('functiegroepen').update({
       naam: naam.trim() || fg.naam,
       beschrijving: beschrijving.trim(),
-      code: code.trim().toLowerCase().replace(/\s+/g, '_') || fg.code,
+      code: sanitizedCode,
       is_kantoor: isKantoor
     }).eq('id', id);
 
+    if (updateResult.error) {
+      console.error('[Functiegroep] Update mislukt:', updateResult.error);
+      alert('Opslaan mislukt: ' + updateResult.error.message);
+      return;
+    }
     loadFunctiegroepen();
   };
 
@@ -5701,14 +5706,18 @@
     var btn = document.getElementById('add-fg-btn');
     if (!btn) return;
     btn.addEventListener('click', async function () {
-      var code = document.getElementById('fg-code').value.trim().toLowerCase().replace(/\s+/g, '_');
       var naam = document.getElementById('fg-naam').value.trim();
       var isKantoor = document.getElementById('fg-is-kantoor') ? document.getElementById('fg-is-kantoor').checked : false;
-      if (!code || !naam) { alert('Vul code en naam in.'); return; }
-      await supabaseClient.from('functiegroepen').insert({
+      if (!naam) { alert('Vul een naam in.'); return; }
+      var code = naam.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      var insertResult = await supabaseClient.from('functiegroepen').insert({
         tenant_id: tenantId, code: code, naam: naam, beschrijving: '', is_kantoor: isKantoor
       });
-      document.getElementById('fg-code').value = '';
+      if (insertResult.error) {
+        console.error('[Functiegroep] Insert mislukt:', insertResult.error);
+        alert('Opslaan mislukt: ' + insertResult.error.message);
+        return;
+      }
       document.getElementById('fg-naam').value = '';
       loadFunctiegroepen();
     });
@@ -6440,6 +6449,7 @@
     var result = await supabaseClient
       .from('document_aanvragen')
       .select('*')
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     // Badge bijwerken
