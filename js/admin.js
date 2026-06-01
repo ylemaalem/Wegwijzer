@@ -3035,15 +3035,29 @@
         var safeEmail = JSON.stringify(p.email || '');
         var safeNaam = JSON.stringify(p.naam || '');
         if (aantalGesprekken === 0) {
-          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="Stuurt een nieuwe activatielink" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨</button>';
+          var uurGeleden = (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60);
+          var linkVerlopen = uurGeleden > 24;
+          if (linkVerlopen) {
+            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="De activatielink is waarschijnlijk verlopen. Klik om een nieuwe te sturen." style="padding:4px 8px;font-size:11px;border-radius:4px;border:2px solid #E8720C;color:#E8720C;background:transparent;cursor:pointer;white-space:nowrap">⚠️ Link verlopen — opnieuw sturen</button>';
+          } else {
+            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="Stuurt een nieuwe activatielink (geldig voor 24 uur)" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨 Uitnodiging sturen</button>';
+          }
         } else {
           uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑</button>';
         }
       }
 
-      var eersteLogin = p.eerste_login_op
-        ? '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>'
-        : '<span style="color:var(--text-muted)">Nog niet ingelogd</span>';
+      var eersteLogin;
+      if (p.eerste_login_op) {
+        eersteLogin = '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>';
+      } else {
+        var uurSindsAanmaken = (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60);
+        if (uurSindsAanmaken > 24) {
+          eersteLogin = '<span style="color:#E8720C">⚠️ Niet geactiveerd</span>';
+        } else {
+          eersteLogin = '<span style="color:var(--text-muted)">📨 Uitgenodigd</span>';
+        }
+      }
 
       return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
