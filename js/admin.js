@@ -924,6 +924,18 @@
     return div.innerHTML;
   }
 
+  function showToast(message, type) {
+    var existing = document.getElementById('wegwijzer-toast');
+    if (existing) existing.remove();
+    var toast = document.createElement('div');
+    toast.id = 'wegwijzer-toast';
+    var bg = type === 'error' ? '#dc3545' : '#0D5C6B';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 18px;border-radius:8px;font-size:0.9rem;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,0.2);background:' + bg + ';color:#fff';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(function() { if (toast.parentNode) toast.remove(); }, 4000);
+  }
+
   function formatFunctiegroep(fg) {
     // Zoek eerst in de dynamische functiegroepen tabel
     if (allFunctiegroepen && allFunctiegroepen.length > 0) {
@@ -2945,6 +2957,15 @@
       return;
     }
 
+    var convCountResult = await supabaseClient
+      .from('conversations')
+      .select('user_id')
+      .eq('tenant_id', tenantId);
+    var gesprekkenMap = {};
+    (convCountResult.data || []).forEach(function(c) {
+      gesprekkenMap[c.user_id] = (gesprekkenMap[c.user_id] || 0) + 1;
+    });
+
     allProfiles = result.data;
 
     // Debug: toon admin profiel data
@@ -3007,6 +3028,19 @@
         ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
         : '';
 
+      var uitnodigingBtn = '';
+      if (p.role !== 'admin') {
+        var aantalGesprekken = gesprekkenMap[p.user_id] || 0;
+        var btnId = 'uitnodiging-' + p.id;
+        var safeEmail = JSON.stringify(p.email || '');
+        var safeNaam = JSON.stringify(p.naam || '');
+        if (aantalGesprekken === 0) {
+          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="Stuurt een nieuwe activatielink" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨</button>';
+        } else {
+          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑</button>';
+        }
+      }
+
       var eersteLogin = p.eerste_login_op
         ? '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>'
         : '<span style="color:var(--text-muted)">Nog niet ingelogd</span>';
@@ -3021,7 +3055,7 @@
         '<td>' + escapeHtml(p.teamleider_naam || '-') + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + eersteLogin + '</td>' +
-        '<td>' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
+        '<td style="white-space:nowrap">' + uitnodigingBtn + ' ' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
   }
@@ -3037,6 +3071,36 @@
     await logAudit('INWERKTRAJECT_AFGESLOTEN', 'medewerker', profileId, { naam: naam });
 
     loadMedewerkers();
+  };
+
+  window.stuurUitnodiging = async function (btnId, email, naam, isReset) {
+    var btn = document.getElementById(btnId);
+    if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+    try {
+      var session = await supabaseClient.auth.getSession();
+      var token = session.data.session.access_token;
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          resend_invite: true,
+          invite_email: email,
+          invite_naam: naam,
+          redirect_url: 'https://app.mijnwegwijzer.com/wachtwoord-instellen.html'
+        })
+      });
+      var data = await resp.json();
+      if (data.error) {
+        showToast('❌ Fout: ' + data.error, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = isReset ? '🔑' : '📨'; }
+      } else {
+        showToast(isReset ? '✅ Wachtwoord reset mail verstuurd naar ' + email : '✅ Uitnodiging verstuurd naar ' + email, 'success');
+      }
+    } catch (err) {
+      console.error('[stuurUitnodiging] Fout:', err);
+      showToast('❌ Verbindingsfout: ' + err.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = isReset ? '🔑' : '📨'; }
+    }
   };
 
   window.deleteMedewerker = async function (profileId, userId) {
