@@ -2966,7 +2966,7 @@
     (convCountResult.data || []).forEach(function(c) {
       gesprekkenMap[c.user_id] = (gesprekkenMap[c.user_id] || 0) + 1;
     });
-    console.log('[Medewerkers] gesprekkenMap keys:', Object.keys(gesprekkenMap).length);
+    console.log('[Medewerkers] gesprekkenMap keys:', Object.keys(gesprekkenMap).length, '| sample:', JSON.stringify(Object.entries(gesprekkenMap).slice(0, 3)));
 
     // Functiegroepen naam-map: code → naam (vers, tenant-specifiek)
     var fgNaamMap = {};
@@ -3043,20 +3043,21 @@
       var uitnodigingBtn = '';
       if (p.role !== 'admin') {
         var aantalGesprekken = gesprekkenMap[p.id] || 0;
-        console.log('[Medewerkers]', p.naam, '| gesprekken:', aantalGesprekken, '| created_at:', p.created_at, '| knop:', aantalGesprekken === 0 ? (((Date.now() - new Date(p.created_at)) / 3600000) > 24 ? 'verlopen' : 'uitnodiging') : 'reset');
+        var uurGeleden = p.created_at ? (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60) : 999;
+        var knopType = aantalGesprekken === 0 ? (uurGeleden > 24 ? 'verlopen' : 'uitnodiging') : 'reset';
+        console.log('[Medewerkers]', p.naam, '| profile.id:', p.id, '| gesprekken:', aantalGesprekken, '| uur_sinds_aanmaken:', Math.round(uurGeleden), '| knop:', knopType);
         var btnId = 'uitnodiging-' + p.id;
-        var safeEmail = JSON.stringify(p.email || '');
-        var safeNaam = JSON.stringify(p.naam || '');
+        // Escape voor gebruik in onclick single-quoted strings
+        var escEmail = (p.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var escNaam = (p.naam || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         if (aantalGesprekken === 0) {
-          var uurGeleden = (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60);
-          var linkVerlopen = uurGeleden > 24;
-          if (linkVerlopen) {
-            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="De activatielink is waarschijnlijk verlopen. Klik om een nieuwe te sturen." style="padding:4px 8px;font-size:11px;border-radius:4px;border:2px solid #E8720C;color:#E8720C;background:transparent;cursor:pointer;white-space:nowrap">⚠️ Link verlopen — opnieuw sturen</button>';
+          if (uurGeleden > 24) {
+            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',false)" title="De activatielink is waarschijnlijk verlopen. Klik om een nieuwe te sturen." style="padding:4px 8px;font-size:11px;border-radius:4px;border:2px solid #E8720C;color:#E8720C;background:transparent;cursor:pointer;white-space:nowrap">⚠️ Link verlopen — opnieuw sturen</button>';
           } else {
-            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',false)" title="Stuurt een nieuwe activatielink (geldig voor 24 uur)" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨 Uitnodiging sturen</button>';
+            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',false)" title="Stuurt een nieuwe activatielink (geldig voor 24 uur)" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨 Uitnodiging sturen</button>';
           }
         } else {
-          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',' + safeEmail + ',' + safeNaam + ',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑</button>';
+          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑</button>';
         }
       }
 
