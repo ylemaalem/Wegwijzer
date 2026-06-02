@@ -170,6 +170,7 @@
     await loadFunctiegroepen();
     loadMappen();
     loadDocuments();
+    console.log('[Init] loadMedewerkers aanroep...');
     loadMedewerkers();
     loadGesprekken();
     loadStatistieken();
