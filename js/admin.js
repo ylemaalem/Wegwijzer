@@ -2944,31 +2944,25 @@
   // MEDEWERKERS
   // =============================================
   async function loadMedewerkers() {
+    console.log('[Medewerkers] loadMedewerkers START');
     var tbody = document.getElementById('medewerkers-body');
+    if (!tbody) { console.warn('[Medewerkers] tbody #medewerkers-body niet gevonden'); return; }
 
+    try {
     var result = await supabaseClient
       .from('profiles')
       .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op, created_at')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
+    console.log('[Medewerkers] profiles query klaar, error:', result.error ? result.error.message : 'geen', '| data:', (result.data || []).length);
+
     if (result.error || !result.data) {
-      tbody.innerHTML = '<tr><td colspan="10" class="no-data">Kon medewerkers niet laden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="no-data">Kon medewerkers niet laden: ' + escapeHtml((result.error || {}).message || 'geen data') + '</td></tr>';
       return;
     }
 
-    // conversations.user_id = profile.id (niet auth user_id) — key op profile.id
-    var convCountResult = await supabaseClient
-      .from('conversations')
-      .select('user_id')
-      .eq('tenant_id', tenantId);
-    var gesprekkenMap = {};
-    (convCountResult.data || []).forEach(function(c) {
-      gesprekkenMap[c.user_id] = (gesprekkenMap[c.user_id] || 0) + 1;
-    });
-    console.log('[Medewerkers] gesprekkenMap keys:', Object.keys(gesprekkenMap).length, '| sample:', JSON.stringify(Object.entries(gesprekkenMap).slice(0, 3)));
-
-    // Functiegroepen naam-map: code → naam (vers, tenant-specifiek)
+    // Functiegroepen naam-map: code → naam
     var fgNaamMap = {};
     var fgResult = await supabaseClient
       .from('functiegroepen')
@@ -2978,15 +2972,7 @@
 
     allProfiles = result.data;
 
-    // Debug: toon admin profiel data
-    result.data.forEach(function (p) {
-      if (p.role === 'admin') {
-        console.log('[DEBUG] Admin profiel uit profiles tabel:', JSON.stringify({ id: p.id, email: p.email, naam: p.naam, role: p.role, user_id: p.user_id }));
-      }
-    });
-
     updateTeamFilter();
-    // Rerender gesprekken omdat namen/teams nu beschikbaar zijn (loadGesprekken kan eerder klaar zijn geweest)
     if (allConversations.length > 0) renderGesprekken();
 
     if (result.data.length === 0) {
@@ -2994,7 +2980,6 @@
       return;
     }
 
-    // Sorteer: actieve accounts eerst, verlopen tijdelijke accounts onderaan
     var now = new Date();
     var sorted = result.data.slice().sort(function (a, b) {
       var aExpired = a.einddatum && new Date(a.einddatum) < now;
@@ -3004,7 +2989,7 @@
       return 0;
     });
 
-    console.log('[Medewerkers] geladen:', result.data.length, '| profielen');
+    console.log('[Medewerkers] rendering', sorted.length, 'rijen');
     tbody.innerHTML = sorted.map(function (p) {
       var fgCode = p.functiegroep || '';
       var fg = fgNaamMap[fgCode] || formatFunctiegroep(fgCode);
@@ -3040,38 +3025,19 @@
         ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
         : '';
 
-      var uitnodigingBtn = '';
+      // Altijd beide knoppen tonen voor niet-admin
+      var actieBtns = '';
       if (p.role !== 'admin') {
-        var aantalGesprekken = gesprekkenMap[p.id] || 0;
-        var uurGeleden = p.created_at ? (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60) : 999;
-        var knopType = aantalGesprekken === 0 ? (uurGeleden > 24 ? 'verlopen' : 'uitnodiging') : 'reset';
-        console.log('[Medewerkers]', p.naam, '| profile.id:', p.id, '| gesprekken:', aantalGesprekken, '| uur_sinds_aanmaken:', Math.round(uurGeleden), '| knop:', knopType);
-        var btnId = 'uitnodiging-' + p.id;
-        // Escape voor gebruik in onclick single-quoted strings
         var escEmail = (p.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         var escNaam = (p.naam || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        if (aantalGesprekken === 0) {
-          if (uurGeleden > 24) {
-            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',false)" title="De activatielink is waarschijnlijk verlopen. Klik om een nieuwe te sturen." style="padding:4px 8px;font-size:11px;border-radius:4px;border:2px solid #E8720C;color:#E8720C;background:transparent;cursor:pointer;white-space:nowrap">⚠️ Link verlopen — opnieuw sturen</button>';
-          } else {
-            uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',false)" title="Stuurt een nieuwe activatielink (geldig voor 24 uur)" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap">📨 Uitnodiging sturen</button>';
-          }
-        } else {
-          uitnodigingBtn = '<button id="' + btnId + '" onclick="window.stuurUitnodiging(\'' + btnId + '\',\'' + escEmail + '\',\'' + escNaam + '\',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑</button>';
-        }
+        actieBtns =
+          '<button onclick="window.stuurUitnodiging(this,\'' + escEmail + '\',\'' + escNaam + '\',false)" title="Stuurt een nieuwe activatielink" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap;margin-right:4px">📨 Uitnodiging</button>' +
+          '<button onclick="window.stuurUitnodiging(this,\'' + escEmail + '\',\'' + escNaam + '\',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑 Reset</button>';
       }
 
-      var eersteLogin;
-      if (p.eerste_login_op) {
-        eersteLogin = '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>';
-      } else {
-        var uurSindsAanmaken = (Date.now() - new Date(p.created_at)) / (1000 * 60 * 60);
-        if (uurSindsAanmaken > 24) {
-          eersteLogin = '<span style="color:#E8720C">⚠️ Niet geactiveerd</span>';
-        } else {
-          eersteLogin = '<span style="color:var(--text-muted)">📨 Uitgenodigd</span>';
-        }
-      }
+      var eersteLogin = p.eerste_login_op
+        ? '<span style="color:var(--success)" title="' + new Date(p.eerste_login_op).toLocaleString('nl-NL') + '">✅ ' + new Date(p.eerste_login_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + '</span>'
+        : '<span style="color:var(--text-muted)">—</span>';
 
       return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
@@ -3083,9 +3049,15 @@
         '<td>' + escapeHtml(p.teamleider_naam || '-') + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + eersteLogin + '</td>' +
-        '<td style="white-space:nowrap">' + uitnodigingBtn + ' ' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
+        '<td style="white-space:nowrap">' + actieBtns + ' ' + editBtn + docsBtn + inwerkBtn + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
+    console.log('[Medewerkers] rendering KLAAR');
+
+    } catch (err) {
+      console.error('[Medewerkers] CRASH in loadMedewerkers:', err);
+      if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="no-data">Fout bij laden: ' + escapeHtml(err.message) + '</td></tr>';
+    }
   }
 
   window.sluitInwerktrajectAf = async function (profileId, naam) {
@@ -3101,9 +3073,9 @@
     loadMedewerkers();
   };
 
-  window.stuurUitnodiging = async function (btnId, email, naam, isReset) {
-    var btn = document.getElementById(btnId);
-    if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  window.stuurUitnodiging = async function (btn, email, naam, isReset) {
+    var origText = btn.textContent;
+    btn.disabled = true; btn.textContent = '⏳';
     try {
       var session = await supabaseClient.auth.getSession();
       var token = session.data.session.access_token;
@@ -3120,14 +3092,15 @@
       var data = await resp.json();
       if (data.error) {
         showToast('❌ Fout: ' + data.error, 'error');
-        if (btn) { btn.disabled = false; btn.textContent = isReset ? '🔑' : '📨'; }
+        btn.disabled = false; btn.textContent = origText;
       } else {
-        showToast(isReset ? '✅ Wachtwoord reset mail verstuurd naar ' + email : '✅ Uitnodiging verstuurd naar ' + email, 'success');
+        showToast(isReset ? '✅ Reset mail verstuurd naar ' + email : '✅ Uitnodiging verstuurd naar ' + email, 'success');
+        btn.textContent = '✅'; setTimeout(function() { btn.disabled = false; btn.textContent = origText; }, 3000);
       }
     } catch (err) {
       console.error('[stuurUitnodiging] Fout:', err);
       showToast('❌ Verbindingsfout: ' + err.message, 'error');
-      if (btn) { btn.disabled = false; btn.textContent = isReset ? '🔑' : '📨'; }
+      btn.disabled = false; btn.textContent = origText;
     }
   };
 
