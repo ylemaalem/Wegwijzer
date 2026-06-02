@@ -2948,7 +2948,7 @@
 
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op, created_at')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -2957,6 +2957,7 @@
       return;
     }
 
+    // conversations.user_id = profile.id (niet auth user_id) — key op profile.id
     var convCountResult = await supabaseClient
       .from('conversations')
       .select('user_id')
@@ -2965,6 +2966,15 @@
     (convCountResult.data || []).forEach(function(c) {
       gesprekkenMap[c.user_id] = (gesprekkenMap[c.user_id] || 0) + 1;
     });
+    console.log('[Medewerkers] gesprekkenMap keys:', Object.keys(gesprekkenMap).length);
+
+    // Functiegroepen naam-map: code → naam (vers, tenant-specifiek)
+    var fgNaamMap = {};
+    var fgResult = await supabaseClient
+      .from('functiegroepen')
+      .select('code, naam')
+      .eq('tenant_id', tenantId);
+    (fgResult.data || []).forEach(function(fg) { fgNaamMap[fg.code] = fg.naam; });
 
     allProfiles = result.data;
 
@@ -2994,8 +3004,10 @@
       return 0;
     });
 
+    console.log('[Medewerkers] geladen:', result.data.length, '| profielen');
     tbody.innerHTML = sorted.map(function (p) {
-      var fg = formatFunctiegroep(p.functiegroep);
+      var fgCode = p.functiegroep || '';
+      var fg = fgNaamMap[fgCode] || formatFunctiegroep(fgCode);
       var sd = p.startdatum ? new Date(p.startdatum).toLocaleDateString('nl-NL', {
         day: 'numeric', month: 'short', year: 'numeric'
       }) : '-';
@@ -3030,7 +3042,8 @@
 
       var uitnodigingBtn = '';
       if (p.role !== 'admin') {
-        var aantalGesprekken = gesprekkenMap[p.user_id] || 0;
+        var aantalGesprekken = gesprekkenMap[p.id] || 0;
+        console.log('[Medewerkers]', p.naam, '| gesprekken:', aantalGesprekken, '| created_at:', p.created_at, '| knop:', aantalGesprekken === 0 ? (((Date.now() - new Date(p.created_at)) / 3600000) > 24 ? 'verlopen' : 'uitnodiging') : 'reset');
         var btnId = 'uitnodiging-' + p.id;
         var safeEmail = JSON.stringify(p.email || '');
         var safeNaam = JSON.stringify(p.naam || '');
@@ -3494,7 +3507,9 @@
 
         // Update profiel met extra velden
         if (inviteData.user_id) {
+          console.log('[Invite] functiegroep bij profiel-update:', functiegroep || '(leeg)');
           var updateData = { startdatum: startdatum || null, account_type: accountType, afdeling: afdeling || null };
+          if (functiegroep) updateData.functiegroep = functiegroep;
           if (inwerktrajectUrl) updateData.inwerktraject_url = inwerktrajectUrl;
           if (werkuren) updateData.werkuren = werkuren;
           var inwerkCheckbox = document.getElementById('invite-inwerktraject-actief');
