@@ -2991,37 +2991,55 @@ ${alleKennisbronnen}`;
       const alleZoektermen = [...new Set([...vraagWoorden, ...haikuTermen])];
       console.log("[StudyTube] Alle zoektermen:", alleZoektermen.join(", "));
 
-      // Stap 4: Haal alle cursussen op (met beschrijving voor matching)
-      const { data: alleCursussen, error: cursErr } = await supabaseAdmin
-        .from("studytube_cursussen")
-        .select("naam, duur_minuten, beschrijving")
-        .eq("tenant_id", profile.tenant_id);
-      if (cursErr) {
-        console.error("[StudyTube] Cursussen ophalen mislukt:", cursErr.message);
-      } else if (alleCursussen && alleCursussen.length > 0 && alleZoektermen.length > 0) {
-        // Stap 5+6: Word-boundary matching op beschrijving (fallback naar naam)
-        const wordMatch = (w: string, tekst: string): boolean => {
-          try {
-            const regex = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
-            return regex.test(tekst);
-          } catch { return false; }
-        };
-        const gescoord = alleCursussen
-          .map((c: { naam: string; duur_minuten: number | null; beschrijving: string | null }) => {
-            const matchTekst = c.beschrijving || c.naam;
-            const score = alleZoektermen.filter((t: string) => {
-              const woorden = t.split(" ").filter((w: string) => w.length > 2);
-              return woorden.length > 0 && woorden.some((w: string) => wordMatch(w, matchTekst));
-            }).length;
-            return { naam: c.naam, duur_minuten: c.duur_minuten, score };
-          })
-          .filter((c: { score: number }) => c.score > 0)
-          .sort((a: { score: number; naam: string }, b: { score: number; naam: string }) => b.score - a.score || a.naam.length - b.naam.length);
+      // Stap 4: Embedding-based similarity search via match_studytube_cursussen RPC
+      const queryEmbedding = openaiKeyForChat ? await generateEmbedding(vraag, openaiKeyForChat) : null;
+      if (!queryEmbedding) {
+        console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
+      } else {
+        const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+          query_embedding: JSON.stringify(queryEmbedding),
+          match_tenant_id: profile.tenant_id,
+          match_count: 10,
+          match_threshold: 0.35,
+        });
+        if (rpcErr) {
+          console.error("[StudyTube] RPC fout:", rpcErr.message);
+        } else if (topCursussen && topCursussen.length > 0) {
+          console.log("[StudyTube] Embedding top-10:", topCursussen.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
 
-        console.log("[StudyTube] Matches:", gescoord.slice(0, 5).map((c: { naam: string; score: number }) => `${c.naam} (${c.score})`).join(", "));
-        trainingen = gescoord.slice(0, 3).map((c: { naam: string; duur_minuten: number | null }) => ({ naam: c.naam, duur_minuten: c.duur_minuten }));
-        if (trainingen.length > 0) {
-          console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
+          // Stap 5: Laat Haiku de 3 meest relevante selecteren
+          const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
+          try {
+            const selectRes = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 20,
+                messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
+              }),
+            });
+            if (selectRes.ok) {
+              const selectData = await selectRes.json();
+              const selectie = (selectData.content?.[0]?.text || "").trim().toLowerCase();
+              console.log("[StudyTube] Haiku selectie:", selectie);
+              if (selectie !== "geen") {
+                const nummers = selectie.match(/\d+/g);
+                if (nummers) {
+                  trainingen = nummers
+                    .map((n: string) => parseInt(n, 10) - 1)
+                    .filter((i: number) => i >= 0 && i < topCursussen.length)
+                    .slice(0, 3)
+                    .map((i: number) => ({ naam: topCursussen[i].naam, duur_minuten: topCursussen[i].duur_minuten }));
+                }
+              }
+            }
+          } catch (e) { console.warn("[StudyTube] Haiku selectie fout:", e); }
+          if (trainingen.length > 0) {
+            console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
+          }
+        } else {
+          console.log("[StudyTube] Geen embedding matches boven threshold");
         }
       }
       } // einde else trainingRelevant
