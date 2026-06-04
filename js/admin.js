@@ -3834,6 +3834,8 @@
       html += '<option value="" disabled>── Afdelingen ──</option>';
       html += afdelingen.map(function (a) { return '<option value="a:' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>'; }).join('');
     }
+    html += '<option value="" disabled>──────────</option>';
+    html += '<option value="overig">Overig (geen team/afdeling)</option>';
     select.innerHTML = html;
 
     // Herstel selectie als die nog bestaat
@@ -3850,11 +3852,12 @@
     var filterValue = teamEl ? teamEl.value : '';
     var filterFeedback = document.getElementById('filter-feedback').value;
 
-    // Decodeer filter: prefix 't:' = team, 'a:' = afdeling, leeg = geen filter
+    // Decodeer filter: prefix 't:' = team, 'a:' = afdeling, 'overig' = geen team én geen HR-afdeling
     var filterType = '';
     var filterNaam = '';
     if (filterValue.indexOf('t:') === 0) { filterType = 'team'; filterNaam = filterValue.substring(2); }
     else if (filterValue.indexOf('a:') === 0) { filterType = 'afdeling'; filterNaam = filterValue.substring(2); }
+    else if (filterValue === 'overig') { filterType = 'overig'; }
 
     // Map profileId → teams / afdeling (voor snelle lookup)
     var teamsById = {};
@@ -3870,6 +3873,11 @@
         if (teams.indexOf(filterNaam) === -1) return false;
       } else if (filterType === 'afdeling') {
         if ((afdelingById[c.user_id] || '') !== filterNaam) return false;
+      } else if (filterType === 'overig') {
+        var teams = teamsById[c.user_id] || [];
+        var afd = afdelingById[c.user_id] || '';
+        // Overig = geen team én afdeling is niet 'HR'
+        if (teams.length > 0 || afd === 'HR') return false;
       }
       if (filterFeedback === 'goed' && c.feedback !== 'goed') return false;
       if (filterFeedback === 'niet_goed' && c.feedback !== 'niet_goed') return false;
