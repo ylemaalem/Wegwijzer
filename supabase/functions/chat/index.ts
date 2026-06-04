@@ -2948,7 +2948,7 @@ ${alleKennisbronnen}`;
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
             max_tokens: 5,
-            messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die beginnen met "Wat is", "Hoe werk", "Hoe ga ik om met"\n\nTrainingen zijn NIET zinvol bij:\n- Procesvragen (hoe registreer ik X in ONS)\n- Systeemvragen (hoe log ik in, hoe installeer ik)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Eenwoordvragen zonder zorginhoudelijke context\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
+            messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
           }),
         });
         if (relRes.ok) {
