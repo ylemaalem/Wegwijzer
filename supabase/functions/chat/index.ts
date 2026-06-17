@@ -3044,31 +3044,6 @@ ${alleKennisbronnen}`;
       antwoord = antwoord.trimEnd();
     }
 
-    // ---- 9d. Response cache write ----
-    // Alleen cachen bij niet-skip vragen, met geldige hash, en niet-leeg
-    // niet-fallback antwoord. CAO/salaris-vragen krijgen 7d TTL, rest 24u.
-    if (!skipCache && vraagHash && antwoord && antwoord !== "Geen antwoord ontvangen." && antwoord.trim().length > 0) {
-      try {
-        const isCAOVraag = WEBSITE_TRIGGERS.some(t => vraag.toLowerCase().includes(t.toLowerCase()))
-          || vraag.toLowerCase().includes("cao")
-          || vraag.toLowerCase().includes("salaris");
-        const ttlHours = isCAOVraag ? 7 * 24 : 24;
-        const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
-
-        await supabaseAdmin.from("response_cache").upsert({
-          tenant_id: profile.tenant_id,
-          user_id: user.id,
-          vraag_hash: vraagHash,
-          antwoord: antwoord,
-          trainingen: trainingen.length > 0 ? trainingen : null,
-          expires_at: expiresAt,
-          functiegroep: profile.functiegroep || null,
-        }, { onConflict: "tenant_id,user_id,vraag_hash" });
-      } catch (cacheErr) {
-        console.warn("[Cache] Write faalde:", cacheErr);
-      }
-    }
-
     // ---- 9. Gesprek opslaan — naam strippen uit DB-antwoord (privacy)
     // De medewerker zelf ziet de naam wél in de UI (rawAntwoord/antwoord
     // worden teruggegeven), maar in conversations.antwoord staat altijd
@@ -3228,6 +3203,29 @@ ${alleKennisbronnen}`;
 
     if (trainingen.length > 0 && conversation?.id) {
       supabaseAdmin.from("conversations").update({ studytube_trainingen: trainingen }).eq("id", conversation.id).then(() => {}).catch(() => {});
+    }
+
+    // ---- 11. Response cache write (na StudyTube zodat trainingen beschikbaar zijn) ----
+    if (!skipCache && vraagHash && antwoord && antwoord !== "Geen antwoord ontvangen." && antwoord.trim().length > 0) {
+      try {
+        const isCAOVraag = WEBSITE_TRIGGERS.some(t => vraag.toLowerCase().includes(t.toLowerCase()))
+          || vraag.toLowerCase().includes("cao")
+          || vraag.toLowerCase().includes("salaris");
+        const ttlHours = isCAOVraag ? 7 * 24 : 24;
+        const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
+
+        await supabaseAdmin.from("response_cache").upsert({
+          tenant_id: profile.tenant_id,
+          user_id: user.id,
+          vraag_hash: vraagHash,
+          antwoord: antwoord,
+          trainingen: trainingen.length > 0 ? trainingen : null,
+          expires_at: expiresAt,
+          functiegroep: profile.functiegroep || null,
+        }, { onConflict: "tenant_id,user_id,vraag_hash" });
+      } catch (cacheErr) {
+        console.warn("[Cache] Write faalde:", cacheErr);
+      }
     }
 
     return new Response(
