@@ -45,6 +45,29 @@ const PERSOONLIJKE_WOORDEN = [
   "mijn team", "mijn leidinggevende", "mijn dienst", "mijn uren",
 ];
 
+const TEAM_VRAAG_TRIGGERS = [
+  "wie zit er in mijn team",
+  "wie zitten er in mijn team",
+  "wie zijn mijn teamleden",
+  "mijn teamleden",
+  "mijn collega",
+  "wie zijn mijn collega",
+  "overzicht van mijn team",
+  "wie zijn er in mijn team",
+  "wie werken er in mijn team",
+  "samenstelling van mijn team",
+  "wie is mijn leidinggevende",
+  "wie is mijn manager",
+  "wie leidt mijn team",
+  "mijn afdeling",
+  "wie zitten er op mijn afdeling",
+  "wie is de hr manager",
+  "wie is de manager",
+  "wie is verantwoordelijk voor",
+  "organisatiestructuur",
+  "wie werkt er bij",
+];
+
 console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
 
 // HTML email builder voor de maandelijkse terugblik
@@ -185,6 +208,172 @@ async function generateEmbedding(text: string, openaiKey: string): Promise<numbe
   } catch (e) {
     console.error("[Embedding] Exception:", e);
     return null;
+  }
+}
+
+async function findAuthUserByEmail(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  email: string
+): Promise<{ id: string; email: string } | null> {
+  let page = 1;
+  const perPage = 1000;
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users || data.users.length === 0) break;
+    const found = data.users.find(
+      (u: { email?: string }) => u.email?.toLowerCase() === email.toLowerCase()
+    );
+    if (found) return found as { id: string; email: string };
+    if (data.users.length < perPage) break;
+    page++;
+  }
+  return null;
+}
+
+function berekenInwerkWeek(startdatum: string | null): number {
+  if (!startdatum) return 1;
+  const start = new Date(startdatum);
+  const nu = new Date();
+  if (isNaN(start.getTime())) return 1;
+  const dagen = Math.floor((nu.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  if (dagen < 0) return 1;
+  return Math.min(7, Math.max(1, Math.ceil((dagen + 1) / 7)));
+}
+
+async function bouwTeamContext(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  profile: Record<string, unknown>,
+  tenantId: string
+): Promise<string> {
+  try {
+    const profileTeams: string[] = (profile.teams as string[]) || [];
+    const profileAfdeling: string | null = profile.afdeling as string | null;
+    const profileNaam: string = (profile.naam as string) || "";
+    const profileRole: string = (profile.role as string) || "";
+    const teamleiderNaam: string | null = profile.teamleider_naam as string | null;
+
+    let collegas: Array<{ naam: string; functiegroep: string | null; teams: string[] | null; afdeling: string | null }> = [];
+    let tlTeamsVoorLeider: string[] = [];
+
+    if (profileRole === "teamleider") {
+      const { data: tlRow } = await supabaseAdmin
+        .from("teamleiders").select("teams").eq("tenant_id", tenantId).ilike("naam", profileNaam).maybeSingle();
+      tlTeamsVoorLeider = (tlRow as { teams: string[] | null } | null)?.teams || [];
+      if (tlTeamsVoorLeider.length > 0) {
+        const { data: teamleden } = await supabaseAdmin
+          .from("profiles").select("naam, functiegroep, teams, afdeling")
+          .eq("tenant_id", tenantId).eq("role", "medewerker").overlaps("teams", tlTeamsVoorLeider);
+        collegas = (teamleden || []) as typeof collegas;
+      }
+    } else if (profileTeams.length > 0) {
+      const { data: teamGenoten } = await supabaseAdmin
+        .from("profiles").select("naam, functiegroep, teams, afdeling")
+        .eq("tenant_id", tenantId).neq("naam", profileNaam).overlaps("teams", profileTeams);
+      collegas = (teamGenoten || []) as typeof collegas;
+    } else if (profileAfdeling) {
+      const { data: afdelingGenoten } = await supabaseAdmin
+        .from("profiles").select("naam, functiegroep, teams, afdeling")
+        .eq("tenant_id", tenantId).eq("afdeling", profileAfdeling).neq("naam", profileNaam);
+      collegas = (afdelingGenoten || []) as typeof collegas;
+    }
+
+    let leidinggevendeInfo = "";
+    if (teamleiderNaam) {
+      const { data: tlDetails } = await supabaseAdmin
+        .from("teamleiders").select("naam, titel, telefoon, email, rol")
+        .eq("tenant_id", tenantId).ilike("naam", teamleiderNaam).maybeSingle();
+      if (tlDetails) {
+        const tl = tlDetails as { naam: string; titel: string | null; telefoon: string | null; email: string | null; rol: string | null };
+        const label = tl.titel || (tl.rol === "manager" ? "Manager" : tl.rol === "hr" ? "HR Manager" : "Leidinggevende");
+        leidinggevendeInfo = `${label}: ${tl.naam}`;
+        if (tl.telefoon) leidinggevendeInfo += ` (tel: ${tl.telefoon})`;
+        if (tl.email) leidinggevendeInfo += ` (email: ${tl.email})`;
+      } else {
+        leidinggevendeInfo = teamleiderNaam;
+      }
+    }
+
+    const { data: alleLeiders } = await supabaseAdmin
+      .from("teamleiders").select("naam, titel, rol, teams, telefoon, email").eq("tenant_id", tenantId);
+
+    let context = "--- LIVE TEAMDATA (direct uit systeem, actueler dan documenten) ---\n";
+
+    if (profileRole === "teamleider") {
+      context += `JOUW TEAMS: ${tlTeamsVoorLeider.length > 0 ? tlTeamsVoorLeider.join(", ") : "geen teams gekoppeld"}\n\n`;
+      if (collegas.length > 0) {
+        const perTeam: Record<string, string[]> = {};
+        for (const col of collegas) {
+          const cTeams = col.teams || ["(geen team)"];
+          for (const t of cTeams) {
+            if (tlTeamsVoorLeider.includes(t)) {
+              if (!perTeam[t]) perTeam[t] = [];
+              const fg = col.functiegroep ? col.functiegroep.replace(/_/g, " ") : "onbekende functie";
+              const entry = `${col.naam} (${fg})`;
+              if (!perTeam[t].includes(entry)) perTeam[t].push(entry);
+            }
+          }
+        }
+        context += "TEAMLEDEN MET EEN WEGWIJZER-ACCOUNT:\n";
+        for (const [team, leden] of Object.entries(perTeam)) {
+          context += `${team}:\n${leden.map((l) => `  - ${l}`).join("\n")}\n`;
+        }
+      } else {
+        context += "Er zijn nog geen teamleden met een Wegwijzer-account in jouw teams.\n";
+      }
+    } else if (profileTeams.length > 0) {
+      context += `JOUW TEAM(S): ${profileTeams.join(", ")}\n\n`;
+      if (collegas.length > 0) {
+        context += "COLLEGA'S MET EEN WEGWIJZER-ACCOUNT:\n";
+        const getoond = new Set<string>();
+        for (const col of collegas) {
+          if (getoond.has(col.naam)) continue;
+          getoond.add(col.naam);
+          const fg = col.functiegroep ? col.functiegroep.replace(/_/g, " ") : "onbekende functie";
+          const cTeams = col.teams ? ` — ${col.teams.join(", ")}` : "";
+          context += `  - ${col.naam} (${fg}${cTeams})\n`;
+        }
+      } else {
+        context += "Geen andere collega's met een Wegwijzer-account in jouw team.\n";
+      }
+    } else if (profileAfdeling) {
+      context += `JOUW AFDELING: ${profileAfdeling}\n\n`;
+      if (collegas.length > 0) {
+        context += "COLLEGA'S OP JOUW AFDELING MET EEN WEGWIJZER-ACCOUNT:\n";
+        for (const col of collegas) {
+          const fg = col.functiegroep ? col.functiegroep.replace(/_/g, " ") : "onbekende functie";
+          context += `  - ${col.naam} (${fg})\n`;
+        }
+      } else {
+        context += "Geen andere collega's met een Wegwijzer-account op jouw afdeling.\n";
+      }
+    }
+
+    if (leidinggevendeInfo) context += `\nJOUW DIRECTE LEIDINGGEVENDE: ${leidinggevendeInfo}\n`;
+
+    if (alleLeiders && alleLeiders.length > 0) {
+      context += "\nVOLLEDIGE LEIDINGGEVENDEN EN MANAGERS (iedereen heeft recht op deze info):\n";
+      for (const tl of alleLeiders as Array<{ naam: string; titel: string | null; rol: string | null; teams: string[] | null; telefoon: string | null; email: string | null }>) {
+        const label = tl.titel || (tl.rol === "manager" ? "Manager" : tl.rol === "hr" ? "HR Manager" : tl.rol === "teamleider" ? "Teamleider" : "Leidinggevende");
+        let regel = `  - ${tl.naam} (${label})`;
+        if (tl.teams && tl.teams.length > 0) regel += `: verantwoordelijk voor ${tl.teams.join(", ")}`;
+        if (tl.telefoon) regel += ` | tel: ${tl.telefoon}`;
+        if (tl.email) regel += ` | email: ${tl.email}`;
+        context += regel + "\n";
+      }
+    }
+
+    context += `
+\u26a0\ufe0f INSTRUCTIE VOOR HAIKU \u2014 GEBRUIK BEIDE BRONNEN:
+- LIVE TEAMDATA hierboven = meest actueel voor: directe collega's, teamindeling, contactgegevens leidinggevenden
+- KENNISBANK-DOCUMENT = aanvullend voor: bredere organisatie (Directie, Raad van Toezicht, afdelingen, OR, CR)
+- Bij tegenstrijdigheid: LIVE DATA heeft altijd voorrang op het document
+- Beantwoord vragen over andere afdelingen of managers gewoon \u2014 iedereen heeft recht op deze organisatie-informatie
+- Sluit ALTIJD af met: "Let op: het teamoverzicht toont alleen collega's met een Wegwijzer-account. Voor een volledig actueel overzicht raadpleeg je leidinggevende."`;
+
+    return context;
+  } catch (e) {
+    console.error("[TeamContext] Fout:", e);
+    return "";
   }
 }
 
@@ -1458,8 +1647,7 @@ ${vraagLijst}${trendGedekteContext}`;
         if (inviteAfdeling) userData.afdeling = inviteAfdeling;
 
         // Verwijder bestaande auth user zodat re-invite als fresh invite werkt
-        const { data: existingForInvite } = await supabaseAdmin.auth.admin.listUsers();
-        const existingAuthUser = existingForInvite?.users?.find((u: { email: string }) => u.email === inviteEmail);
+        const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, inviteEmail);
         if (existingAuthUser) {
           console.log("[Invite] Bestaande auth user verwijderd voor fresh invite:", inviteEmail);
           await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
@@ -1512,8 +1700,7 @@ ${vraagLijst}${trendGedekteContext}`;
       const resendRedirect = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
 
       try {
-        const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-        const existingUser = existingUsers?.users?.find((u: { email: string }) => u.email === resendEmail);
+        const existingUser = await findAuthUserByEmail(supabaseAdmin, resendEmail);
 
         // Haal bestaande profiel rol op voor re-invite metadata
         const { data: resendProfile } = await supabaseAdmin
@@ -2201,10 +2388,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       && body.sparring_context.length === 3;
     const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "e-learning", "nascholing", "scholing"];
     const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
+    const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
     const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
       || isSparringRequest
-      || isTrainingVraag;
+      || isTrainingVraag
+      || isTeamVraag;
 
     let vraagHash: string | null = null;
     if (!skipCache) {
@@ -2213,7 +2402,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg);
         let cacheQuery = supabaseAdmin
           .from("response_cache")
-          .select("antwoord")
+          .select("antwoord, trainingen")
           .eq("tenant_id", profile.tenant_id)
           .eq("user_id", user.id)
           .eq("vraag_hash", vraagHash)
@@ -2263,8 +2452,9 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
               }
             });
           console.log("[Cache] HIT voor user", user.id);
+          const cachedTrainingen = (cachedEntry as Record<string, unknown>).trainingen || [];
           return new Response(
-            JSON.stringify({ antwoord: cachedEntry.antwoord, conversation_id: cachedConv?.id || null, cached: true }),
+            JSON.stringify({ antwoord: cachedEntry.antwoord, conversation_id: cachedConv?.id || null, cached: true, trainingen: cachedTrainingen }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -2284,20 +2474,20 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let websiteContext = "";
     if (websiteUrl) {
       try {
-        const webResponse = await fetch(websiteUrl, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(8000) });
+        const webResponse = await fetch(websiteUrl, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(3000) });
         if (webResponse.ok) {
           const html = await webResponse.text();
           const textContent = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 6000);
           if (textContent.length > 50) websiteContext = `--- Kennisbank website: ${websiteUrl} ---\n${textContent}`;
         }
-      } catch { /* skip */ }
+      } catch (e) { const isTimeout = e instanceof Error && e.name === "TimeoutError"; if (isTimeout) console.warn("[Website] Timeout na 3s voor:", websiteUrl); /* skip */ }
     }
 
     // ---- 6c. Persoonlijk inwerktraject ----
     let persoonlijkContext = "";
     if (profile.inwerktraject_url) {
       try {
-        const persResponse = await fetch(profile.inwerktraject_url, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(8000) });
+        const persResponse = await fetch(profile.inwerktraject_url, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(3000) });
         if (persResponse.ok) {
           const html = await persResponse.text();
           const textContent = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 8000);
@@ -2326,10 +2516,16 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
 
     const openaiKeyForChat = Deno.env.get("OPENAI_API_KEY");
 
+    // Genereer embedding één keer — hergebruikt voor documenten EN StudyTube
+    let gedeeldeQueryEmbedding: number[] | null = null;
+    if (openaiKeyForChat) {
+      gedeeldeQueryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
+    }
+
     // ---- Primair: vector similarity search via pgvector ----
     if (openaiKeyForChat) {
       try {
-        const queryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
+        const queryEmbedding = gedeeldeQueryEmbedding;
         if (queryEmbedding) {
           const { data: chunkMatches, error: chunkErr } = await supabaseAdmin.rpc("match_document_chunks", {
             query_embedding: JSON.stringify(queryEmbedding),
@@ -2522,7 +2718,9 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // ---- 7. System prompt bouwen ----
     const naam = profile.naam || "medewerker";
     const org = organisatienaam || "de organisatie";
-    const wk = weeknummer || 1;
+    const wk = profile.startdatum
+      ? berekenInwerkWeek(profile.startdatum as string)
+      : (weeknummer || 1);
 
     let fgBeschrijving = "";
     if (profile.functiegroep) {
@@ -2585,13 +2783,13 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const naamMatch = vraagLower.includes(siteNaamLower) || keywords.some((kw: string) => siteNaamLower.includes(kw));
         if (naamMatch || onderwerpMatch) {
           try {
-            const siteResponse = await fetch(site.url, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(5000) });
+            const siteResponse = await fetch(site.url, { headers: { "User-Agent": "Wegwijzer-Bot/1.0" }, signal: AbortSignal.timeout(3000) });
             if (siteResponse.ok) {
               const html = await siteResponse.text();
               const text = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 4000);
               if (text.length > 50) websitesContext += `--- Website: ${site.naam} (${site.url}) ---\n${text}\n\n`;
             }
-          } catch { /* skip */ }
+          } catch (e) { const isTimeout = e instanceof Error && e.name === "TimeoutError"; if (isTimeout) console.warn("[Website] Timeout na 3s voor:", site?.url); /* skip */ }
         }
       }
     }
@@ -2613,6 +2811,13 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       geheugenContext = "\n\nGESPREKSGEHEUGEN — eerdere vragen van deze medewerker (chronologisch, oudste eerst):\n" + recente.map((g: { vraag: string; antwoord: string }, i: number) => `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`).join("\n\n");
     }
 
+    // Team-context: live data bij team/organisatie-vragen
+    let teamContext = "";
+    if (isTeamVraag) {
+      teamContext = await bouwTeamContext(supabaseAdmin, profile as Record<string, unknown>, profile.tenant_id as string);
+      console.log("[TeamContext] Gegenereerd voor:", profile.naam, "| isTeamVraag:", isTeamVraag);
+    }
+
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
     if (kennisbankContext) bronnen.push(kennisbankContext);
@@ -2622,6 +2827,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (persoonlijkContext) bronnen.push(persoonlijkContext);
     if (teamleiderContext) bronnen.push(teamleiderContext);
     if (functiegroepContext) bronnen.push(functiegroepContext);
+    if (teamContext) bronnen.push(teamContext);
 
     let alleKennisbronnen = bronnen.length > 0
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
@@ -2854,6 +3060,7 @@ ${alleKennisbronnen}`;
           user_id: user.id,
           vraag_hash: vraagHash,
           antwoord: antwoord,
+          trainingen: trainingen.length > 0 ? trainingen : null,
           expires_at: expiresAt,
           functiegroep: profile.functiegroep || null,
         }, { onConflict: "tenant_id,user_id,vraag_hash" });
@@ -2962,37 +3169,8 @@ ${alleKennisbronnen}`;
       if (!trainingRelevant) {
         console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
       } else {
-      // Stap 1: Woorden uit de vraag extraheren
-      const stopwoorden = new Set(["ik","je","jij","hij","zij","wij","ze","we","het","de","een","er","is","was","zijn","ben","wordt","werd","kan","kon","wil","wilt","zou","zal","heb","hebt","heeft","had","doe","doet","mag","moet","ga","gaat","kom","komt","in","op","aan","van","voor","met","naar","over","uit","bij","door","om","tot","na","te","per","als","dan","maar","of","en","want","dus","toch","nog","al","ook","wel","niet","geen","meer","veel","heel","erg","wat","wie","waar","hoe","wanneer","waarom","welk","welke","dit","dat","deze","die","zo","hier","daar","nu","toen","me","mij","mijn"]);
-      const generiekeWoorden = new Set(["ontwikkelen","leren","verbeteren","werken","worden","maken","gaan","komen","doen","krijgen","willen","kunnen","moeten","volgen","zoeken","graag","beter","goed","gaat","iets","even","beetje","best","verder","meer","client","cliënt","clienten","cliënten","medewerker","medewerkers","team","organisatie","collega","begeleider","begeleiding","zorg","hulp","vraag","situatie","probleem"]);
-      const vraagWoorden = vraag.toLowerCase().replace(/[^a-zà-ÿ\s]/g, "").split(/\s+/).filter((w: string) => w.length > 2 && !stopwoorden.has(w) && !generiekeWoorden.has(w));
-      console.log("[StudyTube] Vraagwoorden:", vraagWoorden.join(", "));
-
-      // Stap 2: Haiku voegt 3 vakinhoudelijke termen toe
-      let haikuTermen: string[] = [];
-      try {
-        const ztResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 50,
-            messages: [{ role: "user", content: `Geef PRECIES 3 specifieke Nederlandse zoektermen voor deze zorgvraag. Alleen vakinhoudelijke kernwoorden. VERBODEN woorden: communicatie, ontwikkeling, leiderschap, samenwerking, professioneel, persoonlijk, vaardigheden, begeleiding, ondersteuning, gesprek. Elk woord los, gescheiden door komma, geen uitleg.\n\nVraag: ${vraag}` }],
-          }),
-        });
-        if (ztResp.ok) {
-          const ztData = await ztResp.json();
-          haikuTermen = (ztData.content?.[0]?.text || "").split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2 && !generiekeWoorden.has(t));
-        }
-      } catch (e) { console.log("[StudyTube] Haiku fout:", e); }
-      console.log("[StudyTube] Haiku termen:", haikuTermen.join(", "));
-
-      // Stap 3: Combineer vraagwoorden + Haiku termen (dedupliceer)
-      const alleZoektermen = [...new Set([...vraagWoorden, ...haikuTermen])];
-      console.log("[StudyTube] Alle zoektermen:", alleZoektermen.join(", "));
-
-      // Stap 4: Embedding-based similarity search via match_studytube_cursussen RPC
-      const queryEmbedding = openaiKeyForChat ? await generateEmbedding(vraag, openaiKeyForChat) : null;
+      // Gebruik gedeelde embedding — zoektermen niet meer nodig
+      const queryEmbedding = gedeeldeQueryEmbedding;
       if (!queryEmbedding) {
         console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
       } else {

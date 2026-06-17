@@ -3022,9 +3022,16 @@
         ? '<button class="btn-icon btn-icon-danger" onclick="window.deleteMedewerker(\'' + p.id + '\', \'' + p.user_id + '\')" title="Verwijderen">🗑️</button>'
         : '';
       var docsBtn = '';
-      var inwerkBtn = (p.role === 'medewerker' && !p.inwerken_afgerond)
+      var inwerkStartdatum = p.startdatum ? new Date(p.startdatum) : null;
+      var inwerkWekenVerstreken = inwerkStartdatum
+        ? Math.floor((Date.now() - inwerkStartdatum.getTime()) / (1000 * 60 * 60 * 24 * 7))
+        : null;
+      var inwerkVerlopen = inwerkWekenVerstreken !== null && inwerkWekenVerstreken >= 6;
+      var inwerkBtn = (p.role === 'medewerker' && !p.inwerken_afgerond && !inwerkVerlopen)
         ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
-        : '';
+        : inwerkVerlopen
+          ? '<span style="color:var(--text-muted);font-size:11px" title="Het inwerktraject is automatisch afgesloten na 6 weken">✅ Afgerond (automatisch na 6 wkn)</span>'
+          : '';
 
       // Altijd beide knoppen tonen voor niet-admin
       var actieBtns = '';
