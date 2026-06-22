@@ -2393,7 +2393,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       || vraag.length < 10
       || isSparringRequest
       || isTrainingVraag
-      || isTeamVraag;
+      || isTeamVraag
+      || vraagtBron;
 
     let vraagHash: string | null = null;
     if (!skipCache) {
@@ -2402,7 +2403,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg);
         let cacheQuery = supabaseAdmin
           .from("response_cache")
-          .select("antwoord, trainingen")
+          .select("antwoord, trainingen, gebruikte_document_ids")
           .eq("tenant_id", profile.tenant_id)
           .eq("user_id", user.id)
           .eq("vraag_hash", vraagHash)
@@ -2423,9 +2424,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           const cachedAntwoordVoorDb = naamInDbCache.length > 2
             ? cachedEntry.antwoord.replace(new RegExp(escapeRegexCache(naamInDbCache), "gi"), "de medewerker")
             : cachedEntry.antwoord;
+          const cachedDocIds = (cachedEntry as { gebruikte_document_ids?: string[] | null }).gebruikte_document_ids || [];
           const { data: cachedConv } = await supabaseAdmin
             .from("conversations")
-            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedAntwoordVoorDb })
+            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedAntwoordVoorDb, gebruikte_document_ids: cachedDocIds })
             .select("id")
             .single();
           const cacheUpdateFields: Record<string, unknown> = { laatste_actief: new Date().toISOString() };
@@ -2510,20 +2512,72 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let HEEFT_KENNISBANK_MATCH = false;
     let zoekMethode = "geen";
     let gebruikteDocIds: string[] = [];
+    let bronvraagContext: string | null = null;
 
     // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
     let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
 
     const openaiKeyForChat = Deno.env.get("OPENAI_API_KEY");
 
+    // ---- Bronvraag-shortcut: vraag naar bron van vorige antwoord ----
+    // Bij een bronvraag heeft de huidige vraag geen semantische overlap met
+    // documenten. Sla de normale retrieval over en haal documentnamen op
+    // basis van het vorige gesprek van deze medewerker.
+    if (vraagtBron) {
+      try {
+        const { data: vorigGesprek } = await supabaseAdmin
+          .from("conversations")
+          .select("gebruikte_document_ids, created_at")
+          .eq("user_id", profile.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const vorigeDocIds: string[] = (vorigGesprek as { gebruikte_document_ids?: string[] | null } | null)?.gebruikte_document_ids || [];
+
+        if (!vorigGesprek) {
+          bronvraagContext = `BRONVRAAG-CONTEXT: De medewerker vraagt naar de bron van een vorig antwoord, maar er is geen eerder gesprek in deze sessie of historie.
+Instructie: zeg eerlijk en kort dat er nog geen eerder antwoord beschikbaar is om naar te verwijzen. Geen speculatie.`;
+        } else if (vorigeDocIds.length === 0) {
+          bronvraagContext = `BRONVRAAG-CONTEXT: De medewerker vraagt naar de bron van het vorige antwoord. Dat antwoord was niet gebaseerd op een specifiek document uit de kennisbank.
+Instructie: zeg eerlijk en kort dat het vorige antwoord geen specifiek kennisbank-document als bron had. Geen speculatie, geen verzonnen disclaimers.`;
+        } else {
+          const { data: docNamen } = await supabaseAdmin
+            .from("documents")
+            .select("id, naam")
+            .in("id", vorigeDocIds);
+          const namen: string[] = (docNamen || []).map((d: { naam: string }) => d.naam).filter(Boolean);
+
+          if (namen.length === 0) {
+            bronvraagContext = `BRONVRAAG-CONTEXT: De medewerker vraagt naar de bron van het vorige antwoord. De bron-documenten zijn niet meer beschikbaar (mogelijk verwijderd uit de kennisbank).
+Instructie: zeg kort en feitelijk dat de oorspronkelijke bron niet meer te achterhalen is. Geen speculatie.`;
+          } else {
+            bronvraagContext = `BRONVRAAG-CONTEXT: De medewerker vraagt naar de bron van het vorige antwoord.
+Dat antwoord was gebaseerd op: ${namen.join(", ")}.
+Instructie: noem kort en feitelijk welk(e) document(en) gebruikt zijn. Geen aanvullende speculatie, geen disclaimer-zinnen verzinnen.`;
+            // Geef document-ids door aan dit gesprek zodat een dérde
+            // vervolgvraag ("en daarvoor?") ook nog werkt.
+            gebruikteDocIds = vorigeDocIds;
+            HEEFT_KENNISBANK_MATCH = true;
+            zoekMethode = "bronvraag";
+          }
+        }
+      } catch (bronErr) {
+        console.warn("[Bronvraag] Lookup faalde:", bronErr);
+        bronvraagContext = `BRONVRAAG-CONTEXT: De medewerker vraagt naar de bron van het vorige antwoord, maar het ophalen is mislukt.
+Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
+      }
+    }
+
     // Genereer embedding één keer — hergebruikt voor documenten EN StudyTube
+    // Sla over bij bronvraag (geen retrieval nodig).
     let gedeeldeQueryEmbedding: number[] | null = null;
-    if (openaiKeyForChat) {
+    if (openaiKeyForChat && !vraagtBron) {
       gedeeldeQueryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
     }
 
     // ---- Primair: vector similarity search via pgvector ----
-    if (openaiKeyForChat) {
+    if (openaiKeyForChat && !vraagtBron) {
       try {
         const queryEmbedding = gedeeldeQueryEmbedding;
         if (queryEmbedding) {
@@ -2588,7 +2642,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     }
 
     // ---- Fallback: zoektermen + keyword scoring ----
-    if (!HEEFT_KENNISBANK_MATCH) {
+    if (!HEEFT_KENNISBANK_MATCH && !vraagtBron) {
       const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
       const orgDocs = uitgeslotenMappen.length > 0
         ? (ruweOrgDocs || []).filter((d: { map: string | null }) => !uitgeslotenMappen.includes(d.map || ""))
@@ -2833,7 +2887,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
       : "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de leidinggevende voor organisatiespecifieke informatie.";
 
-    if (!HEEFT_KENNISBANK_MATCH) {
+    // Bronvraag heeft eigen context — overschrijft normale logica volledig.
+    if (bronvraagContext) {
+      alleKennisbronnen = bronvraagContext;
+    } else if (!HEEFT_KENNISBANK_MATCH) {
       alleKennisbronnen = `KENNISBANK STATUS: GEEN MATCH.
 
 Er zijn geen relevante organisatiedocumenten gevonden.
@@ -3220,6 +3277,7 @@ ${alleKennisbronnen}`;
           vraag_hash: vraagHash,
           antwoord: antwoord,
           trainingen: trainingen.length > 0 ? trainingen : null,
+          gebruikte_document_ids: gebruikteDocIds,
           expires_at: expiresAt,
           functiegroep: profile.functiegroep || null,
         }, { onConflict: "tenant_id,user_id,vraag_hash" });
