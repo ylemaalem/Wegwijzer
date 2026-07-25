@@ -86,6 +86,21 @@ const TEAM_VRAAG_TRIGGERS = [
   "wie zit er in team",
 ];
 
+// Trefwoorden die duiden op een feitvraag (tijden, bedragen, aantallen, nummers).
+// Bij true → Fact-Grounding Layer: chunk-reranking + dedicated extractie-call.
+const FEIT_VRAAG_TRIGGERS = [
+  "hoe laat", "welke tijd", "wat is de tijd", "vanaf hoe laat", "tot hoe laat",
+  "wanneer begint", "wanneer eindigt", "wanneer start", "wanneer stopt",
+  "hoeveel uur", "hoeveel minuten", "hoeveel dagen", "hoeveel weken",
+  "hoe lang", "hoe vaak",
+  "wat kost", "hoeveel kost", "welke vergoeding", "welk bedrag", "hoeveel geld",
+  "welk telefoonnummer", "wat is het nummer", "welk nummer", "wat is het telefoonnummer",
+  "welke dagen", "op welke dag", "welk tijdstip",
+  "hoeveel procent", "welk percentage",
+  "welke datum", "wanneer moet",
+  "tijden van", "openingstijden", "aanvangstijd", "eindtijd",
+];
+
 console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
 
 // HTML email builder voor de maandelijkse terugblik
@@ -2513,6 +2528,11 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "e-learning", "nascholing", "scholing"];
     const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
     const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
+    // Fact-Grounding: detecteer feitvragen. Bij true wordt reranking + extractie-call actief.
+    // Bij twijfel true — false negative laat hallucinatie bestaan, false positive kost alleen één extra Haiku-call.
+    const isFeitVraag = FEIT_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t))
+      || /\b\d{1,2}[:.]\d{2}\b/.test(vraag)
+      || /\b(hoeveel|hoe\s?laat|wanneer|welke?\s+(tijd|dag|datum|nummer|bedrag|prijs|kosten))\b/i.test(vraag);
     const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
       || isSparringRequest
@@ -2637,6 +2657,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let zoekMethode = "geen";
     let gebruikteDocIds: string[] = [];
     let bronvraagContext: string | null = null;
+    // Fact-Grounding: top chunks apart bewaren voor de extractie-call (alleen gevuld bij isFeitVraag + vector search hit).
+    let feitChunks: Array<{ document_id: string; chunk_text: string; similarity: number; docNaam: string }> = [];
 
     // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
     let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
@@ -2736,10 +2758,42 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               gebruikteDocIds = [...new Set(gefilterdeChunks.map(c => c.document_id))];
 
               const metaMap = new Map((docMeta || []).map((d: { id: string; naam: string; notitie: string | null }) => [d.id, d]));
+
+              // ---- Fact-Grounding reranking ----
+              // Bij feitvragen: scoor chunks op patronen die duiden op feitelijke inhoud
+              // (tijden, bedragen, nummers, lijsten, letterlijke kernwoorden uit vraag)
+              // en sorteer daarop. Dit brengt het chunk met het antwoord bovenaan.
+              let werkChunks = gefilterdeChunks;
+              if (isFeitVraag) {
+                const vraagKernwoorden = vraag.toLowerCase().split(/\s+/).filter((w) => w.length > 3 && !STOPWOORDEN.has(w));
+                const chunksMetScore = gefilterdeChunks.map((c) => {
+                  let score = c.similarity * 10; // similarity blijft als basis meewegen (0..10)
+                  const tekst = c.chunk_text || "";
+                  if (/\d{1,2}[:.]\d{2}/.test(tekst)) score += 10;
+                  if (/[€$]\s?\d+|\d+\s?(euro|EUR)/i.test(tekst)) score += 10;
+                  if (/\b\d{2,4}[-\s]?\d{6,8}\b|\b06[-\s]?\d{8}\b/.test(tekst)) score += 10;
+                  if (/^\s*[-*•]\s|\n\s*[-*•]\s|^\s*\d+\.\s|\n\s*\d+\.\s/.test(tekst)) score += 5;
+                  for (const kw of vraagKernwoorden) {
+                    if (tekst.toLowerCase().includes(kw)) score += 3;
+                  }
+                  if (tekst.length >= 200 && tekst.length <= 800) score += 5;
+                  return { chunk: c, score };
+                });
+                chunksMetScore.sort((a, b) => b.score - a.score);
+                werkChunks = chunksMetScore.slice(0, 5).map((s) => s.chunk);
+                console.log(`[FGL] isFeitVraag=true, rerank: ${gefilterdeChunks.length} → ${werkChunks.length} chunks; top-scores=${chunksMetScore.slice(0, 3).map(s => s.score.toFixed(1)).join(",")}`);
+
+                // Bewaar top-chunks voor extractie-call, met docNaam erbij
+                feitChunks = werkChunks.map((c) => {
+                  const meta = metaMap.get(c.document_id) as { naam: string } | undefined;
+                  return { document_id: c.document_id, chunk_text: c.chunk_text, similarity: c.similarity, docNaam: meta?.naam || "Document" };
+                });
+              }
+
               const chunkTexts: string[] = [];
               let totaalLengte = 0;
 
-              for (const chunk of gefilterdeChunks) {
+              for (const chunk of werkChunks) {
                 if (totaalLengte >= 30000) break;
                 const meta = metaMap.get(chunk.document_id) as { naam: string; notitie?: string | null } | undefined;
                 const docNaam = meta?.naam || "Document";
@@ -2752,7 +2806,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               }
 
               documentContext = chunkTexts.join("\n\n");
-              console.log(`[Chat] Vector search: ${gefilterdeChunks.length} chunks gevonden, similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}`);
+              console.log(`[Chat] Vector search: ${gefilterdeChunks.length} chunks (${werkChunks.length} gebruikt), similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}`);
             } else {
               console.log(`[Chat] Vector search: te weinig chunks (${gefilterdeChunks.length}), fallback naar zoektermen`);
             }
@@ -2996,6 +3050,65 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       console.log("[TeamContext] Gegenereerd voor:", profile.naam, "| isTeamVraag:", isTeamVraag);
     }
 
+    // ---- Fact-Grounding Layer: dedicated extractie-call bij feitvragen ----
+    // Draait alleen bij isFeitVraag=true + kennisbank match + niet in bronvraag/sparring/team route.
+    // Doel: forceer letterlijke feit-extractie uit top chunks vóór de main-call, zodat Haiku
+    // het exacte cijfer/tijdstip/bedrag niet uit trainingsdata hoeft te reconstrueren.
+    let geverifieerdeFeiten: string | null = null;
+    let feitenNietGevonden = false;
+    if (isFeitVraag && HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && feitChunks.length > 0) {
+      const feitStart = Date.now();
+      try {
+        const chunksBlob = feitChunks
+          .map((c, i) => `[${i + 1}] Uit "${c.docNaam}":\n${c.chunk_text}`)
+          .join("\n\n");
+        const extractPrompt = `Je krijgt een vraag en enkele documentfragmenten. Je hebt EEN taak: haal de letterlijke feitelijke antwoorden uit de fragmenten.
+
+REGELS:
+- Antwoord in maximaal 3 zinnen.
+- Herhaal getallen, tijden, bedragen, namen EXACT zoals ze in de fragmenten staan.
+- Als de fragmenten het antwoord niet bevatten: antwoord letterlijk NIET_GEVONDEN
+- Verzin niets, extrapoleer niets, generaliseer niets.
+- Als er meerdere verschillende waarden staan (bijv. per regio of per situatie): noem ze allemaal expliciet met hun context.
+
+Vraag: ${vraag.trim()}
+
+Fragmenten:
+${chunksBlob}`;
+
+        const extractResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 250,
+            messages: [{ role: "user", content: extractPrompt }],
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const feitLatency = Date.now() - feitStart;
+        if (extractResp.ok) {
+          const extractData = await extractResp.json();
+          const raw = (extractData.content?.[0]?.text || "").trim();
+          if (raw === "NIET_GEVONDEN" || raw.toUpperCase().startsWith("NIET_GEVONDEN")) {
+            feitenNietGevonden = true;
+            console.log(`[FGL] Extractie: NIET_GEVONDEN (${feitLatency}ms)`);
+          } else if (raw.length > 0) {
+            geverifieerdeFeiten = raw;
+            console.log(`[FGL] Extractie: ${raw.length} chars (${feitLatency}ms) — "${raw.substring(0, 120).replace(/\n/g, " ")}${raw.length > 120 ? "…" : ""}"`);
+          } else {
+            console.log(`[FGL] Extractie: lege response (${feitLatency}ms)`);
+          }
+        } else {
+          console.warn(`[FGL] Extractie HTTP ${extractResp.status} (${feitLatency}ms)`);
+        }
+      } catch (feitErr) {
+        console.warn("[FGL] Extractie fout:", feitErr instanceof Error ? feitErr.message : feitErr);
+      }
+    }
+
+    console.log(`[FGL] samenvatting isFeitVraag=${isFeitVraag} kennisMatch=${HEEFT_KENNISBANK_MATCH} feitChunks=${feitChunks.length} geverifieerd=${geverifieerdeFeiten ? "ja" : (feitenNietGevonden ? "niet_gevonden" : "n/a")}`);
+
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
     if (kennisbankContext) bronnen.push(kennisbankContext);
@@ -3010,6 +3123,24 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     let alleKennisbronnen = bronnen.length > 0
       ? "BESCHIKBARE KENNISBRONNEN:\n" + bronnen.join("\n\n")
       : "Er zijn geen specifieke documenten gevonden voor deze vraag. Geef een algemeen behulpzaam antwoord op basis van je kennis over de zorgsector en verwijs de medewerker naar de leidinggevende voor organisatiespecifieke informatie.";
+
+    // Fact-Grounding: geverifieerde feiten als eerst-zichtbare blok bovenaan.
+    // Blijft off bij bronvraag (die overschrijft alles hieronder).
+    if (geverifieerdeFeiten && !bronvraagContext) {
+      alleKennisbronnen = `=== GEVERIFIEERDE FEITEN UIT DE DOCUMENTEN (hoogste prioriteit) ===
+${geverifieerdeFeiten}
+=== EINDE GEVERIFIEERDE FEITEN ===
+
+INSTRUCTIE: Gebruik de geverifieerde feiten hierboven LETTERLIJK voor concrete waardes (tijden, bedragen, nummers, aantallen, dagen). De kennisbronnen hieronder zijn voor context en toelichting. Als de geverifieerde feiten en de kennisbronnen conflicteren: gebruik de geverifieerde feiten.
+
+${alleKennisbronnen}`;
+    } else if (feitenNietGevonden && !bronvraagContext && HEEFT_KENNISBANK_MATCH) {
+      alleKennisbronnen = `=== GEVERIFIEERDE FEITEN: NIET GEVONDEN ===
+De specifieke feitelijke waarde die de vraag opvraagt (tijd, bedrag, nummer, aantal, datum) is NIET expliciet aanwezig in de documenten. Zeg dit eerlijk in je antwoord. Verzin GEEN waarde en geef GEEN algemene inschatting op basis van vergelijkbare situaties.
+=== EINDE ===
+
+${alleKennisbronnen}`;
+    }
 
     // Bronvraag heeft eigen context — overschrijft normale logica volledig.
     if (bronvraagContext) {
