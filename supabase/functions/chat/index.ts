@@ -66,6 +66,24 @@ const TEAM_VRAAG_TRIGGERS = [
   "wie is verantwoordelijk voor",
   "organisatiestructuur",
   "wie werkt er bij",
+  // Live medewerker-query: aantallen en namen per team/functiegroep
+  "hoeveel mensen",
+  "hoeveel medewerkers",
+  "hoeveel collega's",
+  "hoeveel collega",
+  "hoeveel ambulant",
+  "hoeveel begeleiders",
+  "hoeveel teamleiders",
+  "hoeveel woonbegeleiders",
+  "wie werken er",
+  "wie werkt er",
+  "wie zijn er",
+  "welke medewerkers",
+  "lijst van medewerkers",
+  "overzicht medewerkers",
+  "namen van",
+  "wie zitten er in team",
+  "wie zit er in team",
 ];
 
 console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
@@ -362,13 +380,119 @@ async function bouwTeamContext(
       }
     }
 
+    // ---- MEDEWERKER-CONTEXT: organisatie-brede aantallen + namen per team ----
+    // Bij vragen als "hoeveel mensen werken er ambulant", "wie zit er in team Almere"
+    // moet Haiku een concreet antwoord kunnen geven op basis van live data.
+    try {
+      const { data: alleMedewerkers } = await supabaseAdmin
+        .from("profiles")
+        .select("naam, role, functiegroep, teams, afdeling, einddatum")
+        .eq("tenant_id", tenantId)
+        .order("naam", { ascending: true });
+
+      const nu = new Date();
+      const actief = (alleMedewerkers || []).filter((p: { naam: string | null; role: string | null; einddatum: string | null }) => {
+        if (!p.naam) return false;
+        const naamLower = p.naam.toLowerCase();
+        if (naamLower.includes("test")) return false;
+        if (p.naam === "Wegwijzer Beheer") return false;
+        if (p.role === "admin") return false;
+        if (p.einddatum && new Date(p.einddatum) <= nu) return false;
+        return true;
+      }) as Array<{ naam: string; role: string | null; functiegroep: string | null; teams: string[] | null; afdeling: string | null }>;
+
+      const totaal = actief.length;
+      const perFunctiegroep: Record<string, number> = {};
+      for (const m of actief) {
+        const fgKey = m.functiegroep || (m.role === "teamleider" ? "teamleider" : "overig");
+        perFunctiegroep[fgKey] = (perFunctiegroep[fgKey] || 0) + 1;
+      }
+
+      // Namen per team (teams is text[]/uuid[] array \u2014 kan meerdere hebben)
+      const perTeam: Record<string, string[]> = {};
+      for (const m of actief) {
+        if (m.teams && m.teams.length > 0) {
+          for (const t of m.teams) {
+            if (!perTeam[t]) perTeam[t] = [];
+            perTeam[t].push(m.naam);
+          }
+        }
+      }
+
+      // Medewerkers zonder team (HR, Kennis, Overig via afdeling)
+      const perAfdeling: Record<string, string[]> = {};
+      for (const m of actief) {
+        if ((!m.teams || m.teams.length === 0) && m.afdeling) {
+          if (!perAfdeling[m.afdeling]) perAfdeling[m.afdeling] = [];
+          perAfdeling[m.afdeling].push(m.naam);
+        }
+      }
+
+      // Drempel: bij > 30 actief laten we namenlijsten weg \u2014 anders wordt het
+      // antwoord onleesbaar. Aantallen per team blijven wel.
+      const toonNamen = totaal <= 30;
+
+      let medewerkerBlok = "\n\n--- MEDEWERKER-CONTEXT (live uit database) ---\n";
+      medewerkerBlok += `Totaal actieve medewerkers in Wegwijzer: ${totaal} (exclusief testaccounts, systeemaccounts en admins)\n`;
+      const fgLabels: Record<string, string> = {
+        ambulant_begeleider: "Ambulant begeleider",
+        ambulant_persoonlijk_begeleider: "Ambulant persoonlijk begeleider",
+        woonbegeleider: "Woonbegeleider",
+        persoonlijk_woonbegeleider: "Persoonlijk woonbegeleider",
+        teamleider: "Teamleider",
+        hr_medewerker: "HR-medewerker",
+        kennis_expertise: "Kennis en Expertise",
+        overig: "Overig",
+      };
+      for (const [fgKey, aantal] of Object.entries(perFunctiegroep)) {
+        const label = fgLabels[fgKey] || fgKey.replace(/_/g, " ");
+        medewerkerBlok += `  - ${label}: ${aantal}\n`;
+      }
+
+      const teamNamen = Object.keys(perTeam).sort();
+      if (teamNamen.length > 0) {
+        medewerkerBlok += `\nMedewerkers per team:\n`;
+        for (const teamNaam of teamNamen) {
+          const leden = perTeam[teamNaam];
+          if (toonNamen) {
+            medewerkerBlok += `  - ${teamNaam} (${leden.length}): ${leden.join(", ")}\n`;
+          } else {
+            medewerkerBlok += `  - ${teamNaam}: ${leden.length} medewerkers\n`;
+          }
+        }
+      }
+
+      const afdNamen = Object.keys(perAfdeling).sort();
+      if (afdNamen.length > 0) {
+        medewerkerBlok += `\nMedewerkers per afdeling (zonder team):\n`;
+        for (const afdNaam of afdNamen) {
+          const leden = perAfdeling[afdNaam];
+          if (toonNamen) {
+            medewerkerBlok += `  - ${afdNaam} (${leden.length}): ${leden.join(", ")}\n`;
+          } else {
+            medewerkerBlok += `  - ${afdNaam}: ${leden.length} medewerkers\n`;
+          }
+        }
+      }
+
+      medewerkerBlok += `\nBELANGRIJK: deze data toont ALLEEN medewerkers die zijn geregistreerd in Wegwijzer. Medewerkers die (nog) geen account hebben staan hier niet in \u2014 dit is dus niet het volledige personeelsbestand van AHMN.`;
+      context += medewerkerBlok;
+    } catch (mwErr) {
+      console.warn("[TeamContext] Medewerker-context ophalen faalde:", mwErr);
+    }
+
     context += `
 \u26a0\ufe0f INSTRUCTIE VOOR HAIKU \u2014 GEBRUIK BEIDE BRONNEN:
 - LIVE TEAMDATA hierboven = meest actueel voor: directe collega's, teamindeling, contactgegevens leidinggevenden
+- MEDEWERKER-CONTEXT hierboven = live aantallen per functiegroep en namen per team \u2014 gebruik dit bij vragen als "hoeveel mensen werken er ambulant" of "wie zitten er in team X"
 - KENNISBANK-DOCUMENT = aanvullend voor: bredere organisatie (Directie, Raad van Toezicht, afdelingen, OR, CR)
 - Bij tegenstrijdigheid: LIVE DATA heeft altijd voorrang op het document
 - Beantwoord vragen over andere afdelingen of managers gewoon \u2014 iedereen heeft recht op deze organisatie-informatie
-- Sluit ALTIJD af met: "Let op: het teamoverzicht toont alleen collega's met een Wegwijzer-account. Voor een volledig actueel overzicht raadpleeg je leidinggevende."`;
+- Bij vraag naar aantal: geef concreet aantal + uitsplitsing per functiegroep als relevant
+- Bij vraag naar een specifiek team: noem de namen uit dat team; als team niet bestaat noem beschikbare teams
+- Als team geen leden heeft in Wegwijzer: zeg "er zijn momenteel geen medewerkers van [team] geregistreerd in Wegwijzer"
+- Noem NOOIT e-mailadressen of telefoonnummers uit medewerker-context, alleen namen en functies
+- Sluit ALTIJD af met: "Let op: dit overzicht toont alleen collega's met een Wegwijzer-account. Voor een volledig actueel personeelsoverzicht raadpleeg je leidinggevende."`;
 
     return context;
   } catch (e) {
