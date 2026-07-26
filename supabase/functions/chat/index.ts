@@ -2644,12 +2644,14 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     }
 
     // ---- 6d. Organisatie documenten ----
-    // Regio bepalen op basis van teams; documenten uit de ANDERE regio-map uitsluiten.
+    // Regio bepalen op basis van teams — puur voor prompt-framing.
+    // GEEN hard filter meer op documenten: informatie van andere regio's is
+    // niet vertrouwelijk en mag in het antwoord verschijnen, mits duidelijk
+    // aangegeven welke variant voor de medewerker zelf geldt.
     const teamsVanMedewerker: string[] = profile.teams || [];
     const heeftVeluweTeam = teamsVanMedewerker.some((t: string) => ["Veluwe", "Gele Weiland", "Middelste Wei", "Molenweg"].includes(t));
     const heeftAlmereTeam = teamsVanMedewerker.some((t: string) => ["Almere", "Manuscript", "VAN", "FAN", "FANMN"].includes(t));
     const regio: "Veluwe" | "Almere" | null = heeftVeluweTeam ? "Veluwe" : heeftAlmereTeam ? "Almere" : null;
-    const uitgeslotenMappen: string[] = regio === "Veluwe" ? ["Almere", "Manuscript"] : regio === "Almere" ? ["Veluwe"] : [];
 
     console.log(`[Chat] Gebruiker: ${profile.naam}, Regio: ${regio || "alle"}, Vraag: "${vraag.substring(0, 80)}"`);
 
@@ -2660,6 +2662,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let bronvraagContext: string | null = null;
     // Fact-Grounding: top chunks apart bewaren voor de extractie-call (alleen gevuld bij isFeitVraag + vector search hit).
     let feitChunks: Array<{ document_id: string; chunk_text: string; similarity: number; docNaam: string }> = [];
+    // FGL diagnostics-tellers (buiten scope zodat insert later toegang heeft).
+    let fglMatchCount: number | null = null;
+    let fglChunksOpgehaald: number | null = null;
+    let fglChunksNaRerank: number | null = null;
 
     // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
     let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
@@ -2732,6 +2738,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           // varianten (bijv. VAN/FAN/FAN MN) niet elkaar uit de top-k drukken.
           // Rerank + extractie versmallen daarna weer aan de onderkant.
           const matchCountGebruikt = isFeitVraag ? 25 : 8;
+          fglMatchCount = matchCountGebruikt;
           const { data: chunkMatches, error: chunkErr } = await supabaseAdmin.rpc("match_document_chunks", {
             query_embedding: JSON.stringify(queryEmbedding),
             match_org_id: profile.tenant_id,
@@ -2739,6 +2746,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
             match_threshold: 0.5,
           });
           const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
+          fglChunksOpgehaald = chunksOpgehaaldVoorFilter;
 
           if (!chunkErr && chunkMatches && chunkMatches.length >= 3) {
             // Haal unieke document_ids op om notities toe te kunnen voegen
@@ -2748,15 +2756,10 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               .select("id, naam, notitie, map")
               .in("id", docIds);
 
-            // Filter op regio (crawled pages hebben geen map, die altijd includeren)
-            const toegestaneDocIds = new Set(
-              (docMeta || [])
-                .filter((d: { map: string | null }) => uitgeslotenMappen.length === 0 || !uitgeslotenMappen.includes(d.map || ""))
-                .map((d: { id: string }) => d.id)
-            );
-
-            const gefilterdeChunks = (chunkMatches as { document_id: string; chunk_text: string; similarity: number }[])
-              .filter(c => toegestaneDocIds.has(c.document_id));
+            // Geen regiofilter meer op documenten — regio wordt via prompt-framing
+            // meegegeven zodat het model eigen regio eerst noemt en varianten expliciet
+            // aangeeft.
+            const gefilterdeChunks = chunkMatches as { document_id: string; chunk_text: string; similarity: number }[];
 
             if (gefilterdeChunks.length >= 3) {
               HEEFT_KENNISBANK_MATCH = true;
@@ -2789,6 +2792,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 });
                 chunksMetScore.sort((a, b) => b.score - a.score);
                 werkChunks = chunksMetScore.slice(0, 7).map((s) => s.chunk);
+                fglChunksNaRerank = werkChunks.length;
                 console.log(`[FGL] rerank: pool=${gefilterdeChunks.length} → top=${werkChunks.length}; top-scores=${chunksMetScore.slice(0, 5).map(s => s.score.toFixed(1)).join(",")}`);
 
                 // Bewaar top-chunks voor extractie-call, met docNaam erbij
@@ -2816,7 +2820,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               }
 
               documentContext = chunkTexts.join("\n\n");
-              console.log(`[Chat] Vector search: match_count=${matchCountGebruikt}, opgehaald=${chunksOpgehaaldVoorFilter}, na regiofilter=${gefilterdeChunks.length}, na rerank=${werkChunks.length}, similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}, uitgeslotenMappen=[${uitgeslotenMappen.join(",")}]`);
+              console.log(`[Chat] Vector search: match_count=${matchCountGebruikt}, opgehaald=${chunksOpgehaaldVoorFilter}, na rerank=${werkChunks.length}, similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}`);
             } else {
               console.log(`[Chat] Vector search: te weinig chunks (${gefilterdeChunks.length}), fallback naar zoektermen`);
             }
@@ -2832,9 +2836,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     // ---- Fallback: zoektermen + keyword scoring ----
     if (!HEEFT_KENNISBANK_MATCH && !vraagtBron) {
       const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
-      const orgDocs = uitgeslotenMappen.length > 0
-        ? (ruweOrgDocs || []).filter((d: { map: string | null }) => !uitgeslotenMappen.includes(d.map || ""))
-        : (ruweOrgDocs || []);
+      const orgDocs = (ruweOrgDocs || []);
       const { data: persDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
       const allDocs = [...(orgDocs || []), ...(persDocs || [])];
       console.log(`[Chat] Zoektermen fallback: org=${orgDocs?.length || 0}, pers=${persDocs?.length || 0}`);
@@ -3001,7 +3003,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     if (profile.werkuren) profielInfo += `\n- Werkuren per week: ${profile.werkuren}`;
     if (profile.afdeling) profielInfo += `\n- Afdeling: ${profile.afdeling}`;
     if (profile.teams && profile.teams.length > 0) profielInfo += `\n- Team(s): ${profile.teams.join(", ")}`;
-    if (regio) profielInfo += `\n- Regio: ${regio} — gebruik ALLEEN kennis en informatie die van toepassing is op de regio ${regio}. Gebruik NOOIT informatie van andere regio's zoals Almere of Veluwe door elkaar.`;
+    if (regio) profielInfo += `\n- Regio: ${regio} — als de vraag regio-specifiek is (bijv. teams, diensten of locaties die per regio verschillen), noem EERST wat voor regio ${regio} geldt, en pas daarna eventuele varianten uit andere regio's als aanvullende context. Blijf altijd expliciet over welke variant bij welke regio hoort — nooit door elkaar husselen.`;
     if (profile.startdatum) profielInfo += `\n- Startdatum: ${profile.startdatum}`;
     profielInfo += `\n- Weeknummer inwerktraject: ${wk}${wk > 6 ? " (inwerktraject afgerond)" : " van 6"}`;
     if (profile.teamleider_naam) {
@@ -3138,6 +3140,43 @@ ${chunksBlob}`;
     }
 
     console.log(`[FGL] samenvatting isFeitVraag=${isFeitVraag} kennisMatch=${HEEFT_KENNISBANK_MATCH} feitChunks=${feitChunks.length} geverifieerd=${geverifieerdeFeiten ? "ja" : (feitenNietGevonden ? "niet_gevonden" : "n/a")}`);
+
+    // ---- Persistente FGL diagnostiek ----
+    // Alleen loggen bij feitvragen (waar de FGL relevant is) om ruis te beperken.
+    // Insert is fire-and-forget: geen await, geen impact op response-latency.
+    if (isFeitVraag) {
+      try {
+        const extractieStatus = geverifieerdeFeiten
+          ? "geverifieerd"
+          : feitenNietGevonden
+          ? "niet_gevonden"
+          : feitChunks.length === 0
+          ? "skipped"
+          : "error";
+        supabaseAdmin.from("fgl_diagnostics").insert({
+          tenant_id: profile.tenant_id,
+          user_id: profile.id,
+          vraag: vraag.trim().substring(0, 500),
+          is_feit_vraag: isFeitVraag,
+          zoek_methode: zoekMethode,
+          match_count: fglMatchCount,
+          chunks_opgehaald: fglChunksOpgehaald,
+          chunks_na_rerank: fglChunksNaRerank,
+          feit_chunk_docs: feitChunks.map((c) => ({
+            doc_id: c.document_id,
+            doc_naam: c.docNaam,
+            similarity: c.similarity,
+            chunk_preview: (c.chunk_text || "").substring(0, 200),
+          })),
+          extractie_output: geverifieerdeFeiten ? geverifieerdeFeiten.substring(0, 1000) : null,
+          extractie_status: extractieStatus,
+        }).then(({ error }: { error: unknown }) => {
+          if (error) console.warn("[FGL] diag insert:", error);
+        });
+      } catch (diagErr) {
+        console.warn("[FGL] diag build:", diagErr instanceof Error ? diagErr.message : diagErr);
+      }
+    }
 
     const bronnen: string[] = [];
     if (documentContext) bronnen.push(documentContext);
