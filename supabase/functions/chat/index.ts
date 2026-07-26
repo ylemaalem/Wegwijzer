@@ -2727,12 +2727,17 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       try {
         const queryEmbedding = gedeeldeQueryEmbedding;
         if (queryEmbedding) {
+          // Recall-first bij feitvragen: haal bredere pool op zodat concurrerende
+          // varianten (bijv. VAN/FAN/FAN MN) niet elkaar uit de top-k drukken.
+          // Rerank + extractie versmallen daarna weer aan de onderkant.
+          const matchCountGebruikt = isFeitVraag ? 25 : 8;
           const { data: chunkMatches, error: chunkErr } = await supabaseAdmin.rpc("match_document_chunks", {
             query_embedding: JSON.stringify(queryEmbedding),
             match_org_id: profile.tenant_id,
-            match_count: 8,
+            match_count: matchCountGebruikt,
             match_threshold: 0.5,
           });
+          const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
 
           if (!chunkErr && chunkMatches && chunkMatches.length >= 3) {
             // Haal unieke document_ids op om notities toe te kunnen voegen
@@ -2763,6 +2768,8 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               // Bij feitvragen: scoor chunks op patronen die duiden op feitelijke inhoud
               // (tijden, bedragen, nummers, lijsten, letterlijke kernwoorden uit vraag)
               // en sorteer daarop. Dit brengt het chunk met het antwoord bovenaan.
+              // Slice = 7 (i.p.v. 5) om multi-entiteit vragen (bijv. VAN/FAN/FAN MN)
+              // ruimte te geven meerdere documenten mee te nemen.
               let werkChunks = gefilterdeChunks;
               if (isFeitVraag) {
                 const vraagKernwoorden = vraag.toLowerCase().split(/\s+/).filter((w) => w.length > 3 && !STOPWOORDEN.has(w));
@@ -2780,14 +2787,16 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                   return { chunk: c, score };
                 });
                 chunksMetScore.sort((a, b) => b.score - a.score);
-                werkChunks = chunksMetScore.slice(0, 5).map((s) => s.chunk);
-                console.log(`[FGL] isFeitVraag=true, rerank: ${gefilterdeChunks.length} → ${werkChunks.length} chunks; top-scores=${chunksMetScore.slice(0, 3).map(s => s.score.toFixed(1)).join(",")}`);
+                werkChunks = chunksMetScore.slice(0, 7).map((s) => s.chunk);
+                console.log(`[FGL] rerank: pool=${gefilterdeChunks.length} → top=${werkChunks.length}; top-scores=${chunksMetScore.slice(0, 5).map(s => s.score.toFixed(1)).join(",")}`);
 
                 // Bewaar top-chunks voor extractie-call, met docNaam erbij
                 feitChunks = werkChunks.map((c) => {
                   const meta = metaMap.get(c.document_id) as { naam: string } | undefined;
                   return { document_id: c.document_id, chunk_text: c.chunk_text, similarity: c.similarity, docNaam: meta?.naam || "Document" };
                 });
+                const uniekeDocs = [...new Set(feitChunks.map(c => c.docNaam))];
+                console.log(`[FGL] extractie-input: ${feitChunks.length} chunks uit ${uniekeDocs.length} docs: ${uniekeDocs.map(n => `"${n}"`).join(", ")}`);
               }
 
               const chunkTexts: string[] = [];
@@ -2806,7 +2815,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               }
 
               documentContext = chunkTexts.join("\n\n");
-              console.log(`[Chat] Vector search: ${gefilterdeChunks.length} chunks (${werkChunks.length} gebruikt), similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}`);
+              console.log(`[Chat] Vector search: match_count=${matchCountGebruikt}, opgehaald=${chunksOpgehaaldVoorFilter}, na regiofilter=${gefilterdeChunks.length}, na rerank=${werkChunks.length}, similarity top=${gefilterdeChunks[0]?.similarity?.toFixed(3)}, uitgeslotenMappen=[${uitgeslotenMappen.join(",")}]`);
             } else {
               console.log(`[Chat] Vector search: te weinig chunks (${gefilterdeChunks.length}), fallback naar zoektermen`);
             }
@@ -3064,12 +3073,32 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           .join("\n\n");
         const extractPrompt = `Je krijgt een vraag en enkele documentfragmenten. Je hebt EEN taak: haal de letterlijke feitelijke antwoorden uit de fragmenten.
 
-REGELS:
-- Antwoord in maximaal 3 zinnen.
-- Herhaal getallen, tijden, bedragen, namen EXACT zoals ze in de fragmenten staan.
-- Als de fragmenten het antwoord niet bevatten: antwoord letterlijk NIET_GEVONDEN
-- Verzin niets, extrapoleer niets, generaliseer niets.
-- Als er meerdere verschillende waarden staan (bijv. per regio of per situatie): noem ze allemaal expliciet met hun context.
+HARDE REGEL — WAARDEN (getallen, tijden, bedragen, namen, telefoonnummers, data):
+- Herhaal EXACT zoals in de fragmenten. Verzin NIETS. Extrapoleer NIETS. Rond NIET af.
+- Als een concrete waarde niet letterlijk in de fragmenten staat, mag je hem NIET noemen — ook niet als "logisch" of "gebruikelijk".
+
+SOEPELE REGEL — LABELS (rubrieksnamen boven de waarden):
+- Documenten gebruiken vaak andere labels dan de vraag. "Dienstrooster", "actief bereikbaar",
+  "standaard uren", "werktijden", "bereikbaarheidsuren" kunnen allemaal verwijzen naar dezelfde
+  dienst waar de vraag over gaat.
+- Koppel deze labels aan de vraag WANNEER de inhoud overduidelijk over hetzelfde onderwerp gaat
+  (bijv. het fragment beschrijft de dienst waar de vraag naar vraagt, of het staat in een document
+  dat over dat team/die dienst gaat).
+- Neem dan de waarde over, MET vermelding van het oorspronkelijke label uit het document
+  (bijv. "Dienstrooster 19:00-01:00").
+- Bij echte twijfel of het over hetzelfde onderwerp gaat: antwoord NIET_GEVONDEN.
+  Beter niets zeggen dan verkeerde koppelingen maken.
+
+VOLLEDIGHEID:
+- Noem ALLE relevante waarden die je in de fragmenten vindt, ook als ze onder verschillende
+  labels staan of uit verschillende documenten komen. Laat NIETS weg alleen omdat het label niet
+  exact matcht met de vraag.
+- Als er meerdere varianten zijn (per regio, team, situatie, tijdslot): noem ze allemaal
+  expliciet, met hun context of teamnaam erbij.
+
+FORMAAT:
+- Maximaal 5 korte regels of zinnen.
+- Als de fragmenten het antwoord op geen enkele manier bevatten: antwoord letterlijk NIET_GEVONDEN
 
 Vraag: ${vraag.trim()}
 
@@ -3081,7 +3110,7 @@ ${chunksBlob}`;
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
-            max_tokens: 250,
+            max_tokens: 400,
             messages: [{ role: "user", content: extractPrompt }],
           }),
           signal: AbortSignal.timeout(8000),
