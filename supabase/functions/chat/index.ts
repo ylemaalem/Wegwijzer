@@ -2538,7 +2538,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       || isSparringRequest
       || isTrainingVraag
       || isTeamVraag
-      || vraagtBron;
+      || vraagtBron
+      || isFeitVraag;
 
     let vraagHash: string | null = null;
     if (!skipCache) {
