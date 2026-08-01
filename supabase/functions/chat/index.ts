@@ -273,6 +273,46 @@ function berekenInwerkWeek(startdatum: string | null): number {
   return Math.min(7, Math.max(1, Math.ceil((dagen + 1) / 7)));
 }
 
+// Bepaalt server-side welke medewerker-profiel-ids een teamleider/manager/hr/admin
+// mag monitoren. Teamleider: alleen medewerkers met team-overlap (teams uit de
+// teamleiders-tabel). Admin/manager/hr: alle medewerkers van de tenant.
+// Sluit altijd het eigen profiel uit. Dit vervangt de RLS-gebaseerde teamtoegang
+// tot conversations, zodat de anon-client geen directe rijtoegang meer nodig heeft.
+async function resolveMonitorProfileIds(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  profile: { id: string; tenant_id: string; role: string | null },
+  userEmail: string | null,
+): Promise<string[]> {
+  const { data: medewerkers } = await supabaseAdmin
+    .from("profiles")
+    .select("id, teams")
+    .eq("tenant_id", profile.tenant_id)
+    .eq("role", "medewerker");
+  const alle = (medewerkers || []) as Array<{ id: string; teams: string[] | null }>;
+
+  if (profile.role === "teamleider") {
+    // Teams van deze teamleider ophalen uit de teamleiders-tabel (op e-mail).
+    let tlTeams: string[] = [];
+    if (userEmail) {
+      const { data: tlRow } = await supabaseAdmin
+        .from("teamleiders")
+        .select("teams")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("email", userEmail)
+        .maybeSingle();
+      tlTeams = (tlRow as { teams: string[] | null } | null)?.teams || [];
+    }
+    if (tlTeams.length === 0) return [];
+    return alle
+      .filter((m) => Array.isArray(m.teams) && m.teams.some((t) => tlTeams.indexOf(t) !== -1))
+      .map((m) => m.id)
+      .filter((id) => id !== profile.id);
+  }
+
+  // admin / manager / hr → hele tenant, minus eigen profiel.
+  return alle.map((m) => m.id).filter((id) => id !== profile.id);
+}
+
 async function bouwTeamContext(
   supabaseAdmin: ReturnType<typeof createClient>,
   profile: Record<string, unknown>,
@@ -1473,6 +1513,58 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       );
     }
 
+    // ---- Teamleider/HR/Admin: geanonimiseerde gespreks-metadata voor dashboard ----
+    // Vervangt de directe conversations-query in teamleider.js. Retourneert UITSLUITEND
+    // metadata (feedback, created_at) plus een geanonimiseerde stabiele sleutel per
+    // persoon (md5 van user_id) — NOOIT vraag/antwoord-tekst, nooit ruwe user_id of naam.
+    // Scoping (team vs tenant) gebeurt server-side via resolveMonitorProfileIds.
+    if (body.get_team_gesprek_metadata === true) {
+      if (profile.role !== "teamleider" && profile.role !== "admin" && profile.role !== "manager" && profile.role !== "hr") {
+        return new Response(
+          JSON.stringify({ error: "Geen toegang" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const monitorIds = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null);
+      if (monitorIds.length === 0) {
+        return new Response(
+          JSON.stringify({ metadata: [] }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: convs, error: convErr } = await supabaseAdmin
+        .from("conversations")
+        .select("user_id, feedback, created_at")
+        .eq("tenant_id", profile.tenant_id)
+        .in("user_id", monitorIds)
+        .order("created_at", { ascending: false })
+        .limit(2000);
+
+      if (convErr) {
+        return new Response(
+          JSON.stringify({ error: convErr.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Anonimiseer user_id → stabiele sleutel, zodat per-persoon groeperen mogelijk
+      // blijft zonder de profiel-id (en dus de koppeling naar een naam) te lekken.
+      const enc = new TextEncoder();
+      const metadata: Array<{ anon_key: string; feedback: string | null; created_at: string }> = [];
+      for (const c of (convs || []) as Array<{ user_id: string; feedback: string | null; created_at: string }>) {
+        const hashBuf = await crypto.subtle.digest("SHA-256", enc.encode(`${profile.tenant_id}:${c.user_id}`));
+        const anonKey = Array.from(new Uint8Array(hashBuf)).slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+        metadata.push({ anon_key: anonKey, feedback: c.feedback, created_at: c.created_at });
+      }
+
+      return new Response(
+        JSON.stringify({ metadata }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ---- Teamleider: naam ontsluiten bij melding ----
     // Verifieert: aanvrager is teamleider, melding hoort bij eigen team,
     // medewerker zit in team van de teamleider. Logt elke ontsluiting.
@@ -1567,9 +1659,27 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         );
       }
 
-      const vragen: string[] = Array.isArray(body.vragen)
-        ? body.vragen.filter((v: unknown) => typeof v === "string" && v.trim().length > 0)
-        : [];
+      // Vragen server-side ophalen i.p.v. vertrouwen op de browser — na het dichten
+      // van het RLS-lek kan (en mag) de frontend de vraagteksten niet meer lezen.
+      // Zo verlaat de ruwe vraagtekst de database alleen richting de AI, nooit richting
+      // de browser van de teamleider.
+      const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null);
+      let vragen: string[] = [];
+      if (monitorIdsTrend.length > 0) {
+        const sinds30 = new Date();
+        sinds30.setDate(sinds30.getDate() - 30);
+        const { data: trendConvs } = await supabaseAdmin
+          .from("conversations")
+          .select("vraag, created_at")
+          .eq("tenant_id", profile.tenant_id)
+          .in("user_id", monitorIdsTrend)
+          .gte("created_at", sinds30.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(500);
+        vragen = ((trendConvs || []) as Array<{ vraag: string | null }>)
+          .map((c) => c.vraag)
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+      }
 
       if (vragen.length === 0) {
         return new Response(

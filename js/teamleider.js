@@ -290,62 +290,40 @@
   async function loadTeamGesprekken() {
     var tbody = document.getElementById('tl-gesprekken-body');
 
-    var eigenProfileId = profile.id;
-
-    // Haal alleen gesprekken op van teamleden — eigen vragen horen niet in teammonitoring
-    var teamIds = teamProfiles.map(function (p) { return p.id; });
-    console.log('[TL] Gesprekken ophalen voor', teamIds.length, 'teamleden (eigen id uitgesloten)');
-    console.log('[TL] Gesprekken ophalen voor profiel IDs:', JSON.stringify(teamIds));
-
-    // Privacy: selecteer alleen metadata — geen vraag- of antwoordtekst
-    // .neq('user_id', eigenProfileId) → server-side filter: eigen vragen nooit ophalen
-    var result = await supabaseClient
-      .from('conversations')
-      .select('id, feedback, created_at, user_id')
-      .eq('tenant_id', tenantId)
-      .neq('user_id', eigenProfileId)
-      .order('created_at', { ascending: false })
-      .limit(500);
-
-    console.log('[TL] Tenant query:', result.data ? result.data.length + ' gesprekken' : 'FOUT: ' + (result.error ? result.error.message : 'geen data'));
-
-    if (!result.data || result.data.length === 0) {
-      var teamIds2 = teamProfiles.map(function (p) { return p.id; });
-      if (teamIds2.length > 0) {
-        result = await supabaseClient
-          .from('conversations')
-          .select('id, feedback, created_at, user_id')
-          .in('user_id', teamIds2)
-          .neq('user_id', eigenProfileId)
-          .order('created_at', { ascending: false })
-          .limit(500);
-        console.log('[TL] Fallback per user_id:', result.data ? result.data.length + ' gesprekken' : 'FOUT');
-      }
-    }
-
-    if (result.error || !result.data || result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken gevonden.</td></tr>';
+    // Privacy: gespreks-metadata wordt server-side (Edge Function, service role)
+    // opgehaald en geanonimiseerd. De frontend krijgt GEEN vraag/antwoord-tekst,
+    // GEEN ruwe user_id of naam — alleen een stabiele anon_key per persoon plus
+    // feedback en tijdstip. Directe tabeltoegang tot conversations is voor teamleden
+    // afgesloten in RLS; dit is de enige geautoriseerde route.
+    var metaResult;
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ get_team_gesprek_metadata: true })
+      });
+      metaResult = await response.json();
+    } catch (err) {
+      console.error('[TL] Metadata ophalen mislukt:', err);
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Kon gesprekken niet laden.</td></tr>';
       return;
     }
 
-    // Filter client-side uitsluitend op teamleden (eigen id zit er al uit via .neq)
-    var teamIdsSet = teamProfiles.map(function (p) { return p.id; });
-    var filtered = result.data.filter(function (c) {
-      return teamIdsSet.indexOf(c.user_id) !== -1;
-    });
-    console.log('[TL] Na team-filter:', filtered.length, 'van', result.data.length, 'gesprekken');
+    var metadata = (metaResult && metaResult.metadata) || [];
+    console.log('[TL] Metadata ontvangen:', metadata.length, 'gesprekken');
 
-    if (filtered.length === 0) {
+    if (metadata.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken van jouw team gevonden.</td></tr>';
       return;
     }
 
-    // Groepeer per (dag, user_id) zodat leidinggevende alleen aantallen ziet
+    // Groepeer per (dag, anon_key) zodat leidinggevende alleen aantallen ziet
     var groups = {};
-    filtered.forEach(function (c) {
+    metadata.forEach(function (c) {
       var d = new Date(c.created_at);
       var dagKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      var key = dagKey + '|' + c.user_id;
+      var key = dagKey + '|' + c.anon_key;
       if (!groups[key]) {
         groups[key] = { datum: d, dagKey: dagKey, aantal: 0, positief: 0, negatief: 0 };
       }
@@ -452,49 +430,11 @@
     setTrendStatus('Vragen verzamelen en naar AI versturen...', false);
 
     try {
-      var eigenProfileId = profile.id;
-
-      // Haal anonieme vragen op van laatste 30 dagen — eigen vragen uitsluiten
-      var sinds = new Date();
-      sinds.setDate(sinds.getDate() - 30);
-
-      var convResult = await supabaseClient
-        .from('conversations')
-        .select('vraag, user_id, created_at')
-        .eq('tenant_id', tenantId)
-        .neq('user_id', eigenProfileId)
-        .gte('created_at', sinds.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(500);
-
-      if (convResult.error) {
-        console.error('[Trendanalyse] DB fout:', convResult.error.message);
-        setTrendStatus('Kon gesprekken niet ophalen: ' + convResult.error.message, true);
-        return;
-      }
-
-      var alleVragen = convResult.data || [];
-      var vragen;
-
-      if (tlRol === 'teamleider') {
-        // Teamleider: alleen vragen van teamleden (eigen id zit er al uit via .neq)
-        var teamIds = teamProfiles.map(function (p) { return p.id; });
-        if (teamIds.length === 0) {
-          setTrendStatus('Geen medewerkers in jouw team gevonden. Voeg eerst medewerkers toe voordat je een trendanalyse kunt opvragen.', true);
-          return;
-        }
-        vragen = alleVragen
-          .filter(function (c) { return teamIds.indexOf(c.user_id) !== -1; })
-          .map(function (c) { return c.vraag; })
-          .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
-      } else {
-        // Manager/HR: alle vragen van tenant (geen teamfilter; eigen vragen al uitgesloten via .neq)
-        vragen = alleVragen
-          .map(function (c) { return c.vraag; })
-          .filter(function (v) { return typeof v === 'string' && v.trim().length > 0; });
-      }
-
-      console.log('[Trendanalyse] Stuur', vragen.length, 'anonieme vragen naar edge function');
+      // Privacy: de vraagteksten worden NIET meer in de browser geladen. De Edge
+      // Function (service role) haalt de vragen van teamleden zelf op, scoopt server-side
+      // op team, en stuurt ze rechtstreeks naar de AI. De ruwe tekst bereikt de browser
+      // van de teamleider dus nooit.
+      console.log('[Trendanalyse] Server-side trendanalyse aanvragen (vragen worden server-side opgehaald)');
 
       var session = (await supabaseClient.auth.getSession()).data.session;
       var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
@@ -503,7 +443,7 @@
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + session.access_token
         },
-        body: JSON.stringify({ generate_trendanalyse: true, vragen: vragen })
+        body: JSON.stringify({ generate_trendanalyse: true })
       });
 
       var data = await response.json();
@@ -546,29 +486,24 @@
   // STATISTIEKEN
   // =============================================
   async function loadTeamStatistieken() {
-    var eigenProfileId = profile.id;
-
-    // Eigen vragen uitsluiten — teamleider/manager/hr monitoren hun team, niet zichzelf
-    var result = await supabaseClient
-      .from('conversations')
-      .select('id, feedback, created_at, user_id')
-      .eq('tenant_id', tenantId)
-      .neq('user_id', eigenProfileId);
-
-    if (result.error || !result.data) return;
-
+    // Privacy: zelfde geanonimiseerde metadata-route als loadTeamGesprekken. Server-side
+    // scoping (team vs tenant) en anonimisering; geen directe conversations-tabeltoegang.
     var data;
-    if (tlRol === 'teamleider') {
-      var teamIds = teamProfiles.map(function (p) { return p.id; });
-      data = result.data.filter(function (c) {
-        return teamIds.indexOf(c.user_id) !== -1;
+    try {
+      var session = (await supabaseClient.auth.getSession()).data.session;
+      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ get_team_gesprek_metadata: true })
       });
-      console.log('[TL Stats] Gesprekken voor team:', data.length, 'van', result.data.length);
-    } else {
-      // Manager/HR: hele tenant (zonder eigen vragen)
-      data = result.data;
-      console.log('[TL Stats] Gesprekken voor tenant:', data.length);
+      var metaResult = await response.json();
+      data = (metaResult && metaResult.metadata) || [];
+    } catch (err) {
+      console.error('[TL Stats] Metadata ophalen mislukt:', err);
+      return;
     }
+    console.log('[TL Stats] Metadata:', data.length, 'gesprekken');
+
     var now = new Date();
     var dayOfWeek = now.getDay();
     var mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;

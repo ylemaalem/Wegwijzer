@@ -322,9 +322,17 @@
   // =============================================
   async function laadGesprekshistorie() {
     try {
+      // Privacy: expliciet filteren op eigen profiel-id. Vertrouw NOOIT alleen op
+      // RLS — voor een teamleider geeft de RLS-policy ook teamleden-gesprekken terug,
+      // en een ongefilterde query zou die tonen. conversations.user_id bevat profiles.id.
+      if (!profile || !profile.id) {
+        toonWelkomstBericht();
+        return;
+      }
       var result = await supabaseClient
         .from('conversations')
         .select('id, vraag, antwoord, feedback, created_at, studytube_trainingen')
+        .eq('user_id', profile.id)
         .order('created_at', { ascending: true });
 
       if (result.error || !result.data) {
