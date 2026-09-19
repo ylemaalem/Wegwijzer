@@ -101,7 +101,60 @@ const FEIT_VRAAG_TRIGGERS = [
   "tijden van", "openingstijden", "aanvangstijd", "eindtijd",
 ];
 
+// Vervolgvragen zonder eigen onderwerp ("Zoek verder", "ja, waar staat dat?").
+// Alleen als meta-vraag behandeld mét eerdere gesprekscontext: een eerste
+// "Zoek de verlofregeling" is een echte vraag. "zoeken" matcht bewust niet.
+const META_VERVOLG_PATROON = /^(zoek|kijk|probeer|check|controleer)\b|^(ja|nee|en|ok|oke|oké)[\s,!.?]/i;
+
+// Clusterdrempel voor kenniskloof-meldingen. Gemeten op 74 bestaande meldingen:
+// onterechte paren scoorden tot 0.659, echte parafrasen 0.59–0.75. Op 0.70 gaf
+// dat nul onterechte samenvoegingen — precisie boven recall, want een onterechte
+// samenvoeging verbergt een apart kennisgat.
+const KENNISKLOOF_CLUSTER_DREMPEL = 0.70;
+
+// Mappen met externe (sector)documenten i.p.v. eigen beleid. Herkomst wordt per
+// conventie uit de mapnaam afgeleid; vergelijking is hoofdletterongevoelig.
+const EXTERNE_MAPPEN = ["cao"];
+
+type Herkomst = {
+  type: "organisatie" | "extern" | "organisatie_extern" | "geen_document";
+  organisatie: string[];
+  extern: string[];
+};
+
+// Leidt de herkomst af uit de documenten die als context naar het model gingen —
+// niet uit de bronregel die het model zelf schrijft (die bleek inconsistent).
+// Zonder kennisbankmatch krijgt het model geen organisatiebronnen mee (de bronnen
+// worden dan vervangen door de GEEN MATCH-instructie), dus "geen_document" klopt.
+function bepaalHerkomst(
+  docs: Array<{ naam: string; map: string | null }>,
+  kennisbankMatch: boolean,
+): Herkomst {
+  if (!kennisbankMatch || docs.length === 0) {
+    return { type: "geen_document", organisatie: [], extern: [] };
+  }
+  const schoon = (naam: string) => naam.replace(/\.(docx?|pdf|txt|csv|xlsx?)$/i, "").replace(/_/g, " ").trim();
+  const organisatie: string[] = [];
+  const extern: string[] = [];
+  let heeftOrganisatie = false;
+  let heeftExtern = false;
+  for (const d of docs) {
+    const isExtern = EXTERNE_MAPPEN.includes((d.map || "").trim().toLowerCase());
+    if (isExtern) heeftExtern = true; else heeftOrganisatie = true;
+    const lijst = isExtern ? extern : organisatie;
+    const naam = schoon(d.naam);
+    if (lijst.length < 2 && !lijst.includes(naam)) lijst.push(naam);
+  }
+  const type = heeftOrganisatie && heeftExtern ? "organisatie_extern" : heeftExtern ? "extern" : "organisatie";
+  return { type, organisatie, extern };
+}
+
 console.log("[Terugblik] Resend configured:", !!Deno.env.get("RESEND_API_KEY"));
+
+// Tijdwinst is een SCHATTING op basis van een aanname, geen meting. Label en
+// berekening gebruiken dezelfde constanten zodat ze nooit uit elkaar lopen.
+const TIJDWINST_MINUTEN_PER_VRAAG_AANNAME = 6;
+const TIJDWINST_UURTARIEF_AANNAME = 35;
 
 // HTML email builder voor de maandelijkse terugblik
 function buildTerugblikHtml(
@@ -142,10 +195,13 @@ function buildTerugblikHtml(
         <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#333;text-align:right;border-bottom:1px solid #e0e0e0">${actiefMedewerkers} van ${totaalMedewerkers}</td>
       </tr>
       <tr style="background:#f8f8f8">
-        <td style="padding:12px 16px;font-size:14px;color:#666">Tijdwinst leidinggevende</td>
-        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#0D5C6B;text-align:right">~${tijdBespaard} uur (~&euro;${kostenBespaard} bespaard)</td>
+        <td style="padding:12px 16px;font-size:14px;color:#666">Geschatte tijdwinst leidinggevende*</td>
+        <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#0D5C6B;text-align:right">~${tijdBespaard} uur (~&euro;${kostenBespaard})</td>
       </tr>
     </table>
+    <p style="margin:-14px 0 22px;font-size:12px;color:#999;line-height:1.5">
+      * Schatting, geen meting: aangenomen ${TIJDWINST_MINUTEN_PER_VRAAG_AANNAME} minuten per vraag en &euro;${TIJDWINST_UURTARIEF_AANNAME} per uur.
+    </p>
     <p style="margin:0;font-size:13px;color:#999;line-height:1.5">
       Met vriendelijke groet,<br><strong>Wegwijzer</strong>
     </p>
@@ -1334,7 +1390,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       // Document ophalen (mag alleen van eigen tenant)
       const { data: doc, error: docErr } = await supabaseAdmin
         .from("documents")
-        .select("id, naam, content, tenant_id, bestandspad")
+        .select("id, naam, content, tenant_id, bestandspad, user_id")
         .eq("id", docId)
         .eq("tenant_id", profile.tenant_id)
         .single();
@@ -1343,6 +1399,17 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         return new Response(
           JSON.stringify({ error: "Document niet gevonden" }),
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Persoonlijke documenten nooit chunken: match_document_chunks filtert niet op
+      // eigenaar, dus chunks van een persoonlijk document zouden in de retrieval van
+      // ÉLKE medewerker van de organisatie verschijnen. De bulk-indexering in het
+      // admin-scherm sloot ze al uit; deze server-side bewaking dekt elk ander pad.
+      if ((doc as { user_id: string | null }).user_id) {
+        return new Response(
+          JSON.stringify({ error: "Persoonlijke documenten worden niet in de kennisbank geïndexeerd.", chunks: 0 }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -2294,8 +2361,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const negatief = convs ? convs.filter((c: {feedback:string|null}) => c.feedback === "niet_goed").length : 0;
         const pct = (positief + negatief) > 0 ? Math.round((positief / (positief + negatief)) * 100) : 0;
         const actiefMedewerkers = profs ? profs.filter((p: {id:string}) => convs?.some((c: {user_id:string}) => c.user_id === p.id)).length : 0;
-        const tijdBespaard = Math.round(totaalVragen * 6 / 60);
-        const kostenBespaard = tijdBespaard * 35;
+        const tijdBespaard = Math.round(totaalVragen * TIJDWINST_MINUTEN_PER_VRAAG_AANNAME / 60);
+        const kostenBespaard = tijdBespaard * TIJDWINST_UURTARIEF_AANNAME;
 
         const ontvangerNamen = metEmail.map((t: {naam:string; email:string}) => t.naam + " (" + t.email + ")");
         const teamNaam = body.team_filter || "Alle teams";
@@ -2303,7 +2370,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const inhoud = JSON.stringify({
           maand, team: teamNaam,
           statistieken: { totaal_vragen: totaalVragen, positief_feedback: positief, negatief_feedback: negatief, positief_percentage: pct, actieve_medewerkers: actiefMedewerkers, totaal_medewerkers: profs ? profs.length : 0 },
-          tijdwinst: { uren: tijdBespaard, kosten_euro: kostenBespaard },
+          tijdwinst: {
+            uren: tijdBespaard,
+            kosten_euro: kostenBespaard,
+            is_schatting: true,
+            aanname: `${TIJDWINST_MINUTEN_PER_VRAAG_AANNAME} min per vraag, €${TIJDWINST_UURTARIEF_AANNAME}/uur`,
+          },
           ontvangers: ontvangerNamen,
         });
 
@@ -2658,7 +2730,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg);
         let cacheQuery = supabaseAdmin
           .from("response_cache")
-          .select("antwoord, trainingen, gebruikte_document_ids")
+          .select("antwoord, trainingen, gebruikte_document_ids, herkomst")
           .eq("tenant_id", profile.tenant_id)
           .eq("user_id", user.id)
           .eq("vraag_hash", vraagHash)
@@ -2680,9 +2752,21 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
             ? cachedEntry.antwoord.replace(new RegExp(escapeRegexCache(naamInDbCache), "gi"), "de medewerker")
             : cachedEntry.antwoord;
           const cachedDocIds = (cachedEntry as { gebruikte_document_ids?: string[] | null }).gebruikte_document_ids || [];
+          // Cache-entries van vóór migratie 071 hebben geen herkomst → geen label
+          // (liever geen label dan een verkeerd label). Verlopen binnen 1–7 dagen.
+          const cachedHerkomst = ((cachedEntry as { herkomst?: Herkomst | null }).herkomst) || null;
           const { data: cachedConv } = await supabaseAdmin
             .from("conversations")
-            .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: cachedAntwoordVoorDb, gebruikte_document_ids: cachedDocIds })
+            .insert({
+              tenant_id: profile.tenant_id,
+              user_id: profile.id,
+              vraag: vraag.trim(),
+              antwoord: cachedAntwoordVoorDb,
+              gebruikte_document_ids: cachedDocIds,
+              herkomst: cachedHerkomst,
+              zoek_methode: "cache",
+              kennisbank_match: cachedHerkomst ? cachedHerkomst.type !== "geen_document" : null,
+            })
             .select("id")
             .single();
           const cacheUpdateFields: Record<string, unknown> = { laatste_actief: new Date().toISOString() };
@@ -2711,7 +2795,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           console.log("[Cache] HIT voor user", user.id);
           const cachedTrainingen = (cachedEntry as Record<string, unknown>).trainingen || [];
           return new Response(
-            JSON.stringify({ antwoord: cachedEntry.antwoord, conversation_id: cachedConv?.id || null, cached: true, trainingen: cachedTrainingen }),
+            JSON.stringify({ antwoord: cachedEntry.antwoord, conversation_id: cachedConv?.id || null, cached: true, trainingen: cachedTrainingen, herkomst: cachedHerkomst }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -2776,6 +2860,13 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let fglMatchCount: number | null = null;
     let fglChunksOpgehaald: number | null = null;
     let fglChunksNaRerank: number | null = null;
+    // Herkomst: documenten die daadwerkelijk als context naar het model gaan, in
+    // volgorde van relevantie. Basis voor het herkomstlabel — afgeleid uit data,
+    // niet uit de bronregel die het model zelf schrijft.
+    const contextDocs: Array<{ id: string; naam: string; map: string | null }> = [];
+    const voegContextDocToe = (id: string, naam: string, map: string | null) => {
+      if (!contextDocs.some((d) => d.id === id)) contextDocs.push({ id, naam, map });
+    };
 
     // keywords moet in outer scope staan: vector search + section 6h (websites) gebruiken het allebei
     let keywords: string[] = vraag.trim().toLowerCase().split(/\s+/).filter((w: string) => w.length > 2).filter((w: string) => !STOPWOORDEN.has(w));
@@ -2919,7 +3010,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
 
               for (const chunk of werkChunks) {
                 if (totaalLengte >= 30000) break;
-                const meta = metaMap.get(chunk.document_id) as { naam: string; notitie?: string | null } | undefined;
+                const meta = metaMap.get(chunk.document_id) as { naam: string; notitie?: string | null; map?: string | null } | undefined;
                 const docNaam = meta?.naam || "Document";
                 const notitieRegel = meta?.notitie?.trim()
                   ? `\n⚠️ Notitie: ${meta.notitie.trim().substring(0, 300)}`
@@ -2927,6 +3018,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 const tekst = `--- Fragment uit: ${docNaam} (similarity: ${chunk.similarity.toFixed(2)}) ---\n${chunk.chunk_text}${notitieRegel}`;
                 chunkTexts.push(tekst);
                 totaalLengte += chunk.chunk_text.length;
+                voegContextDocToe(chunk.document_id, docNaam, meta?.map ?? null);
               }
 
               documentContext = chunkTexts.join("\n\n");
@@ -2981,7 +3073,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       if (allDocs.length > 0) {
         const scored = allDocs
           .filter((d: { content: string | null }) => d.content && d.content.trim().length > 10)
-          .map((d: { id: string; naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null }) => {
+          .map((d: { id: string; naam: string; content: string; synoniemen?: string[]; zoektermen?: string[]; notitie?: string | null; map?: string | null }) => {
             const lowerContent = d.content.toLowerCase();
             const lowerNaam = d.naam.toLowerCase();
             const indexTerms: string[] = [...((d.zoektermen || []) as string[]), ...((d.synoniemen || []) as string[])].map((t: string) => (t || "").toLowerCase()).filter((t: string) => t.length > 0);
@@ -2996,7 +3088,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 if (stam !== kw) { pos = 0; while ((pos = lowerContent.indexOf(stam, pos)) !== -1) { score += 0.5; pos += stam.length; } }
               }
             }
-            return { id: d.id, naam: d.naam, content: d.content, notitie: d.notitie || null, score };
+            return { id: d.id, naam: d.naam, content: d.content, notitie: d.notitie || null, map: d.map ?? null, score };
           })
           .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
           .slice(0, 5);
@@ -3006,6 +3098,9 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
         zoekMethode = "zoektermen";
         if (HEEFT_KENNISBANK_MATCH) {
           gebruikteDocIds = scored.filter((d: { score: number }) => d.score >= 5).map((d: { id: string }) => d.id);
+          for (const d of scored as Array<{ id: string; naam: string; map: string | null; score: number }>) {
+            if (d.score >= 5) voegContextDocToe(d.id, d.naam, d.map);
+          }
         }
         console.log(`[Chat] Zoektermen match: MAX_SCORE=${MAX_SCORE}, heeftMatch=${HEEFT_KENNISBANK_MATCH}`);
 
@@ -3519,11 +3614,26 @@ ${alleKennisbronnen}`;
     const aiResult = await anthropicResponse.json();
     const rawAntwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
 
-    // ---- 9b. Kennishiaat detectie ----
-    if (rawAntwoord.includes("ℹ️") && rawAntwoord.includes("Niet gevonden in organisatie-documenten")) {
-      try {
-        await supabaseAdmin.from("kenniskloof_meldingen").insert({ tenant_id: profile.tenant_id, onderwerp: vraag.trim().substring(0, 200), aantal_vragen: 1 });
-      } catch { /* kenniskloof tabel bestaat mogelijk niet */ }
+    // ---- 9b. Kennisgat-detectie ----
+    // Op basis van de RETRIEVAL-staat, niet van de antwoordtekst. Voorheen besliste
+    // het model via zijn bronregel of iets een kennisgat was; gemeten had de
+    // retrieval bij 36 van de 73 koppelbare meldingen wél documenten gevonden.
+    // Nu alleen bij een aantoonbaar lege retrieval, en niet voor routes die buiten
+    // de kennisbank om beantwoord worden (bronvraag, sparring, team/medewerker-query,
+    // training) of voor meta-vervolgvragen. Gelijkende meldingen worden samengevoegd.
+    const heeftGespreksContext = Array.isArray(clientMessages) && clientMessages.length > 1;
+    const isMetaVervolgvraag = heeftGespreksContext && META_VERVOLG_PATROON.test(vraag.trim());
+    if (!HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && !isTrainingVraag && !isMetaVervolgvraag) {
+      supabaseAdmin.rpc("registreer_kenniskloof", {
+        p_tenant_id: profile.tenant_id,
+        p_onderwerp: vraag.trim(),
+        p_embedding: gedeeldeQueryEmbedding ? JSON.stringify(gedeeldeQueryEmbedding) : null,
+        p_zoek_methode: zoekMethode,
+        p_drempel: KENNISKLOOF_CLUSTER_DREMPEL,
+      }).then(({ data, error }: { data: string | null; error: { message: string } | null }) => {
+        if (error) console.warn("[Kenniskloof] Registratie mislukt:", error.message);
+        else console.log(`[Kenniskloof] ${data}: "${vraag.trim().substring(0, 60)}"`);
+      });
     }
 
     // ---- 9c. Bronlabels strippen ----
@@ -3532,6 +3642,11 @@ ${alleKennisbronnen}`;
       antwoord = antwoord.replace(/\s*\n+\s*(?:📄|✏️|📝|🌐|ℹ️)[^\n]*$/u, "");
       antwoord = antwoord.replace(/\n+\s*(?:📄|✏️|📝|🌐|ℹ️)\s*Bron:[^\n]*(?:\n[^\n]*)*$/u, "");
       antwoord = antwoord.replace(/\n+\s*ℹ️\s*Niet gevonden[^\n]*(?:\n[^\n]*)*$/u, "");
+      // Bronregels van het model kunnen ook midden in het antwoord staan (gemeten:
+      // 28 opgeslagen antwoorden bevatten nog "Bron:"). Het herkomstlabel wordt nu
+      // uit data afgeleid, dus elke modelbronregel eruit — ongeacht de positie.
+      antwoord = antwoord.replace(/^[ \t]*(?:📄|✏️?|📝|🌐|ℹ️?)[ \t]*(?:\*\*)?(?:Bron\s*:|Niet gevonden in organisatie|Algemene vakkennis)[^\n]*\n?/gmu, "");
+      antwoord = antwoord.replace(/\n{3,}/g, "\n\n");
       antwoord = antwoord.trimEnd();
     }
 
@@ -3546,9 +3661,23 @@ ${alleKennisbronnen}`;
       ? antwoord.replace(new RegExp(escapeRegex(naamInDb), "gi"), "de medewerker")
       : antwoord;
 
+    // Herkomstlabel: niet bij routes die niet uit de kennisbank putten (bronvraag
+    // beantwoordt zelf met documentnamen, sparring en team-query hebben eigen bronnen).
+    const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag;
+    const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
+
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
-      .insert({ tenant_id: profile.tenant_id, user_id: profile.id, vraag: vraag.trim(), antwoord: antwoordVoorDb, gebruikte_document_ids: gebruikteDocIds })
+      .insert({
+        tenant_id: profile.tenant_id,
+        user_id: profile.id,
+        vraag: vraag.trim(),
+        antwoord: antwoordVoorDb,
+        gebruikte_document_ids: gebruikteDocIds,
+        herkomst,
+        zoek_methode: zoekMethode,
+        kennisbank_match: HEEFT_KENNISBANK_MATCH,
+      })
       .select("id")
       .single();
 
@@ -3712,6 +3841,7 @@ ${alleKennisbronnen}`;
           antwoord: antwoord,
           trainingen: trainingen.length > 0 ? trainingen : null,
           gebruikte_document_ids: gebruikteDocIds,
+          herkomst,
           expires_at: expiresAt,
           functiegroep: profile.functiegroep || null,
         }, { onConflict: "tenant_id,user_id,vraag_hash" });
@@ -3721,7 +3851,7 @@ ${alleKennisbronnen}`;
     }
 
     return new Response(
-      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen }),
+      JSON.stringify({ antwoord: antwoord, conversation_id: conversation?.id || null, trainingen, herkomst }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

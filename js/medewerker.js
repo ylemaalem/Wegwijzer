@@ -331,7 +331,7 @@
       }
       var result = await supabaseClient
         .from('conversations')
-        .select('id, vraag, antwoord, feedback, created_at, studytube_trainingen')
+        .select('id, vraag, antwoord, feedback, created_at, studytube_trainingen, herkomst')
         .eq('user_id', profile.id)
         .order('created_at', { ascending: true });
 
@@ -357,7 +357,7 @@
 
         // Bot antwoord
         if (conv.antwoord) {
-          renderBotBericht(conv.antwoord, conv.id, conv.feedback, tijd, conv.studytube_trainingen || []);
+          renderBotBericht(conv.antwoord, conv.id, conv.feedback, tijd, conv.studytube_trainingen || [], conv.herkomst || null);
         }
       });
 
@@ -747,7 +747,7 @@
           null, null, null
         );
       } else {
-        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || []);
+        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || [], data.herkomst || null);
         // Voeg antwoord toe aan conversatiehistorie
         conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
       }
@@ -796,7 +796,37 @@
     chatMessages.insertBefore(row, typingIndicator);
   }
 
-  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd, trainingen) {
+  // Herkomstlabel onder een antwoord. Wordt server-side afgeleid uit de documenten
+  // die als context gebruikt zijn (niet uit de tekst van het model). Geen label bij
+  // null: speciale routes (bronvraag, sparring, teamvraag) of oudere gesprekken.
+  function maakHerkomstLabel(herkomst) {
+    if (!herkomst || !herkomst.type) return null;
+    var regels = [];
+    var metNamen = function (prefix, namen) {
+      return prefix + (namen && namen.length > 0 ? ': ' + namen.join(', ') : '');
+    };
+    if (herkomst.type === 'organisatie' || herkomst.type === 'organisatie_extern') {
+      regels.push(metNamen('🏢 Organisatiedocument', herkomst.organisatie));
+    }
+    if (herkomst.type === 'extern' || herkomst.type === 'organisatie_extern') {
+      regels.push(metNamen('📘 CAO / sectorregelgeving', herkomst.extern));
+    }
+    if (herkomst.type === 'geen_document') {
+      regels.push('💡 Niet uit een document van de organisatie — controleer bij twijfel');
+    }
+    if (regels.length === 0) return null;
+
+    var el = document.createElement('div');
+    el.className = 'herkomst-label herkomst-' + herkomst.type;
+    regels.forEach(function (tekst) {
+      var r = document.createElement('div');
+      r.textContent = tekst;
+      el.appendChild(r);
+    });
+    return el;
+  }
+
+  function renderBotBericht(tekst, conversationId, bestaandeFeedback, tijd, trainingen, herkomst) {
     var row = document.createElement('div');
     row.className = 'message-row message-row-bot';
 
@@ -813,6 +843,9 @@
     bubble.className = 'chat-bubble chat-bubble-bot';
     bubble.innerHTML = formatAntwoord(tekst);
     wrap.appendChild(bubble);
+
+    var herkomstEl = maakHerkomstLabel(herkomst);
+    if (herkomstEl) wrap.appendChild(herkomstEl);
 
     // Feedback knoppen
     if (conversationId) {
@@ -897,14 +930,33 @@
   }
 
   async function geefFeedback(conversationId, waarde, activeBtn, otherBtn) {
+    var vorigeActief = activeBtn.classList.contains('selected');
+    var vorigeAnder = otherBtn.classList.contains('selected');
     activeBtn.classList.add('selected');
     otherBtn.classList.remove('selected');
 
     var nu = new Date();
-    await supabaseClient
+    // Uitkomst controleren: voorheen werd een mislukte opslag stil genegeerd terwijl
+    // de knop wél als geselecteerd oplichtte.
+    var fbResult = await supabaseClient
       .from('conversations')
       .update({ feedback: waarde, feedback_op: nu.toISOString() })
-      .eq('id', conversationId);
+      .eq('id', conversationId)
+      .select('id');
+    if (fbResult.error || !fbResult.data || fbResult.data.length === 0) {
+      console.error('[Feedback] Opslaan mislukt:', fbResult.error ? fbResult.error.message : 'geen rij bijgewerkt');
+      activeBtn.classList.toggle('selected', vorigeActief);
+      otherBtn.classList.toggle('selected', vorigeAnder);
+      var foutRij = activeBtn.parentElement;
+      var bestaandeFout = foutRij.querySelector('.feedback-info');
+      if (bestaandeFout) bestaandeFout.remove();
+      var fout = document.createElement('div');
+      fout.className = 'feedback-info';
+      fout.style.cssText = 'font-size:0.65rem;color:var(--error, #c62828);margin-top:4px';
+      fout.textContent = 'Feedback kon niet worden opgeslagen. Probeer het opnieuw.';
+      foutRij.appendChild(fout);
+      return;
+    }
 
     // Document kwaliteitsscores bijwerken via Edge Function (best effort)
     try {

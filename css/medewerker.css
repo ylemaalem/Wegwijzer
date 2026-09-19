@@ -524,6 +524,19 @@
   padding: 0 4px;
 }
 
+/* Herkomstlabel onder een antwoord — klein en rustig, geen tweede boodschap */
+.herkomst-label {
+  margin-top: 6px;
+  padding: 0 4px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+.herkomst-label > div + div {
+  margin-top: 2px;
+}
+
 .feedback-btn {
   background: none;
   border: 1px solid var(--border);

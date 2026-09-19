@@ -1325,6 +1325,91 @@
     preview.style.display = 'block';
   }
 
+  // =============================================
+  // PERSOONSGEBONDEN DOCUMENTEN — controle vóór upload
+  // =============================================
+  // Gelaagd (op basis van metingen op de kennisbank):
+  //  - Blokkade: bestandsnaam bevat de volledige naam van een bekende persoon.
+  //    Nul vals-positieven gemeten; dezelfde regel staat als trigger in de database.
+  //  - Waarschuwing: naam van een bekende persoon in de INHOUD (vaak legitiem, bv.
+  //    een contactpersoon in een sjabloon) of een getal dat de BSN-elfproef haalt.
+  //  Niet gebruikt: "lijkt op Voornaam Achternaam" (22/22 vals-positief) en
+  //  BSN-/geboortedatum-trefwoorden (19/19 vals-positief — beleid óver privacy).
+
+  function normaliseerVoorNaamcheck(t) {
+    return ' ' + String(t || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+  }
+
+  // Namen van medewerkers, teamleiders en aangevraagde medewerkers (minimaal twee
+  // woorden). Admin-accounts niet: het systeemaccount heet "Wegwijzer Beheer" en
+  // zou legitieme handleidingen blokkeren.
+  async function laadBekendeNamen() {
+    var resultaten = await Promise.all([
+      supabaseClient.from('profiles').select('naam, role').eq('tenant_id', tenantId),
+      supabaseClient.from('teamleiders').select('naam').eq('tenant_id', tenantId),
+      supabaseClient.from('aanvragen').select('medewerker_naam').eq('tenant_id', tenantId)
+    ]);
+    var ruw = [];
+    (resultaten[0].data || []).forEach(function (p) {
+      if (p.role !== 'admin' && p.role !== 'superadmin') ruw.push(p.naam);
+    });
+    (resultaten[1].data || []).forEach(function (t) { ruw.push(t.naam); });
+    (resultaten[2].data || []).forEach(function (a) { ruw.push(a.medewerker_naam); });
+
+    var gezien = {};
+    return ruw
+      .filter(function (n) { return typeof n === 'string' && /\S+\s+\S+/.test(n.trim()); })
+      .map(function (n) { return { naam: n.trim(), norm: normaliseerVoorNaamcheck(n) }; })
+      .filter(function (n) {
+        if (n.norm.trim().length < 6 || gezien[n.norm]) return false;
+        gezien[n.norm] = true;
+        return true;
+      });
+  }
+
+  function isElfproefBsn(g) {
+    if (!/^\d{9}$/.test(g) || g.charAt(0) === '0') return false;
+    var som = 0;
+    for (var i = 0; i < 8; i++) som += (9 - i) * parseInt(g.charAt(i), 10);
+    som -= parseInt(g.charAt(8), 10);
+    return som % 11 === 0;
+  }
+
+  function controleerPersoonsgebonden(bestandsnaam, tekst, bekendeNamen) {
+    var bestandNorm = normaliseerVoorNaamcheck(bestandsnaam);
+    for (var i = 0; i < bekendeNamen.length; i++) {
+      if (bestandNorm.indexOf(bekendeNamen[i].norm) !== -1) {
+        return { blokkeer: bekendeNamen[i].naam, waarschuwingen: [] };
+      }
+    }
+
+    var waarschuwingen = [];
+    var inhoudNorm = normaliseerVoorNaamcheck(String(tekst || '').substring(0, 300000));
+    var namenInInhoud = bekendeNamen
+      .filter(function (n) { return inhoudNorm.indexOf(n.norm) !== -1; })
+      .map(function (n) { return n.naam; });
+    if (namenInInhoud.length > 0) {
+      waarschuwingen.push('De inhoud noemt ' + (namenInInhoud.length === 1 ? 'een medewerker' : namenInInhoud.length + ' medewerkers') +
+        ': ' + namenInInhoud.slice(0, 5).join(', ') + (namenInInhoud.length > 5 ? ', …' : ''));
+    }
+
+    var bsnTreffers = 0;
+    var re = /(^|\D)(\d{9})(?=\D|$)/g;
+    var m;
+    while ((m = re.exec(String(tekst || ''))) !== null) {
+      if (isElfproefBsn(m[2])) bsnTreffers++;
+    }
+    if (bsnTreffers > 0) {
+      waarschuwingen.push(bsnTreffers === 1
+        ? 'De inhoud bevat 1 getal dat voldoet aan de BSN-controle (elfproef)'
+        : 'De inhoud bevat ' + bsnTreffers + ' getallen die voldoen aan de BSN-controle (elfproef)');
+    }
+
+    return { blokkeer: null, waarschuwingen: waarschuwingen };
+  }
+
   async function handleFiles(files) {
     console.log('[Upload] handleFiles start met', files.length, 'bestand(en), tenantId:', tenantId);
     var progress = document.getElementById('upload-progress');
@@ -1363,6 +1448,14 @@
       .single();
     var profileId = profileResult.data ? profileResult.data.id : null;
 
+    var bekendeNamen = [];
+    try {
+      bekendeNamen = await laadBekendeNamen();
+    } catch (e) {
+      // Niet fataal: de blokkade staat ook als trigger in de database.
+      console.warn('[Upload] Namenlijst laden mislukt, alleen database-controle actief:', e);
+    }
+
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       var ext = file.name.split('.').pop().toLowerCase();
@@ -1396,6 +1489,35 @@
         console.log('[Upload] Tekst geëxtraheerd, lengte:', extractedText.length);
       } catch (err) {
         console.error('[Upload] Extractie fout:', err);
+      }
+
+      // Stap 1b: Controle op persoonsgebonden inhoud — vóór opslag, want zodra de
+      // inhoud in de documents-tabel staat is hij direct doorzoekbaar.
+      var pgCheck = controleerPersoonsgebonden(file.name, extractedText, bekendeNamen);
+      if (pgCheck.blokkeer) {
+        statusEl.textContent = 'Geblokkeerd: bestandsnaam bevat de naam van een medewerker';
+        statusEl.title = 'Persoonsgebonden documenten horen niet in de kennisbank. Gaat het document niet over ' + pgCheck.blokkeer + '? Hernoem dan het bestand.';
+        statusEl.style.color = 'var(--error)';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--error)';
+        logAudit('PERSOONSGEBONDEN_UPLOAD_GEBLOKKEERD', 'document', null, { bestand: file.name, reden: 'naam in bestandsnaam' });
+        continue;
+      }
+      if (pgCheck.waarschuwingen.length > 0) {
+        var doorgaan = confirm(
+          '"' + file.name + '" lijkt mogelijk persoonsgebonden:\n\n- ' + pgCheck.waarschuwingen.join('\n- ') +
+          '\n\nPersoonsgebonden documenten (over één specifieke medewerker of cliënt) horen niet in de kennisbank: ' +
+          'iedereen kan de inhoud via de kennisassistent opvragen.\n\n' +
+          'Gaat het document NIET over deze persoon (bijvoorbeeld een contactpersoon in een sjabloon)? ' +
+          'Kies dan OK om toch te uploaden. Kies Annuleren om dit bestand over te slaan.'
+        );
+        if (!doorgaan) {
+          statusEl.textContent = 'Overgeslagen (mogelijk persoonsgebonden)';
+          statusEl.style.color = 'var(--text-muted)';
+          fillEl.style.width = '100%';
+          continue;
+        }
+        logAudit('PERSOONSGEBONDEN_WAARSCHUWING_GENEGEERD', 'document', null, { bestand: file.name, waarschuwingen: pgCheck.waarschuwingen });
       }
 
       // Stap 2: Uploaden naar storage
@@ -1450,7 +1572,13 @@
         console.log('[Upload] Insert resultaat:', insertResult.error ? 'FOUT: ' + insertResult.error.message : 'OK');
 
         if (insertResult.error) {
-          statusEl.textContent = 'Metadata mislukt: ' + insertResult.error.message;
+          // Geen weesbestand in de opslag achterlaten als de metadata geweigerd wordt
+          // (bijvoorbeeld door de database-blokkade op persoonsgebonden documenten).
+          supabaseClient.storage.from('documents').remove([filePath]).catch(function () {});
+          var geblokkeerd = (insertResult.error.message || '').indexOf('PERSOONSGEBONDEN_DOCUMENT') !== -1;
+          statusEl.textContent = geblokkeerd
+            ? 'Geblokkeerd: bestandsnaam bevat de naam van een medewerker'
+            : 'Metadata mislukt: ' + insertResult.error.message;
           statusEl.style.color = 'var(--error)';
           fillEl.style.width = '100%';
           fillEl.style.background = 'var(--error)';
@@ -4072,12 +4200,13 @@
     var tbody = document.getElementById('verbeterpunten-body');
     if (!tbody) return;
 
-    // Haal alle gesprekken op met feedback niet_goed
+    // Haal alle gesprekken op met feedback niet_goed die nog niet afgehandeld zijn
     var nietGoedResult = await supabaseClient
       .from('conversations')
       .select('id, vraag, feedback')
       .eq('tenant_id', tenantId)
-      .eq('feedback', 'niet_goed');
+      .eq('feedback', 'niet_goed')
+      .is('feedback_afgehandeld_op', null);
 
     // Haal alle gesprekken op (voor totaal aantal per vraag)
     var alleResult = await supabaseClient
@@ -4170,7 +4299,7 @@
         ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapedVraag + '\')">Beantwoord</button> ' +
           '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" onclick="window.openKennisnotitie(\'' + escapedVraag + '\')">+ Notitie</button> '
         : '<span class="badge badge-goed" style="font-size:0.7rem">✓</span> ';
-      actieBtn += '<button class="btn-icon btn-icon-danger" onclick="window.deleteVerbeterpunt(\'' + escapedVraag + '\')" title="Verwijderen uit verbeterpunten">🗑️</button>';
+      actieBtn += '<button class="btn-icon" onclick="window.deleteVerbeterpunt(\'' + escapedVraag + '\')" title="Markeren als afgehandeld (feedback blijft bewaard)">✔️</button>';
 
       return '<tr>' +
         '<td title="' + escapeHtml(item.vraag) + '">' + escapeHtml(truncated) + '</td>' +
@@ -4186,22 +4315,26 @@
     loadAppFeedback();
   }
 
-  // ---- Verbeterpunt verwijderen (feedback resetten) ----
+  // ---- Verbeterpunt afhandelen ----
+  // Markeert de negatieve feedback als afgehandeld in plaats van hem te wissen.
+  // Voorheen werd feedback hier op null gezet, waardoor geen enkele negatieve
+  // beoordeling bewaard bleef en tevredenheidscijfers 100% positief leken.
   window.deleteVerbeterpunt = async function (vraag) {
-    if (!confirm('Dit verbeterpunt verwijderen? De negatieve feedback wordt gereset op alle conversations met deze vraag.')) return;
+    if (!confirm('Dit verbeterpunt als afgehandeld markeren? Het verdwijnt uit deze lijst; de negatieve feedback blijft bewaard voor de statistieken.')) return;
     var unescapedVraag = vraag.replace(/\\'/g, "'");
-    console.log('[DELETE verbeterpunt] Reset feedback voor vraag:', unescapedVraag);
+    console.log('[Verbeterpunt] Afgehandeld markeren voor vraag:', unescapedVraag);
     var result = await supabaseClient
       .from('conversations')
-      .update({ feedback: null })
+      .update({ feedback_afgehandeld_op: new Date().toISOString() })
       .eq('tenant_id', tenantId)
       .eq('vraag', unescapedVraag)
       .eq('feedback', 'niet_goed')
+      .is('feedback_afgehandeld_op', null)
       .select();
-    console.log('[DELETE verbeterpunt] Response:', result.error, 'rows bijgewerkt:', result.data ? result.data.length : 0);
-    if (result.error) { alert('Verwijderen mislukt: ' + result.error.message); return; }
+    console.log('[Verbeterpunt] Response:', result.error, 'rijen gemarkeerd:', result.data ? result.data.length : 0);
+    if (result.error) { alert('Afhandelen mislukt: ' + result.error.message); return; }
     if (!result.data || result.data.length === 0) {
-      alert('Geen rij gereset — mogelijk een rechten-issue of de vraag matcht niet meer. Check console.');
+      alert('Geen gesprek gemarkeerd — mogelijk een rechten-issue of de vraag matcht niet meer. Check console.');
       return;
     }
     loadVerbeterpunten();
