@@ -801,18 +801,16 @@
   // null: speciale routes (bronvraag, sparring, teamvraag) of oudere gesprekken.
   function maakHerkomstLabel(herkomst) {
     if (!herkomst || !herkomst.type) return null;
+    // Alleen het symbool + de categorie tonen — geen documentnamen (brontekst).
     var regels = [];
-    var metNamen = function (prefix, namen) {
-      return prefix + (namen && namen.length > 0 ? ': ' + namen.join(', ') : '');
-    };
     if (herkomst.type === 'organisatie' || herkomst.type === 'organisatie_extern') {
-      regels.push(metNamen('🏢 Organisatiedocument', herkomst.organisatie));
+      regels.push('🏢 Uit de kennisbank');
     }
     if (herkomst.type === 'extern' || herkomst.type === 'organisatie_extern') {
-      regels.push(metNamen('📘 CAO / sectorregelgeving', herkomst.extern));
+      regels.push('📘 Uit de CAO / sectorregelgeving');
     }
     if (herkomst.type === 'geen_document') {
-      regels.push('💡 Niet uit een document van de organisatie — controleer bij twijfel');
+      regels.push('💡 Eigen kennis — niet uit een document van de organisatie');
     }
     if (regels.length === 0) return null;
 

@@ -3420,33 +3420,39 @@ ${alleKennisbronnen}`;
     if (bronvraagContext) {
       alleKennisbronnen = bronvraagContext;
     } else if (!HEEFT_KENNISBANK_MATCH) {
-      alleKennisbronnen = `KENNISBANK STATUS: GEEN MATCH.
+      // 3a-B: er zijn geen kennisbank-DOCUMENTEN gevonden, maar door de admin
+      // beheerde en live bronnen (veelgestelde vragen, kennisnotities,
+      // leidinggevenden, functies, live teamdata, websites, persoonlijk
+      // inwerktraject) staan los van de documentmatch en mogen NIET worden
+      // weggegooid. Voorheen verving deze tak alles → teamvragen kregen
+      // onterecht "niet gevonden". `bronnen` bevat op dit punt alleen de
+      // niet-document-bronnen, want documentContext is leeg bij geen match.
+      const GEEN_DOC_INSTRUCTIE = `KENNISBANK STATUS: GEEN DOCUMENT-MATCH.
 
-Er zijn geen relevante organisatiedocumenten gevonden.
+Er zijn geen relevante organisatiedocumenten gevonden voor deze vraag.${bronnen.length > 0 ? `
 
-INSTRUCTIE — twee gevallen:
+Hieronder staan wél andere betrouwbare bronnen (bijv. live teamgegevens,
+leidinggevenden, functies, veelgestelde vragen of notities van de organisatie).
+Gebruik die om de vraag te beantwoorden wanneer ze het antwoord bevatten.` : ""}
 
-1. Als de vraag gaat over AHMN-specifieke informatie
-   (afdelingen, procedures, personen, locaties,
-   werkwijze, beleid, systemen):
-   Antwoord ALLEEN: "Ik vind dit niet terug in de
-   AHMN-documenten. Vraag het na bij je leidinggevende
-   of vraag de admin om dit toe te voegen aan de
-   kennisbank."
+INSTRUCTIE:
+- Als de bronnen hieronder het antwoord bevatten (bijvoorbeeld een teamvraag die
+  met de live teamgegevens te beantwoorden is): beantwoord de vraag gewoon.
+- Als de vraag over AHMN-specifieke informatie gaat die NIET in de bronnen
+  hieronder staat (afdelingen, procedures, beleid, systemen, documenten):
+  antwoord dan: "Ik vind dit niet terug in de AHMN-documenten. Vraag het na bij
+  je leidinggevende of vraag de admin om dit toe te voegen aan de kennisbank."
+- Als de vraag over ALGEMENE vakkennis gaat (theorie, begrippen,
+  begeleidingsmethodieken, doelgroepinformatie zoals rouw, autisme, GGZ,
+  hechting): geef een behulpzaam antwoord op basis van algemene vakkennis en
+  sluit af met: "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"`;
 
-2. Als de vraag gaat over ALGEMENE vakkennis
-   (theorie, wetenschappelijke begrippen,
-   begeleidingsmethodieken, doelgroepinformatie
-   zoals rouw, autisme, GGZ, hechting):
-   Geef een behulpzaam antwoord op basis van
-   algemene vakkennis. Sluit altijd af met:
-   "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"
+      alleKennisbronnen = bronnen.length > 0
+        ? `${GEEN_DOC_INSTRUCTIE}
 
-Gebruik dit criterium:
-Gaat de vraag over HOE iets werkt BINNEN de organisatie?
-→ Geval 1 (niet beantwoorden)
-Gaat de vraag over WAT iets IS als concept of theorie?
-→ Geval 2 (wel beantwoorden met label)`;
+BESCHIKBARE KENNISBRONNEN:
+${bronnen.join("\n\n")}`
+        : GEEN_DOC_INSTRUCTIE;
     }
 
     // ---- Sparring modus: speciale instructieblok voor het advies ----
