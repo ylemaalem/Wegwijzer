@@ -198,6 +198,8 @@
     loadTerBeoordeling();
     loadVertrouwensData();
     loadTerugblikLog();
+    initRegressieTest();
+    loadRegressieRuns();
     initVerbeterCollapse();
     initSuggestieDelegation();
     initRoiWidget();
@@ -6441,6 +6443,88 @@
     }
     loadTerugblikLog();
   };
+
+  // =============================================
+  // REGRESSIETEST KENNISBANK
+  // =============================================
+  function initRegressieTest() {
+    var btn = document.getElementById('regressie-run-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!confirm('De regressietest draaien? Dit stelt alle testvragen aan de chatbot en kost ongeveer $0,50 aan AI-verbruik. Er wordt niets in de statistieken opgeslagen.')) return;
+      var statusEl = document.getElementById('regressie-status');
+      var resEl = document.getElementById('regressie-resultaat');
+      btn.disabled = true;
+      var origTekst = btn.textContent;
+      btn.textContent = 'Bezig…';
+      if (statusEl) statusEl.textContent = 'De test draait, dit kan één tot twee minuten duren…';
+      if (resEl) resEl.innerHTML = '';
+      try {
+        var session = (await supabaseClient.auth.getSession()).data.session;
+        var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+          body: JSON.stringify({ regressie_run: true })
+        });
+        var data = await response.json();
+        if (!response.ok || !data.success) {
+          if (statusEl) statusEl.textContent = 'Mislukt: ' + (data.error || ('HTTP ' + response.status));
+        } else {
+          if (statusEl) statusEl.textContent = '';
+          if (resEl) resEl.innerHTML = renderRegressieResultaat(data);
+          loadRegressieRuns();
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Fout: ' + (e && e.message ? e.message : e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origTekst;
+      }
+    });
+  }
+
+  function renderRegressieResultaat(data) {
+    var pct = data.aantal_vragen > 0 ? Math.round((data.geslaagd / data.aantal_vragen) * 100) : 0;
+    var kleur = pct >= 90 ? 'var(--success, #2e7d32)' : pct >= 70 ? 'var(--warning, #F57C00)' : 'var(--error, #c62828)';
+    var html = '<div style="background:var(--bg);padding:12px;border-radius:8px;margin-bottom:10px">' +
+      '<div style="font-size:1.1rem;font-weight:600;color:' + kleur + '">' + data.geslaagd + ' / ' + data.aantal_vragen + ' geslaagd (' + pct + '%)</div>' +
+      '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px">Kosten: $' + (data.kosten_usd || 0) + ' · ' + (data.tokens_input || 0) + ' input + ' + (data.tokens_output || 0) + ' output tokens</div>';
+    var gefaald = (data.details || []).filter(function (d) { return !d.geslaagd; });
+    if (gefaald.length > 0) {
+      html += '<div style="margin-top:10px"><strong style="font-size:0.85rem">Gefaalde vragen:</strong>';
+      gefaald.forEach(function (d) {
+        html += '<div style="font-size:0.8rem;margin-top:6px;padding-left:8px;border-left:2px solid var(--error, #c62828)">' +
+          '#' + d.id + ' ' + escapeHtml(d.vraag || '') +
+          (d.gemist && d.gemist.length ? '<br><span style="color:var(--text-muted)">gemist: ' + escapeHtml(d.gemist.join(', ')) + '</span>' : '') +
+          (d.reden ? '<br><span style="color:var(--text-muted)">' + escapeHtml(d.reden) + '</span>' : '') +
+          (d.antwoord_fragment ? '<br><span style="color:var(--text-light)">"' + escapeHtml(d.antwoord_fragment) + '…"</span>' : '') +
+          '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  async function loadRegressieRuns() {
+    var container = document.getElementById('regressie-runs-list');
+    if (!container) return;
+    var result = await supabaseClient.from('regressie_runs').select('*').eq('tenant_id', tenantId).order('gestart_op', { ascending: false }).limit(8);
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">Nog geen runs.</p>';
+      return;
+    }
+    container.innerHTML = result.data.map(function (r) {
+      var datum = new Date(r.gestart_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      var pct = r.aantal_vragen > 0 ? Math.round((r.geslaagd / r.aantal_vragen) * 100) : 0;
+      var kleur = pct >= 90 ? 'var(--success, #2e7d32)' : pct >= 70 ? 'var(--warning, #F57C00)' : 'var(--error, #c62828)';
+      var trig = r.trigger === 'cron' ? '⏱ automatisch' : '👤 handmatig';
+      return '<div style="display:flex;justify-content:space-between;font-size:0.82rem;padding:6px 0;border-bottom:1px solid var(--border)">' +
+        '<span>' + datum + ' · ' + trig + '</span>' +
+        '<span style="color:' + kleur + ';font-weight:600">' + r.geslaagd + '/' + r.aantal_vragen + ' (' + pct + '%) · $' + (r.kosten_usd || 0) + '</span>' +
+        '</div>';
+    }).join('');
+  }
 
   // =============================================
   // PRIVACY VERZOEKEN

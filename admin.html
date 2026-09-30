@@ -418,6 +418,21 @@
           <h3 class="section-title" style="font-size:1rem">Verstuurde terugblikken</h3>
           <div id="terugblik-log-list"></div>
         </div>
+
+        <!-- Regressietest kennisbank -->
+        <div style="margin-top:28px;border-top:1px solid var(--border);padding-top:18px">
+          <h3 class="section-title" style="font-size:1rem">🧪 Regressietest kennisbank</h3>
+          <p class="section-subtitle" style="margin-bottom:10px">Controleert met een vaste set testvragen of de chatbot de kernfeiten nog terugvindt. De test draait in testmodus: er wordt niets in de statistieken opgeslagen. Eén run kost ongeveer $0,50 aan AI-verbruik.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <button class="btn btn-primary" id="regressie-run-btn" style="max-width:260px">Test nu draaien</button>
+            <span id="regressie-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
+          </div>
+          <div id="regressie-resultaat"></div>
+          <div style="margin-top:14px">
+            <h4 style="font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">Eerdere runs</h4>
+            <div id="regressie-runs-list"></div>
+          </div>
+        </div>
       </section>
 
       <!-- Modal: Terugblik versturen -->
@@ -1386,7 +1401,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/admin.js?v=101"></script>
+  <script src="js/admin.js?v=102"></script>
 
 </body>
 </html>

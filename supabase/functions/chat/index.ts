@@ -45,6 +45,9 @@ const PERSOONLIJKE_WOORDEN = [
   "mijn team", "mijn leidinggevende", "mijn dienst", "mijn uren",
 ];
 
+// Tenant waarvoor de regressie-testset draait (AHMN). Alleen gebruikt in testmodus.
+const TEST_TENANT_ID = "a74e9800-eafd-4fc8-bcb6-fb651db10a8e";
+
 const TEAM_VRAAG_TRIGGERS = [
   "wie zit er in mijn team",
   "wie zitten er in mijn team",
@@ -786,34 +789,69 @@ Deno.serve(async (req: Request) => {
     });
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ---- 2. Gebruiker verifiëren ----
-    console.log("[Edge] Stap 2: getUser...");
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
-    if (userError || !user) {
-      console.error("[Edge] getUser fout:", userError?.message);
+    // ---- Testmodus (1A) ----
+    // Een regressie-testrun draait de ECHTE pijplijn (retrieval + prompt + Haiku)
+    // met een synthetisch testprofiel, maar schrijft NIETS weg (geen gesprek,
+    // cache, kennisgat, diagnostiek, melding of teller) en telt niet mee in de
+    // statistieken. Authenticatie via het geheim WEGWIJZER_TEST_SECRET in een
+    // header — niet via een gebruikerssessie, dus geen echt account nodig.
+    const testSecretHeader = req.headers.get("x-wegwijzer-test") || "";
+    const testSecretVerwacht = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
+    const isTest = testSecretHeader.length > 0 && testSecretVerwacht.length > 0 && testSecretHeader === testSecretVerwacht;
+    if (testSecretHeader.length > 0 && !isTest) {
       return new Response(
-        JSON.stringify({ error: "Sessie verlopen. Log opnieuw in." }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Ongeldige testsleutel" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    console.log("[Edge] Stap 2 OK: user=", user.email);
 
-    // ---- 3. Profiel ophalen ----
-    console.log("[Edge] Stap 3: profiel ophalen...");
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user.id)
-      .single();
+    let user: { id: string; email: string };
+    // deno-lint-ignore no-explicit-any
+    let profile: any;
 
-    if (profileError || !profile) {
-      console.error("[Edge] Profiel niet gevonden:", profileError?.message, "code:", profileError?.code);
-      return new Response(
-        JSON.stringify({ error: "Profiel niet gevonden: " + (profileError?.message || "geen profiel") }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (isTest) {
+      user = { id: "00000000-0000-0000-0000-000000000000", email: "testmodus@wegwijzer.intern" };
+      profile = {
+        id: "00000000-0000-0000-0000-000000000000",
+        tenant_id: TEST_TENANT_ID,
+        role: "medewerker",
+        naam: "",
+        functiegroep: null,
+        teams: [],
+      };
+      console.log("[Edge] TESTMODUS actief — geen persistentie");
+    } else {
+      // ---- 2. Gebruiker verifiëren ----
+      console.log("[Edge] Stap 2: getUser...");
+      const { data: { user: authUser }, error: userError } = await supabaseUser.auth.getUser();
+      if (userError || !authUser) {
+        console.error("[Edge] getUser fout:", userError?.message);
+        return new Response(
+          JSON.stringify({ error: "Sessie verlopen. Log opnieuw in." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      user = authUser as { id: string; email: string };
+      console.log("[Edge] Stap 2 OK: user=", user.email);
+
+      // ---- 3. Profiel ophalen ----
+      console.log("[Edge] Stap 3: profiel ophalen...");
+      const { data: profileData, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        console.error("[Edge] Profiel niet gevonden:", profileError?.message, "code:", profileError?.code);
+        return new Response(
+          JSON.stringify({ error: "Profiel niet gevonden: " + (profileError?.message || "geen profiel") }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      profile = profileData;
+      console.log("[Edge] Stap 3 OK: profiel=", profile.naam, "rol=", profile.role, "tenant=", profile.tenant_id);
     }
-    console.log("[Edge] Stap 3 OK: profiel=", profile.naam, "rol=", profile.role, "tenant=", profile.tenant_id);
 
     // Check tijdelijk account verlopen
     if (profile.account_type === "tijdelijk" && profile.einddatum) {
@@ -829,6 +867,104 @@ Deno.serve(async (req: Request) => {
     // ---- 4. Request body ----
     const body = await req.json();
     const { vraag, functiegroep, weeknummer, extend_limit, messages: clientMessages } = body;
+
+    // Testmodus: functiegroep/teams uit de testcase in het synthetische profiel.
+    if (isTest) {
+      profile.functiegroep = body.functiegroep || null;
+      profile.teams = Array.isArray(body.teams) ? body.teams : [];
+    }
+
+    // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
+    // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
+    // Roept per vraag de eigen chat-functie in testmodus aan (geen persistentie),
+    // doet een stringcheck op de kernfeiten en slaat één run-samenvatting op.
+    if (body.regressie_run === true) {
+      if (!isTest && profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const runTenant = isTest ? TEST_TENANT_ID : profile.tenant_id;
+      const trigger = isTest ? "cron" : "handmatig";
+      const testSecret = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
+      const eigenUrl = `${supabaseUrl}/functions/v1/chat`;
+
+      const { data: vragen } = await supabaseAdmin
+        .from("regressie_vragen")
+        .select("id, categorie, vraag, functiegroep, teams, kernfeit, alle, bron")
+        .eq("tenant_id", runTenant)
+        .eq("actief", true)
+        .order("id");
+
+      if (!vragen || vragen.length === 0) {
+        return new Response(JSON.stringify({ error: "Geen actieve testvragen" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const details: Array<Record<string, unknown>> = [];
+      let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0;
+      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit: string[]; alle: boolean; bron: string };
+
+      const draaiVraag = async (v: TV): Promise<Record<string, unknown>> => {
+        try {
+          const resp = await fetch(eigenUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
+            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [] }),
+          });
+          const r = await resp.json();
+          if (!resp.ok || !r.test_modus) {
+            return { id: v.id, vraag: v.vraag, geslaagd: false, reden: `HTTP ${resp.status}: ${r.error || "onbekend"}` };
+          }
+          const antwoordLower = (r.antwoord || "").toLowerCase();
+          const treffers = (v.kernfeit || []).map((k) => antwoordLower.includes(k.toLowerCase()));
+          const ok = v.alle ? treffers.every(Boolean) : treffers.some(Boolean);
+          return {
+            id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
+            gemist: (v.kernfeit || []).filter((_, i) => !treffers[i]),
+            zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
+            antwoord_fragment: (r.antwoord || "").substring(0, 200),
+            _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0,
+          };
+        } catch (e) {
+          return { id: v.id, vraag: v.vraag, geslaagd: false, reden: e instanceof Error ? e.message : String(e) };
+        }
+      };
+
+      // In groepjes van 4 parallel — houdt de totale looptijd ruim binnen de
+      // functietimeout zonder de Anthropic rate limits te raken.
+      const CONCURRENCY = 4;
+      const lijst = vragen as TV[];
+      for (let i = 0; i < lijst.length; i += CONCURRENCY) {
+        const groep = await Promise.all(lijst.slice(i, i + CONCURRENCY).map(draaiVraag));
+        for (const d of groep) {
+          tinput += (d._tin as number) || 0;
+          toutput += (d._tout as number) || 0;
+          delete d._tin; delete d._tout;
+          if (d.geslaagd) geslaagd++; else gefaald++;
+          details.push(d);
+        }
+      }
+      details.sort((a, b) => (a.id as number) - (b.id as number));
+
+      const kosten = Math.round(((tinput / 1_000_000) * 1.0 + (toutput / 1_000_000) * 5.0) * 1e4) / 1e4;
+      const { data: runRow } = await supabaseAdmin.from("regressie_runs").insert({
+        tenant_id: runTenant, aantal_vragen: vragen.length, geslaagd, gefaald,
+        tokens_input: tinput, tokens_output: toutput, kosten_usd: kosten, trigger, details,
+      }).select("id, gestart_op").single();
+
+      console.log(`[Regressie] run ${trigger}: ${geslaagd}/${vragen.length} geslaagd, $${kosten}`);
+      return new Response(JSON.stringify({
+        success: true, run_id: runRow?.id || null, aantal_vragen: vragen.length,
+        geslaagd, gefaald, tokens_input: tinput, tokens_output: toutput, kosten_usd: kosten, details,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Tokentelling voor de kostenrapportage van een testrun (alle Haiku-calls samen).
+    const testTokens = { input: 0, output: 0 };
+    const telTest = (usage: { input_tokens?: number; output_tokens?: number } | undefined) => {
+      if (isTest && usage) { testTokens.input += usage.input_tokens || 0; testTokens.output += usage.output_tokens || 0; }
+    };
+    const testStart = Date.now();
 
     // ---- Kennissuggesties scan (snel of grondig, admin only) ----
     if (body.kennis_scan && (body.scan_type === "snel" || body.scan_type === "grondig")) {
@@ -1898,6 +2034,7 @@ ${vraagLijst}${trendGedekteContext}`;
     }
 
     // ---- 5. Rate limiting per rol ----
+    if (!isTest) {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStr = todayStart.toISOString().split("T")[0];
@@ -1935,6 +2072,7 @@ ${vraagLijst}${trendGedekteContext}`;
         );
       }
     }
+    } // einde !isTest rate limiting
 
     // ---- Gebruiker uitnodigen ----
     if (body.invite_user && body.invite_email) {
@@ -2636,7 +2774,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     ];
     const vraagtBron = BRON_TRIGGERS.some(t => vraagLower.includes(t));
 
-    if (gevondenTermen.length > 0) {
+    if (!isTest && gevondenTermen.length > 0) {
       const weekStart = new Date();
       const dag = weekStart.getDay();
       const offset = dag === 0 ? 6 : dag - 1;
@@ -2715,7 +2853,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isFeitVraag = FEIT_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t))
       || /\b\d{1,2}[:.]\d{2}\b/.test(vraag)
       || /\b(hoeveel|hoe\s?laat|wanneer|welke?\s+(tijd|dag|datum|nummer|bedrag|prijs|kosten))\b/i.test(vraag);
-    const skipCache = PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
+    const skipCache = isTest
+      || PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
       || isSparringRequest
       || isTrainingVraag
@@ -3326,6 +3465,7 @@ ${chunksBlob}`;
         const feitLatency = Date.now() - feitStart;
         if (extractResp.ok) {
           const extractData = await extractResp.json();
+          telTest(extractData.usage);
           const raw = (extractData.content?.[0]?.text || "").trim();
           if (raw === "NIET_GEVONDEN" || raw.toUpperCase().startsWith("NIET_GEVONDEN")) {
             feitenNietGevonden = true;
@@ -3349,7 +3489,7 @@ ${chunksBlob}`;
     // ---- Persistente FGL diagnostiek ----
     // Alleen loggen bij feitvragen (waar de FGL relevant is) om ruis te beperken.
     // Insert is fire-and-forget: geen await, geen impact op response-latency.
-    if (isFeitVraag) {
+    if (isFeitVraag && !isTest) {
       try {
         const extractieStatus = geverifieerdeFeiten
           ? "geverifieerd"
@@ -3618,6 +3758,7 @@ ${alleKennisbronnen}`;
     }
 
     const aiResult = await anthropicResponse.json();
+    telTest(aiResult.usage);
     const rawAntwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
 
     // ---- 9b. Kennisgat-detectie ----
@@ -3629,7 +3770,7 @@ ${alleKennisbronnen}`;
     // training) of voor meta-vervolgvragen. Gelijkende meldingen worden samengevoegd.
     const heeftGespreksContext = Array.isArray(clientMessages) && clientMessages.length > 1;
     const isMetaVervolgvraag = heeftGespreksContext && META_VERVOLG_PATROON.test(vraag.trim());
-    if (!HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && !isTrainingVraag && !isMetaVervolgvraag) {
+    if (!isTest && !HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && !isTrainingVraag && !isMetaVervolgvraag) {
       supabaseAdmin.rpc("registreer_kenniskloof", {
         p_tenant_id: profile.tenant_id,
         p_onderwerp: vraag.trim(),
@@ -3671,6 +3812,26 @@ ${alleKennisbronnen}`;
     // beantwoordt zelf met documentnamen, sparring en team-query hebben eigen bronnen).
     const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag;
     const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
+
+    // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
+    if (isTest) {
+      const inKost = (testTokens.input / 1_000_000) * 1.0;   // Haiku 4.5: $1 / 1M input
+      const uitKost = (testTokens.output / 1_000_000) * 5.0; // Haiku 4.5: $5 / 1M output
+      return new Response(
+        JSON.stringify({
+          test_modus: true,
+          antwoord,
+          zoek_methode: zoekMethode,
+          kennisbank_match: HEEFT_KENNISBANK_MATCH,
+          herkomst,
+          gebruikte_document_ids: gebruikteDocIds,
+          tokens: testTokens,
+          kosten_usd: Math.round((inKost + uitKost) * 1e6) / 1e6,
+          latency_ms: Date.now() - testStart,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const { data: conversation, error: convError } = await supabaseAdmin
       .from("conversations")
