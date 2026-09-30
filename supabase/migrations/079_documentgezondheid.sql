@@ -92,8 +92,11 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.documentgezondheid(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.documentgezondheid(uuid) TO authenticated, service_role;
+-- Niet aan authenticated geven: de functie neemt een tenant-parameter en checkt
+-- die niet, dus directe toegang zou cross-tenant zijn. De admin-wrapper
+-- mijn_documentgezondheid() (SECURITY DEFINER) roept hem intern aan.
+REVOKE EXECUTE ON FUNCTION public.documentgezondheid(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.documentgezondheid(uuid) TO service_role;
 
 -- Admin-wrapper: overzicht voor de eigen tenant, met rolcheck.
 CREATE OR REPLACE FUNCTION public.mijn_documentgezondheid()
