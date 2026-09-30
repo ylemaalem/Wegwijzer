@@ -200,6 +200,8 @@
     loadTerugblikLog();
     initRegressieTest();
     loadRegressieRuns();
+    initDocumentgezondheid();
+    laadDocumentgezondheid();
     initVerbeterCollapse();
     initSuggestieDelegation();
     initRoiWidget();
@@ -6443,6 +6445,58 @@
     }
     loadTerugblikLog();
   };
+
+  // =============================================
+  // DOCUMENTGEZONDHEID
+  // =============================================
+  function initDocumentgezondheid() {
+    var btn = document.getElementById('docgezondheid-btn');
+    if (btn) btn.addEventListener('click', function () { laadDocumentgezondheid(true); });
+  }
+
+  async function laadDocumentgezondheid(forceer) {
+    var samEl = document.getElementById('docgezondheid-samenvatting');
+    var lijstEl = document.getElementById('docgezondheid-lijst');
+    if (!samEl) return;
+    if (forceer) samEl.innerHTML = '<span style="font-size:0.82rem;color:var(--text-muted)">Bezig…</span>';
+    try {
+      var result = await supabaseClient.rpc('mijn_documentgezondheid');
+      if (result.error) {
+        samEl.innerHTML = '<span style="font-size:0.82rem;color:var(--error)">Kon overzicht niet laden: ' + escapeHtml(result.error.message) + '</span>';
+        return;
+      }
+      var data = result.data || {};
+      var s = data.samenvatting || {};
+      var chips = [
+        ['dubbel', s.dubbel, '#C62828'],
+        ['niet geïndexeerd', s.niet_geindexeerd, '#C62828'],
+        ['PDF weinig tekst', s.pdf_weinig_tekst, '#F57C00'],
+        ['nooit gebruikt', s.nooit_gebruikt, '#F57C00'],
+        ['negatieve feedback', s.negatieve_feedback, '#F57C00']
+      ];
+      var chipHtml = chips.map(function (c) {
+        var n = c[1] || 0;
+        var kleur = n > 0 ? c[2] : 'var(--text-muted)';
+        return '<span style="display:inline-block;font-size:0.78rem;padding:2px 8px;border-radius:12px;border:1px solid ' + kleur + ';color:' + kleur + ';margin:0 6px 6px 0">' + escapeHtml(c[0]) + ': ' + n + '</span>';
+      }).join('');
+      samEl.innerHTML = '<div style="font-size:0.85rem;margin-bottom:6px"><strong>' + (s.aandacht_nodig || 0) + '</strong> van ' + (s.totaal || 0) + ' documenten hebben aandacht nodig' +
+        (s.zonder_revisiedatum ? ' · <span style="color:var(--text-muted)">' + s.zonder_revisiedatum + ' zonder revisiedatum</span>' : '') + '</div>' + chipHtml;
+
+      var details = data.details || [];
+      if (details.length === 0) {
+        lijstEl.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Geen documenten met problemen.</p>';
+        return;
+      }
+      lijstEl.innerHTML = details.map(function (d) {
+        var probs = (d.problemen || []).map(function (p) { return '<span style="font-size:0.72rem;background:var(--bg-white);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-right:4px">' + escapeHtml(p) + '</span>'; }).join('');
+        return '<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:0.82rem">' +
+          '<strong>' + escapeHtml(d.naam || '') + '</strong>' + (d.map ? ' <span style="color:var(--text-muted)">(' + escapeHtml(d.map) + ')</span>' : '') +
+          '<div style="margin-top:3px">' + probs + '</div></div>';
+      }).join('');
+    } catch (e) {
+      samEl.innerHTML = '<span style="font-size:0.82rem;color:var(--error)">Fout: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</span>';
+    }
+  }
 
   // =============================================
   // REGRESSIETEST KENNISBANK
