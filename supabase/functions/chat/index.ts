@@ -45,6 +45,9 @@ const PERSOONLIJKE_WOORDEN = [
   "mijn team", "mijn leidinggevende", "mijn dienst", "mijn uren",
 ];
 
+// Gelijk aan profiles_role_check en de CHECK op uitnodigingen.role (migratie 083).
+const TOEGESTANE_UITNODIGINGSROLLEN = ["medewerker", "teamleider", "admin"];
+
 // Tenant waarvoor de regressie-testset draait (AHMN). Alleen gebruikt in testmodus.
 const TEST_TENANT_ID = "a74e9800-eafd-4fc8-bcb6-fb651db10a8e";
 
@@ -2100,12 +2103,38 @@ ${vraagLijst}${trendGedekteContext}`;
         if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
         if (inviteAfdeling) userData.afdeling = inviteAfdeling;
 
+        if (!TOEGESTANE_UITNODIGINGSROLLEN.includes(inviteRole)) {
+          return new Response(
+            JSON.stringify({ error: "Ongeldige rol voor uitnodiging", invited: false }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         // Verwijder bestaande auth user zodat re-invite als fresh invite werkt
         const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, inviteEmail);
         if (existingAuthUser) {
           console.log("[Invite] Bestaande auth user verwijderd voor fresh invite:", inviteEmail);
           await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
           await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Uitnodigingsregister vóór de invite: handle_new_user maakt alleen een
+        // profiel aan voor e-mailadressen die hier staan (migratie 083/084).
+        const { error: registerError } = await supabaseAdmin.from("uitnodigingen").insert({
+          tenant_id: profile.tenant_id,
+          email: String(inviteEmail).trim().toLowerCase(),
+          naam: inviteNaam,
+          role: inviteRole,
+          functiegroep: inviteFunctiegroep,
+          afdeling: inviteAfdeling,
+          aangemaakt_door: profile.id,
+        });
+        if (registerError) {
+          console.error("[Invite] Register fout:", registerError.message);
+          return new Response(
+            JSON.stringify({ error: "Uitnodiging kon niet worden vastgelegd", invited: false }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
         const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(inviteEmail, {
@@ -2170,6 +2199,22 @@ ${vraagLijst}${trendGedekteContext}`;
           console.log("[Resend] Verwijder bestaande auth user voor fresh invite:", resendEmail);
           await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
           await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Nieuwe registerregel: de vorige is bij de eerste invite al gebruikt.
+        const { error: resendRegisterError } = await supabaseAdmin.from("uitnodigingen").insert({
+          tenant_id: profile.tenant_id,
+          email: String(resendEmail).trim().toLowerCase(),
+          naam: resendNaam,
+          role: TOEGESTANE_UITNODIGINGSROLLEN.includes(resendRole) ? resendRole : "medewerker",
+          aangemaakt_door: profile.id,
+        });
+        if (resendRegisterError) {
+          console.error("[Resend] Register fout:", resendRegisterError.message);
+          return new Response(
+            JSON.stringify({ error: "Uitnodiging kon niet worden vastgelegd" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
         const { data: invData, error: invError } = await supabaseAdmin.auth.admin.inviteUserByEmail(resendEmail, {

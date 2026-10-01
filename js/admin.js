@@ -135,7 +135,7 @@
     'Team Molenweg', 'Team Gele Weiland', 'Team Manuscript', 'Team VAN', 'Team FAN', 'Team FANMN'
   ];
 
-  // Superadmin = de "Wegwijzer Beheer" admin. Mag wisselen tussen tenants
+  // Superadmin (account in tabel superadmins). Mag wisselen tussen tenants
   // via de organisatie-switcher in de header. Wanneer een override actief is
   // (localStorage), wordt tenantId hieronder vervangen door die waarde
   // — alle bestaande queries die .eq('tenant_id', tenantId) doen profiteren
@@ -152,7 +152,17 @@
     currentUserEmail = e.detail.user ? e.detail.user.email : null;
     currentUserNaam = profile.naam || null;
 
-    isSuperadmin = profile.naam === 'Wegwijzer Beheer' && profile.role === 'admin';
+    // Superadmin wordt door de database bepaald (gekoppeld aan het account,
+    // migratie 082) — niet door de naam, die een admin zelf kan wijzigen.
+    isSuperadmin = false;
+    if (profile.role === 'admin') {
+      try {
+        var saRpc = await supabaseClient.rpc('is_superadmin');
+        isSuperadmin = !!(saRpc && saRpc.data === true);
+      } catch (saErr) {
+        console.warn('[Superadmin] is_superadmin RPC faalde:', saErr);
+      }
+    }
     if (isSuperadmin) {
       var override = localStorage.getItem('wegwijzer_active_tenant_id');
       if (override && override !== eigenTenantId) {

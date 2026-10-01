@@ -8,19 +8,14 @@
   document.addEventListener('wegwijzer-auth-ready', async function (e) {
     initLogout();
 
-    // Check: is_superadmin() via RPC — tegelijk dubbele check
-    // op basis van profile naam (route-guard heeft role='admin' al gevalideerd)
-    var profile = e.detail.profile;
-    var isSuperadmin = profile && profile.naam === 'Wegwijzer Beheer' && profile.role === 'admin';
-
-    if (!isSuperadmin) {
-      // Dubbele check via DB: RPC
-      try {
-        var rpc = await supabaseClient.rpc('is_superadmin');
-        if (rpc && rpc.data === true) isSuperadmin = true;
-      } catch (err) {
-        console.warn('[Superadmin] RPC is_superadmin faalde:', err);
-      }
+    // Superadmin wordt alleen door de database bepaald (is_superadmin(), gekoppeld
+    // aan het account — migratie 082). Een naam is geen bewijs: die kon gewijzigd worden.
+    var isSuperadmin = false;
+    try {
+      var rpc = await supabaseClient.rpc('is_superadmin');
+      isSuperadmin = !!(rpc && rpc.data === true);
+    } catch (err) {
+      console.warn('[Superadmin] RPC is_superadmin faalde:', err);
     }
 
     if (!isSuperadmin) {
