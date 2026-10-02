@@ -6556,7 +6556,7 @@
       gefaald.forEach(function (d) {
         html += '<div style="font-size:0.8rem;margin-top:6px;padding-left:8px;border-left:2px solid var(--error, #c62828)">' +
           '#' + d.id + ' ' + escapeHtml(d.vraag || '') +
-          (d.gemist && d.gemist.length ? '<br><span style="color:var(--text-muted)">gemist: ' + escapeHtml(d.gemist.join(', ')) + '</span>' : '') +
+          (d.gemist && d.gemist.length ? '<br><span style="color:var(--text-muted)">' + (d.treffers ? escapeHtml(d.treffers) + ' feiten gevonden · ' : '') + 'gemist: ' + escapeHtml(d.gemist.join(', ')) + '</span>' : '') +
           (d.reden ? '<br><span style="color:var(--text-muted)">' + escapeHtml(d.reden) + '</span>' : '') +
           (d.antwoord_fragment ? '<br><span style="color:var(--text-light)">"' + escapeHtml(d.antwoord_fragment) + '…"</span>' : '') +
           '</div>';

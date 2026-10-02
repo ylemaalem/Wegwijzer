@@ -893,7 +893,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: vragen } = await supabaseAdmin
         .from("regressie_vragen")
-        .select("id, categorie, vraag, functiegroep, teams, kernfeit, alle, bron")
+        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron")
         .eq("tenant_id", runTenant)
         .eq("actief", true)
         .order("id");
@@ -905,7 +905,9 @@ Deno.serve(async (req: Request) => {
 
       const details: Array<Record<string, unknown>> = [];
       let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0;
-      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit: string[]; alle: boolean; bron: string };
+      // kernfeit_groepen: elke groep = één feit met alleen schrijfvarianten van dat feit.
+      // min_treffers: hoeveel groepen gevonden moeten worden (null = alle groepen).
+      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string };
 
       const draaiVraag = async (v: TV): Promise<Record<string, unknown>> => {
         try {
@@ -919,11 +921,15 @@ Deno.serve(async (req: Request) => {
             return { id: v.id, vraag: v.vraag, geslaagd: false, reden: `HTTP ${resp.status}: ${r.error || "onbekend"}` };
           }
           const antwoordLower = (r.antwoord || "").toLowerCase();
-          const treffers = (v.kernfeit || []).map((k) => antwoordLower.includes(k.toLowerCase()));
-          const ok = v.alle ? treffers.every(Boolean) : treffers.some(Boolean);
+          const groepen = Array.isArray(v.kernfeit_groepen) ? v.kernfeit_groepen : [];
+          const gevonden = groepen.map((g) => g.some((k) => antwoordLower.includes(k.toLowerCase())));
+          const nodig = v.min_treffers ?? groepen.length;
+          const aantal = gevonden.filter(Boolean).length;
+          const ok = groepen.length > 0 && aantal >= nodig;
           return {
             id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
-            gemist: (v.kernfeit || []).filter((_, i) => !treffers[i]),
+            treffers: `${aantal}/${nodig}`,
+            gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
             antwoord_fragment: (r.antwoord || "").substring(0, 200),
             _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0,
