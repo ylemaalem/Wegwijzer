@@ -887,7 +887,9 @@ Deno.serve(async (req: Request) => {
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const runTenant = isTest ? TEST_TENANT_ID : profile.tenant_id;
-      const trigger = isTest ? "cron" : "handmatig";
+      // Met de testsleutel is het standaard de cron; een handmatige run via de
+      // sleutel (bv. na een codewijziging) kan zich als "handmatig" melden.
+      const trigger = isTest && body.trigger !== "handmatig" ? "cron" : "handmatig";
       const testSecret = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
       const eigenUrl = `${supabaseUrl}/functions/v1/chat`;
 
@@ -932,6 +934,8 @@ Deno.serve(async (req: Request) => {
             gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
             antwoord_fragment: (r.antwoord || "").substring(0, 200),
+            // Bij een mislukte vraag het volledige antwoord bewaren voor de analyse.
+            antwoord: ok ? undefined : (r.antwoord || ""),
             _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0,
           };
         } catch (e) {

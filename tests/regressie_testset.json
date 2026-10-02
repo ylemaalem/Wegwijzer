@@ -1,101 +1,795 @@
 {
-  "versie": "2026-10-02",
-  "tenant": "AHMN",
-  "toelichting": "40 regressievragen voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen.",
-  "aanname_kosten": {
-    "model": "claude-haiku-4-5-20251001",
-    "prijs_input_per_mln_usd": 1.0,
-    "prijs_output_per_mln_usd": 5.0,
-    "gemeten_voorbeeld": "1 feitvraag = 12364 input + 329 output tokens = $0,014",
-    "verwacht_per_run_usd": "0,45 - 0,80"
+ "versie": "2026-10-02b",
+ "tenant": "AHMN",
+ "toelichting": "40 regressievragen voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging).",
+ "aanname_kosten": {
+  "model": "claude-haiku-4-5-20251001",
+  "prijs_input_per_mln_usd": 1.0,
+  "prijs_output_per_mln_usd": 5.0,
+  "gemeten_voorbeeld": "1 feitvraag = 12364 input + 329 output tokens = $0,014",
+  "verwacht_per_run_usd": "0,45 - 0,80"
+ },
+ "vragen": [
+  {
+   "id": 1,
+   "categorie": "diensten",
+   "vraag": "Hoe laat begint de nachtdienst bij FAN MN?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "19:00",
+     "19.00"
+    ]
+   ],
+   "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN",
+   "zeker": true,
+   "actief": true
   },
-  "vragen": [
-    {"id": 1, "categorie": "diensten", "vraag": "Hoe laat begint de nachtdienst bij FAN MN?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["19:00", "19.00"]], "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN", "zeker": true},
-    {"id": 2, "categorie": "diensten", "vraag": "Tot hoe laat is FAN MN actief bereikbaar?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["01:00", "01.00"]], "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN", "zeker": true},
-    {"id": 3, "categorie": "diensten", "vraag": "Wat is het telefoonnummer van FAN MN?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["085-1605573", "085 1605573", "0851605573"]], "bron": "informatie en werkwijze FAN MN", "zeker": true},
-    {"id": 4, "categorie": "diensten", "vraag": "Wat is het telefoonnummer van de FAN in Almere?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["085-1605571", "085 1605571", "0851605571"]], "bron": "informatie en werkwijze FAN", "zeker": false,
-     "let_op": "Definitief procedure Flevolandse avond- en nachtdienst 1.0 noemt 085-1605571 als nummer van de VAN (Veluwe)."},
-    {"id": 5, "categorie": "diensten", "vraag": "Wat is het telefoonnummer van de Veluwse Avond- en Nachtdienst (VAN)?", "functiegroep": "ambulant_begeleider", "teams": ["Veluwe"],
-     "kernfeiten": [["085-049 2717", "085-0492717", "0850492717", "085 049 2717"]], "bron": "informatie en werkwijze VAN", "zeker": false,
-     "let_op": "Zelfde tegenstrijdigheid als vraag 4: de FAN-procedure noemt 085-1605571 voor de VAN."},
-    {"id": 6, "categorie": "diensten", "vraag": "Naar welk e-mailadres stuur ik het aanmeldformulier voor de avond- en nachtdienst?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["aanmelden@ambulantehulpverlening.nl"]], "bron": "Definitief procedure Flevolandse avond- en nachtdienst 1.0 + Procedure Veluwse Avond- en Nachtdienst 3.0", "zeker": true},
-    {"id": 7, "categorie": "diensten", "vraag": "In welke regio werkt de FAN MN?", "functiegroep": "ambulant_begeleider", "teams": ["FAN"],
-     "kernfeiten": [["flevoland"]], "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN", "zeker": true},
-    {"id": 8, "categorie": "diensten", "vraag": "Wie had er op 3 januari 2026 weekendbereikbaarheidsdienst?", "functiegroep": "ambulant_begeleider", "teams": ["Almere"],
-     "kernfeiten": [["ismene josso", "josso"]], "bron": "AHMN_Weekend_Bereikbaarheidsdiensten.txt (rooster)", "zeker": true},
-    {"id": 9, "categorie": "organisatie", "vraag": "Wie is de voorzitter van de ondernemingsraad?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["bernice swart"]], "bron": "Jaarverslag OR 2025", "zeker": true},
-    {"id": 10, "categorie": "organisatie", "vraag": "Wie zitten er in de ondernemingsraad?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["bernice swart", "swart"], ["maike teijssen", "teijssen"], ["geeske dickinson", "dickinson"], ["johan cordes", "cordes"]], "min_treffers": 3,
-     "bron": "Jaarverslag OR 2025 (leden per 31-12-2025)", "zeker": true,
-     "let_op": "De FAQ noemt een andere samenstelling (o.a. Marion Musch, Marjon Lokhorst, Ismene Josso, Esmeralda Muurling; niet Brenda Bisschop en Gerjanne Kardol). De test vraagt alleen de 4 namen die in beide lijsten staan."},
-    {"id": 11, "categorie": "klachten", "vraag": "Binnen welke termijn moet een klacht van een cliënt behandeld worden?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["6 weken", "zes weken"], ["4 weken", "vier weken"]], "bron": "Klachtenregeling 5.0 (6 weken, verlenging met 4 weken)", "zeker": false},
-    {"id": 12, "categorie": "organisatie", "vraag": "Wat is het adres van het hoofdkantoor?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["gelreweg 3"]], "bron": "Administratieve gegevens", "zeker": true},
-    {"id": 13, "categorie": "veiligheid", "vraag": "Wie zitten er in de incidentencommissie?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["gerjanne kardol", "kardol"], ["geeske dickinson", "dickinson"], ["miranda van beek", "van beek"]],
-     "bron": "Regeling incident meldingen 4.0", "zeker": true},
-    {"id": 14, "categorie": "arbeidsvoorwaarden", "vraag": "Welk systeem gebruikt AHMN voor de functiewaardering?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["fwg"], ["gehandicaptenzorg"]], "bron": "Regeling gelijke beloning", "zeker": true},
-    {"id": 15, "categorie": "arbeidsvoorwaarden", "vraag": "Ik heb rust nodig, maar ben (nog) niet ziek. Welk verlof kan ik dan opnemen?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["balansverlof"]], "bron": "Verlofoverzicht (+ CAO H8 balansverlof)", "zeker": true},
-    {"id": 16, "categorie": "arbeidsvoorwaarden", "vraag": "Hoeveel reiskostenvergoeding per kilometer krijg ik als ik met de auto naar mijn werk rij?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["0,30", "0.30", "30 cent"]], "bron": "Mobiliteitsbeleid (eigen regeling; de cao noemt een lager minimum)", "zeker": true},
-    {"id": 17, "categorie": "arbeidsvoorwaarden", "vraag": "Hoeveel pauze heb ik recht op bij een dienst van meer dan 5,5 uur?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["half uur", "½ uur", "30 minuten", "halfuur"]], "bron": "CAO bijlage arbeidstijden + Instructie uren schrijven v2", "zeker": true},
-    {"id": 18, "categorie": "arbeidsvoorwaarden", "vraag": "Hoeveel bonus krijg ik als iemand die ik heb aangedragen bij AHMN in dienst komt?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["75 euro", "€75", "€ 75", "75,-"]], "bron": "Regeling aanbrengbonus", "zeker": true},
-    {"id": 19, "categorie": "veiligheid", "vraag": "Wat moet ik doen als een situatie met een cliënt bedreigend wordt?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["112"], ["leidinggevende", "teamleider"]], "bron": "Meldprotocol grensoverschrijdend gedrag 2.0", "zeker": true},
-    {"id": 20, "categorie": "veiligheid", "vraag": "Wie is de vertrouwenspersoon voor medewerkers?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["ab de haas", "de haas"]], "bron": "Regeling vertrouwenspersoon medewerkers 4.0", "zeker": true},
-    {"id": 21, "categorie": "veiligheid", "vraag": "Ik werk alleen op een 24-uurs woonlocatie en er ontstaat een noodsituatie. Welk hulpmiddel kan ik gebruiken?", "functiegroep": "woonbegeleider", "teams": [],
-     "kernfeiten": [["persoonlijk alarm", "alarmknop"], ["securitas"]], "bron": "Regeling alleen werken 2.0", "zeker": true},
-    {"id": 22, "categorie": "incidenten", "vraag": "Hoe meld ik een incident, en hoe snel wordt mijn melding opgepakt?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["portal"], ["2 werkdagen", "twee werkdagen"]], "bron": "Regeling incident meldingen 4.0", "zeker": true},
-    {"id": 23, "categorie": "ons", "vraag": "Ik heb een no-show en zie op datzelfde tijdstip een andere cliënt. Hoe registreer ik dat in ONS?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["dubbele afspraak", "dubbel"], ["agenda"]], "bron": "Instructie uren schrijven v2", "zeker": true},
-    {"id": 24, "categorie": "ons", "vraag": "Welke uurcodes tellen niet als effectief?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["inwerkperiode"], ["scholing"], ["reistijd"], ["overhead"]], "min_treffers": 3, "bron": "Instructie uren schrijven v2", "zeker": true},
-    {"id": 25, "categorie": "ons", "vraag": "Ik heb een kort telefoontje met een cliënt gehad. Hoeveel tijd mag ik daarvoor registreren?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["30 minuten", "half uur", "halfuur"]], "bron": "Instructie uren schrijven v2", "zeker": true},
-    {"id": 26, "categorie": "zorgproces", "vraag": "Voor welke Wlz-indicaties is AHMN gecontracteerd?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["vg 3", "vg3", "vg-3"], ["ggz-w", "ggz w", "ggzw"]], "bron": "WLZ toelichting", "zeker": true},
-    {"id": 27, "categorie": "medicatie", "vraag": "Hoe lang moeten afgetekende medicatie-aftekenlijsten bewaard worden?", "functiegroep": "woonbegeleider", "teams": [],
-     "kernfeiten": [["2 maanden", "twee maanden"]], "bron": "Medicatiebeleid 7.0", "zeker": true},
-    {"id": 28, "categorie": "hr", "vraag": "Ik heb vragen over mijn gezondheid in relatie tot mijn werk, maar ben niet ziek. Waar kan ik terecht?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["arboned"], ["spreekuur"]], "bron": "Gezondheidsbeleid", "zeker": true},
-    {"id": 29, "categorie": "hr", "vraag": "Ik wil intern solliciteren op een andere functie. Krijg ik voorrang op externe kandidaten?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["gelijke geschiktheid", "even geschikt", "gelijk geschikt"]], "bron": "Wervingsprocedure", "zeker": false},
-    {"id": 30, "categorie": "inwerken", "vraag": "Wanneer wordt mijn inwerkperiode geëvalueerd?", "functiegroep": "ambulant_begeleider", "teams": ["Almere"],
-     "kernfeiten": [["6 weken", "zes weken"]], "bron": "Functioneringscyclus", "zeker": true},
-    {"id": 31, "categorie": "zorgproces", "vraag": "Binnen hoeveel tijd na het sleutelmoment wordt het startgesprek van Thuis in de Wijk gepland?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["3 weken", "drie weken"]], "bron": "Procesbeschrijving Thuis in de Wijk 1.0", "zeker": true},
-    {"id": 32, "categorie": "zorgproces", "vraag": "Wie geeft een Wlz-indicatie af?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["ciz"]], "bron": "WLZ toelichting", "zeker": true},
-    {"id": 33, "categorie": "ons", "vraag": "Ik sta voor een dichte deur bij een cliënt. Hoe verwerk ik dat in ONS?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["no-show", "no show", "noshow"], ["rapportage", "toelichting"]], "bron": "Instructie uren schrijven v2", "zeker": false,
-     "let_op": "Er staat geen apart no-showbeleid in de kennisbank. Instructie uren schrijven v2 zegt: uurcode no-show + korte rapportage. Veel gestelde vragen ONS zegt: de uurcode no-show bestaat niet meer, gebruik de knop 'No show'. Welke klopt?"},
-    {"id": 34, "categorie": "privacy", "vraag": "Hoe lang worden medische gegevens van cliënten bewaard?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["15 jaar", "vijftien jaar"]], "bron": "Privacy statement AHMN 2.0", "zeker": false,
-     "let_op": "Wettelijke bewaartermijn medisch dossier is sinds 2020 20 jaar (WGBO); het privacy statement noemt 'minimaal 15 jaar'. Regeling cliëntdossier 3.0 noemt geen getal."},
-    {"id": 35, "categorie": "privacy", "vraag": "Hoe meld ik een mogelijk datalek?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["google formulier", "google-formulier", "google form"]], "bron": "Datalek procedure 1.1", "zeker": true},
-    {"id": 36, "categorie": "zorgproces", "vraag": "Een cliënt met een Wlz-indicatie komt bij ons wonen. In welke vorm moet de Wlz dan zijn?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["vpt", "volledig pakket thuis"]], "bron": "WLZ toelichting", "zeker": true},
-    {"id": 37, "categorie": "arbeidsvoorwaarden", "vraag": "Tot hoeveel kilometer per enkele reis wordt mijn woon-werkverkeer vergoed?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["45 kilometer", "45 km"]], "bron": "Mobiliteitsbeleid", "zeker": true},
-    {"id": 38, "categorie": "roosters", "vraag": "Hoe wordt er op de Middelste Wei geroosterd?", "functiegroep": "woonbegeleider", "teams": ["Middelste Wei"],
-     "kernfeiten": [["maandelijks", "per maand", "elke maand"]], "bron": "Handboek Middelste Wei 2.0", "zeker": true},
-    {"id": 39, "categorie": "organisatie", "vraag": "Wat is het adres van het kantoor in Almere?", "functiegroep": "ambulant_begeleider", "teams": ["Almere"],
-     "kernfeiten": [["randstad 22"]], "bron": "Administratieve gegevens", "zeker": true},
-    {"id": 40, "categorie": "negatief", "vraag": "Wat is het lievelingsijsje van de directeur?", "functiegroep": "ambulant_begeleider", "teams": [],
-     "kernfeiten": [["niet terug", "niet gevonden", "weet ik niet", "kan ik niet vinden"]], "bron": "GEEN — controle dat de bot niets verzint en netjes zegt dat hij het niet weet", "zeker": true}
-  ]
+  {
+   "id": 2,
+   "categorie": "diensten",
+   "vraag": "Tot hoe laat is FAN MN actief bereikbaar?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "01:00",
+     "01.00"
+    ]
+   ],
+   "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 3,
+   "categorie": "diensten",
+   "vraag": "Wat is het telefoonnummer van FAN MN?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "085-1605573",
+     "085 1605573",
+     "0851605573"
+    ]
+   ],
+   "bron": "informatie en werkwijze FAN MN",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 4,
+   "categorie": "diensten",
+   "vraag": "Wat is het telefoonnummer van de FAN in Almere?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "085-1605571",
+     "085 1605571",
+     "0851605571"
+    ]
+   ],
+   "bron": "informatie en werkwijze FAN",
+   "zeker": false,
+   "let_op": "Definitief procedure Flevolandse avond- en nachtdienst 1.0 noemt 085-1605571 als nummer van de VAN (Veluwe). Tijdelijk uit de run tot de nummers bevestigd zijn.",
+   "actief": false
+  },
+  {
+   "id": 5,
+   "categorie": "diensten",
+   "vraag": "Wat is het telefoonnummer van de Veluwse Avond- en Nachtdienst (VAN)?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "Veluwe"
+   ],
+   "kernfeiten": [
+    [
+     "085-049 2717",
+     "085-0492717",
+     "0850492717",
+     "085 049 2717"
+    ]
+   ],
+   "bron": "informatie en werkwijze VAN",
+   "zeker": false,
+   "let_op": "Zelfde tegenstrijdigheid als vraag 4: de FAN-procedure noemt 085-1605571 voor de VAN. Tijdelijk uit de run tot de nummers bevestigd zijn.",
+   "actief": false
+  },
+  {
+   "id": 6,
+   "categorie": "diensten",
+   "vraag": "Naar welk e-mailadres stuur ik het aanmeldformulier voor de avond- en nachtdienst?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "aanmelden@ambulantehulpverlening.nl"
+    ]
+   ],
+   "bron": "Definitief procedure Flevolandse avond- en nachtdienst 1.0 + Procedure Veluwse Avond- en Nachtdienst 3.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 7,
+   "categorie": "diensten",
+   "vraag": "In welke regio werkt de FAN MN?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "FAN"
+   ],
+   "kernfeiten": [
+    [
+     "flevoland"
+    ]
+   ],
+   "bron": "Regeling bereikbaarheid 7.0 + informatie en werkwijze FAN MN",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 8,
+   "categorie": "diensten",
+   "vraag": "Wie had er op 3 januari 2026 weekendbereikbaarheidsdienst?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "Almere"
+   ],
+   "kernfeiten": [
+    [
+     "ismene josso",
+     "josso"
+    ]
+   ],
+   "bron": "AHMN_Weekend_Bereikbaarheidsdiensten.txt (rooster)",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 9,
+   "categorie": "organisatie",
+   "vraag": "Wie is de voorzitter van de ondernemingsraad?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "bernice swart"
+    ]
+   ],
+   "bron": "Jaarverslag OR 2025",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 10,
+   "categorie": "organisatie",
+   "vraag": "Wie zitten er in de ondernemingsraad?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "bernice swart",
+     "swart"
+    ],
+    [
+     "maike teijssen",
+     "teijssen"
+    ],
+    [
+     "geeske dickinson",
+     "dickinson"
+    ],
+    [
+     "johan cordes",
+     "cordes"
+    ],
+    [
+     "marion musch",
+     "musch"
+    ],
+    [
+     "marjon lokhorst",
+     "lokhorst"
+    ],
+    [
+     "ismene josso",
+     "josso"
+    ],
+    [
+     "esmeralda muurling",
+     "muurling"
+    ]
+   ],
+   "min_treffers": 3,
+   "bron": "Kennisbankitem 'Welke collega's zitten er momenteel in de ondernemingsraad?' (volledige ledenlijst, 8 leden)",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 11,
+   "categorie": "klachten",
+   "vraag": "Binnen welke termijn moet een klacht van een cliënt behandeld worden?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "6 weken",
+     "zes weken"
+    ],
+    [
+     "4 weken",
+     "vier weken"
+    ]
+   ],
+   "bron": "Klachtenregeling 5.0 (6 weken, verlenging met 4 weken)",
+   "zeker": false,
+   "actief": true
+  },
+  {
+   "id": 12,
+   "categorie": "organisatie",
+   "vraag": "Wat is het adres van het hoofdkantoor?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "gelreweg 3"
+    ]
+   ],
+   "bron": "Administratieve gegevens",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 13,
+   "categorie": "veiligheid",
+   "vraag": "Wie zitten er in de incidentencommissie?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "gerjanne kardol",
+     "kardol"
+    ],
+    [
+     "geeske dickinson",
+     "dickinson"
+    ],
+    [
+     "miranda van beek",
+     "van beek"
+    ]
+   ],
+   "bron": "Regeling incident meldingen 4.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 14,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Welk systeem gebruikt AHMN voor de functiewaardering?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "fwg"
+    ],
+    [
+     "gehandicaptenzorg"
+    ]
+   ],
+   "bron": "Regeling gelijke beloning",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 15,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Ik heb rust nodig, maar ben (nog) niet ziek. Welk verlof kan ik dan opnemen?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "balansverlof"
+    ]
+   ],
+   "bron": "Verlofoverzicht (+ CAO H8 balansverlof)",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 16,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Hoeveel reiskostenvergoeding per kilometer krijg ik als ik met de auto naar mijn werk rij?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "0,30",
+     "0.30",
+     "30 cent"
+    ]
+   ],
+   "bron": "Mobiliteitsbeleid (eigen regeling; de cao noemt een lager minimum)",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 17,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Hoeveel pauze heb ik recht op bij een dienst van meer dan 5,5 uur?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "half uur",
+     "½ uur",
+     "30 minuten",
+     "halfuur"
+    ]
+   ],
+   "bron": "CAO bijlage arbeidstijden + Instructie uren schrijven v2",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 18,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Hoeveel bonus krijg ik als iemand die ik heb aangedragen bij AHMN in dienst komt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "75 euro",
+     "€75",
+     "€ 75",
+     "75,-"
+    ]
+   ],
+   "bron": "Regeling aanbrengbonus",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 19,
+   "categorie": "veiligheid",
+   "vraag": "Wat moet ik doen als een situatie met een cliënt bedreigend wordt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "112"
+    ],
+    [
+     "leidinggevende",
+     "teamleider"
+    ]
+   ],
+   "bron": "Meldprotocol grensoverschrijdend gedrag 2.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 20,
+   "categorie": "veiligheid",
+   "vraag": "Wie is de vertrouwenspersoon voor medewerkers?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "ab de haas",
+     "de haas"
+    ]
+   ],
+   "bron": "Regeling vertrouwenspersoon medewerkers 4.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 21,
+   "categorie": "veiligheid",
+   "vraag": "Ik werk alleen op een 24-uurs woonlocatie en er ontstaat een noodsituatie. Welk hulpmiddel kan ik gebruiken?",
+   "functiegroep": "woonbegeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "persoonlijk alarm",
+     "alarmknop"
+    ],
+    [
+     "securitas"
+    ]
+   ],
+   "bron": "Regeling alleen werken 2.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 22,
+   "categorie": "incidenten",
+   "vraag": "Hoe meld ik een incident, en hoe snel wordt mijn melding opgepakt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "portal"
+    ],
+    [
+     "2 werkdagen",
+     "twee werkdagen"
+    ]
+   ],
+   "bron": "Regeling incident meldingen 4.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 23,
+   "categorie": "ons",
+   "vraag": "Ik heb een no-show en zie op datzelfde tijdstip een andere cliënt. Hoe registreer ik dat in ONS?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "dubbele afspraak",
+     "dubbel"
+    ],
+    [
+     "agenda"
+    ]
+   ],
+   "bron": "Instructie uren schrijven v2",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 24,
+   "categorie": "ons",
+   "vraag": "Welke uurcodes tellen niet als effectief?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "inwerkperiode"
+    ],
+    [
+     "scholing"
+    ],
+    [
+     "reistijd"
+    ],
+    [
+     "overhead"
+    ]
+   ],
+   "min_treffers": 3,
+   "bron": "Instructie uren schrijven v2",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 25,
+   "categorie": "ons",
+   "vraag": "Ik heb een kort telefoontje met een cliënt gehad. Hoeveel tijd mag ik daarvoor registreren?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "30 minuten",
+     "half uur",
+     "halfuur"
+    ]
+   ],
+   "bron": "Instructie uren schrijven v2",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 26,
+   "categorie": "zorgproces",
+   "vraag": "Voor welke Wlz-indicaties is AHMN gecontracteerd?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "vg 3",
+     "vg3",
+     "vg-3"
+    ],
+    [
+     "ggz-w",
+     "ggz w",
+     "ggzw"
+    ]
+   ],
+   "bron": "WLZ toelichting",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 27,
+   "categorie": "medicatie",
+   "vraag": "Hoe lang moeten afgetekende medicatie-aftekenlijsten bewaard worden?",
+   "functiegroep": "woonbegeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "2 maanden",
+     "twee maanden"
+    ]
+   ],
+   "bron": "Medicatiebeleid 7.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 28,
+   "categorie": "hr",
+   "vraag": "Ik heb vragen over mijn gezondheid in relatie tot mijn werk, maar ben niet ziek. Waar kan ik terecht?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "arboned"
+    ],
+    [
+     "spreekuur"
+    ]
+   ],
+   "bron": "Gezondheidsbeleid",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 29,
+   "categorie": "hr",
+   "vraag": "Ik wil intern solliciteren op een andere functie. Krijg ik voorrang op externe kandidaten?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "gelijke geschiktheid",
+     "even geschikt",
+     "gelijk geschikt"
+    ]
+   ],
+   "bron": "Wervingsprocedure",
+   "zeker": false,
+   "actief": true
+  },
+  {
+   "id": 30,
+   "categorie": "inwerken",
+   "vraag": "Wanneer wordt mijn inwerkperiode geëvalueerd?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "Almere"
+   ],
+   "kernfeiten": [
+    [
+     "6 weken",
+     "zes weken"
+    ]
+   ],
+   "bron": "Functioneringscyclus",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 31,
+   "categorie": "zorgproces",
+   "vraag": "Binnen hoeveel tijd na het sleutelmoment wordt het startgesprek van Thuis in de Wijk gepland?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3 weken",
+     "drie weken"
+    ]
+   ],
+   "bron": "Procesbeschrijving Thuis in de Wijk 1.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 32,
+   "categorie": "zorgproces",
+   "vraag": "Wie geeft een Wlz-indicatie af?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "ciz"
+    ]
+   ],
+   "bron": "WLZ toelichting",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 33,
+   "categorie": "ons",
+   "vraag": "Ik sta voor een dichte deur bij een cliënt. Hoe verwerk ik dat in ONS?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "no-show",
+     "no show",
+     "noshow"
+    ],
+    [
+     "cliëntnaam",
+     "clientnaam",
+     "cliënt naam",
+     "client naam",
+     "naam van de cliënt",
+     "naam van de client"
+    ]
+   ],
+   "bron": "Besluit Younes 2026-10-02 (no-show registreren onder de cliëntnaam in ONS) + voorgestelde kennisnotitie",
+   "zeker": false,
+   "let_op": "Faalt naar verwachting tot de kennisnotitie over no-show is toegevoegd: geen enkel document noemt nu 'cliëntnaam'. Instructie uren schrijven v2 (uurcode no-show) is verouderd.",
+   "actief": true
+  },
+  {
+   "id": 34,
+   "categorie": "privacy",
+   "vraag": "Hoe lang worden medische gegevens van cliënten bewaard?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "15 jaar",
+     "vijftien jaar"
+    ]
+   ],
+   "bron": "Privacy statement AHMN 2.0",
+   "zeker": false,
+   "let_op": "Wettelijke bewaartermijn medisch dossier is sinds 2020 20 jaar (WGBO); het privacy statement noemt 'minimaal 15 jaar'. Regeling cliëntdossier 3.0 noemt geen getal. Tijdelijk uit de run tot de termijn bevestigd is.",
+   "actief": false
+  },
+  {
+   "id": 35,
+   "categorie": "privacy",
+   "vraag": "Hoe meld ik een mogelijk datalek?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "google formulier",
+     "google-formulier",
+     "google form"
+    ]
+   ],
+   "bron": "Datalek procedure 1.1",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 36,
+   "categorie": "zorgproces",
+   "vraag": "Een cliënt met een Wlz-indicatie komt bij ons wonen. In welke vorm moet de Wlz dan zijn?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "vpt",
+     "volledig pakket thuis"
+    ]
+   ],
+   "bron": "WLZ toelichting",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 37,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Tot hoeveel kilometer per enkele reis wordt mijn woon-werkverkeer vergoed?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "45 kilometer",
+     "45 km"
+    ]
+   ],
+   "bron": "Mobiliteitsbeleid",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 38,
+   "categorie": "roosters",
+   "vraag": "Hoe wordt er op de Middelste Wei geroosterd?",
+   "functiegroep": "woonbegeleider",
+   "teams": [
+    "Middelste Wei"
+   ],
+   "kernfeiten": [
+    [
+     "maandelijks",
+     "per maand",
+     "elke maand"
+    ]
+   ],
+   "bron": "Handboek Middelste Wei 2.0",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 39,
+   "categorie": "organisatie",
+   "vraag": "Wat is het adres van het kantoor in Almere?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "Almere"
+   ],
+   "kernfeiten": [
+    [
+     "randstad 22"
+    ]
+   ],
+   "bron": "Administratieve gegevens",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 40,
+   "categorie": "negatief",
+   "vraag": "Wat is het lievelingsijsje van de directeur?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "niet terug",
+     "niet gevonden",
+     "weet ik niet",
+     "kan ik niet vinden",
+     "niet in de kennisbank"
+    ]
+   ],
+   "bron": "GEEN — controle dat de bot niets verzint en netjes zegt dat hij het niet weet",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 41,
+   "categorie": "diensten",
+   "vraag": "Van hoe laat tot hoe laat is de Veluwse Avond- en Nachtdienst (VAN) doordeweeks actief?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [
+    "Veluwe"
+   ],
+   "kernfeiten": [
+    [
+     "17:00",
+     "17.00"
+    ],
+    [
+     "00:00",
+     "00.00",
+     "24:00",
+     "middernacht"
+    ]
+   ],
+   "bron": "Regeling bereikbaarheid 7.0 (besluit Younes 2026-10-02: doordeweeks 17:00-00:00)",
+   "zeker": false,
+   "let_op": "Faalt naar verwachting tot 'informatie en werkwijze VAN' en 'VAN_ FAN_ FAN MN' zijn aangepast; die noemen nog 19:00-01:00.",
+   "actief": true
+  }
+ ]
 }
