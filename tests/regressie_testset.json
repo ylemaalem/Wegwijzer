@@ -1,7 +1,7 @@
 {
- "versie": "2026-10-02b",
+ "versie": "2026-10-02c",
  "tenant": "AHMN",
- "toelichting": "40 regressievragen voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging).",
+ "toelichting": "61 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging).",
  "aanname_kosten": {
   "model": "claude-haiku-4-5-20251001",
   "prijs_input_per_mln_usd": 1.0,
@@ -759,7 +759,9 @@
      "niet gevonden",
      "weet ik niet",
      "kan ik niet vinden",
-     "niet in de kennisbank"
+     "niet in de kennisbank",
+     "niet in onze kennisbank",
+     "vind ik niet"
     ]
    ],
    "bron": "GEEN — controle dat de bot niets verzint en netjes zegt dat hij het niet weet",
@@ -789,6 +791,376 @@
    "bron": "Regeling bereikbaarheid 7.0 (besluit Younes 2026-10-02: doordeweeks 17:00-00:00)",
    "zeker": false,
    "let_op": "Faalt naar verwachting tot 'informatie en werkwijze VAN' en 'VAN_ FAN_ FAN MN' zijn aangepast; die noemen nog 19:00-01:00.",
+   "actief": true
+  },
+  {
+   "id": 42,
+   "categorie": "roosters",
+   "vraag": "Wie had er op 14 februari 2026 weekendbereikbaarheidsdienst?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "lincey somers",
+     "somers"
+    ]
+   ],
+   "bron": "AHMN_Weekend_Bereikbaarheidsdiensten.txt",
+   "documenttype": "rooster",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 43,
+   "categorie": "roosters",
+   "vraag": "Wie had er op 8 maart 2026 weekendbereikbaarheidsdienst?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "maike teijssen",
+     "teijssen"
+    ]
+   ],
+   "bron": "AHMN_Weekend_Bereikbaarheidsdiensten.txt",
+   "documenttype": "rooster",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 44,
+   "categorie": "roosters",
+   "vraag": "Wie had er op 6 december 2025 weekendbereikbaarheidsdienst?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "michiel slooijer",
+     "slooijer"
+    ]
+   ],
+   "bron": "AHMN_Weekend_Bereikbaarheidsdiensten.txt",
+   "documenttype": "rooster",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 45,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Wat is het hoogste salaris in functiegroep 35 volgens de salaristabel per 1 juli 2025?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3564",
+     "3.564"
+    ]
+   ],
+   "bron": "Salaristabellen CAO Gehandicaptenzorg 2025-2026 (1).pdf",
+   "documenttype": "tabel",
+   "zeker": false,
+   "let_op": "De salaristabel staat door het inlezen van de PDF door elkaar in de kennisbank; faalt naar verwachting tot de tabel leesbaar is ingevoerd.",
+   "actief": true
+  },
+  {
+   "id": 46,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Krijg ik bijzonder verlof als ik ga verhuizen?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "vakantieuren",
+     "vakantie-uren",
+     "vakantie uren"
+    ],
+    [
+     "balansverlof"
+    ]
+   ],
+   "bron": "Verlofoverzicht.docx",
+   "documenttype": "tabel",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 47,
+   "categorie": "arbeidsvoorwaarden",
+   "vraag": "Ik moet onder werktijd naar de tandarts. Heb ik daar recht op verlof voor?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "bijzonder verlof"
+    ]
+   ],
+   "bron": "Verlofoverzicht.docx",
+   "documenttype": "tabel",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 48,
+   "categorie": "ons",
+   "vraag": "Op welke uurcode schrijf ik de uren die ik aan de ondernemingsraad besteed?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "neventaak"
+    ]
+   ],
+   "bron": "Handleiding uurcodes ONS weekkaart ambulant 1.0.docx",
+   "documenttype": "lijst",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 49,
+   "categorie": "ons",
+   "vraag": "Hoe krijgt een collega die mij tijdens mijn vakantie vervangt toegang tot het dossier van mijn cliënt in ONS?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "breaking the glass"
+    ]
+   ],
+   "bron": "Formulier vakantievervanging 2.0.docx",
+   "documenttype": "formulier",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 50,
+   "categorie": "organisatie",
+   "vraag": "Welk telefoonnummer noem ik in mijn voicemail voor zaken die niet kunnen wachten?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "085-0492717",
+     "085 0492717",
+     "0850492717",
+     "085-049 2717"
+    ]
+   ],
+   "bron": "Afspraken inspreken voicemail 1.0.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 51,
+   "categorie": "organisatie",
+   "vraag": "Wie is de manager Zorg?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "ben dijkstra",
+     "dijkstra"
+    ]
+   ],
+   "bron": "AHMN_Organisatiestructuur_v5.docx",
+   "documenttype": "lijst",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 52,
+   "categorie": "organisatie",
+   "vraag": "Op welke doelgroepen richt AHMN zich volgens de missie en visie?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "lichte verstandelijke beperking",
+     "licht verstandelijke beperking",
+     "lvb"
+    ],
+    [
+     "psychiatrische problematiek",
+     "psychiatrische"
+    ],
+    [
+     "verslavingsproblematiek",
+     "verslaving"
+    ]
+   ],
+   "bron": "Missie & visie en kernwaarden.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 53,
+   "categorie": "ons",
+   "vraag": "Welke kleur heeft een afspraak in de ONS-agenda waarbij de cliënt aanwezig is?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "blauw"
+    ]
+   ],
+   "bron": "Instructie ONS - agenda kleuren 1.0.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 54,
+   "categorie": "ons",
+   "vraag": "Hoe vaak maakt de ONS toegangscode-app een nieuwe code aan?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "20 seconde",
+     "20 seconden",
+     "twintig seconden"
+    ]
+   ],
+   "bron": "ons-toegangscode-app-werkinstructie.pdf",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 55,
+   "categorie": "zorgproces",
+   "vraag": "Hoe lang kan een cliënt maximaal gebruikmaken van de respijtvoorziening beschermd wonen Noord-Veluwe?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "14 dagen",
+     "veertien dagen"
+    ]
+   ],
+   "bron": "RESPIJTZORG.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 56,
+   "categorie": "zorgproces",
+   "vraag": "Hoe snel wordt een cliënt van Thuis in de Wijk benaderd als er een huurachterstand is?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3 werkdagen",
+     "drie werkdagen"
+    ]
+   ],
+   "bron": "Procedure betalingsachterstand Thuis in de Wijk 1.0.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 57,
+   "categorie": "zorgproces",
+   "vraag": "Welke cliënten kan AHMN niet begeleiden?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "gesloten opname"
+    ],
+    [
+     "psychotisch"
+    ],
+    [
+     "agressie"
+    ],
+    [
+     "onvrijwillige zorg"
+    ],
+    [
+     "verslaving",
+     "onder invloed"
+    ]
+   ],
+   "min_treffers": 3,
+   "bron": "Uitsluitingscriteria 4.0.docx",
+   "documenttype": "lijst",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 58,
+   "categorie": "veiligheid",
+   "vraag": "Hoe ziet AHMN brandveiligheid op maat? Wat is de formule?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "wetgeving"
+    ],
+    [
+     "maatwerk"
+    ]
+   ],
+   "bron": "Regeling Brandveiligheid 1.0.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 59,
+   "categorie": "veiligheid",
+   "vraag": "Wie is verantwoordelijk voor het veiligheidsbeleid voor cliënten?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "manager zorg"
+    ]
+   ],
+   "bron": "Veiligheidsbeleid cliënten 3.0.docx",
+   "documenttype": "nooit gevonden",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 60,
+   "categorie": "organisatie",
+   "vraag": "Wat is het KvK-nummer van AHMN?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "53118375"
+    ]
+   ],
+   "bron": "Administratieve gegevens.docx",
+   "documenttype": "tabel",
+   "zeker": true,
+   "actief": true
+  },
+  {
+   "id": 61,
+   "categorie": "veiligheid",
+   "vraag": "Hoe activeer ik het mobiel alarm (Twig) in een noodsituatie?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "rode knop"
+    ],
+    [
+     "5x",
+     "5 keer",
+     "vijf keer"
+    ]
+   ],
+   "bron": "Werkinstructie mobiel alarm (Twig) 1.0.docx",
+   "documenttype": "lijst",
+   "zeker": true,
    "actief": true
   }
  ]

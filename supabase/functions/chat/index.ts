@@ -911,9 +911,28 @@ Deno.serve(async (req: Request) => {
       // min_treffers: hoeveel groepen gevonden moeten worden (null = alle groepen).
       type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string };
 
+      // Supabase begrenst aanroepen van functies binnen één trace ("Rate limit
+      // exceeded for trace … Retry after Nms"). Dat is geen fout van de bot:
+      // wacht de opgegeven tijd en probeer opnieuw, anders faalt een vraag onterecht.
+      const roepAanMetRetry = async (init: RequestInit): Promise<Response> => {
+        for (let poging = 1; ; poging++) {
+          try {
+            const resp = await fetch(eigenUrl, init);
+            if (resp.status !== 429 || poging >= 4) return resp;
+            await resp.body?.cancel();
+            await new Promise((ok) => setTimeout(ok, 1500 * poging));
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            const m = msg.match(/Rate limit exceeded.*?Retry after (\d+)\s*ms/i);
+            if (!m || poging >= 4) throw e;
+            await new Promise((ok) => setTimeout(ok, Number(m[1]) + 250 * poging));
+          }
+        }
+      };
+
       const draaiVraag = async (v: TV): Promise<Record<string, unknown>> => {
         try {
-          const resp = await fetch(eigenUrl, {
+          const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
             body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [] }),
