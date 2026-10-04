@@ -1,5 +1,5 @@
 {
- "versie": "2026-10-02c",
+ "versie": "2026-10-04",
  "tenant": "AHMN",
  "toelichting": "61 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging).",
  "aanname_kosten": {
@@ -81,9 +81,9 @@
     ]
    ],
    "bron": "informatie en werkwijze FAN",
-   "zeker": false,
-   "let_op": "Definitief procedure Flevolandse avond- en nachtdienst 1.0 noemt 085-1605571 als nummer van de VAN (Veluwe). Tijdelijk uit de run tot de nummers bevestigd zijn.",
-   "actief": false
+   "zeker": true,
+   "let_op": "Nummer bevestigd door Younes (2026-10-04). Let op: 'Definitief procedure Flevolandse avond- en nachtdienst 1.0' noemt 085-1605571 nog als nummer van de VAN.",
+   "actief": true
   },
   {
    "id": 5,
@@ -102,9 +102,9 @@
     ]
    ],
    "bron": "informatie en werkwijze VAN",
-   "zeker": false,
-   "let_op": "Zelfde tegenstrijdigheid als vraag 4: de FAN-procedure noemt 085-1605571 voor de VAN. Tijdelijk uit de run tot de nummers bevestigd zijn.",
-   "actief": false
+   "zeker": true,
+   "let_op": "Nummer bevestigd door Younes (2026-10-04). Zie vraag 4: de FAN-procedure noemt voor de VAN nog 085-1605571.",
+   "actief": true
   },
   {
    "id": 6,
@@ -166,7 +166,8 @@
    "teams": [],
    "kernfeiten": [
     [
-     "bernice swart"
+     "bernice swart",
+     "swart"
     ]
    ],
    "bron": "Jaarverslag OR 2025",
@@ -231,7 +232,9 @@
     ],
     [
      "4 weken",
-     "vier weken"
+     "vier weken",
+     "10 weken",
+     "tien weken"
     ]
    ],
    "bron": "Klachtenregeling 5.0 (6 weken, verlenging met 4 weken)",
@@ -406,14 +409,13 @@
    "teams": [],
    "kernfeiten": [
     [
-     "persoonlijk alarm",
-     "alarmknop"
+     "alarm"
     ],
     [
      "securitas"
     ]
    ],
-   "bron": "Regeling alleen werken 2.0",
+   "bron": "Regeling alleen werken 2.0 + Werkinstructie mobiel alarm (Twig) 1.0 (besluit Younes 2026-10-04: mobiel alarm Twig = persoonlijk alarm; documenten vullen elkaar aan)",
    "zeker": true,
    "actief": true
   },
@@ -425,14 +427,19 @@
    "teams": [],
    "kernfeiten": [
     [
-     "portal"
+     "portal",
+     "portaal",
+     "incidentmeldingsformulier",
+     "vim-formulier",
+     "vim formulier",
+     "vim-melding"
     ],
     [
      "2 werkdagen",
      "twee werkdagen"
     ]
    ],
-   "bron": "Regeling incident meldingen 4.0",
+   "bron": "Regeling incident meldingen 4.0 (zelfde formulier heet 'VIM-formulier' in Suïcideprotocol 3.0, Protocol overlijden cliënt 2.0 en Medicatiebeleid 7.0)",
    "zeker": true,
    "actief": true
   },
@@ -543,13 +550,16 @@
    "teams": [],
    "kernfeiten": [
     [
-     "arboned"
+     "arboned",
+     "arbo ned",
+     "arbodienst",
+     "bedrijfsarts"
     ],
     [
      "spreekuur"
     ]
    ],
-   "bron": "Gezondheidsbeleid",
+   "bron": "Gezondheidsbeleid (open spreekuur bij de bedrijfsarts van arbodienst ArboNed)",
    "zeker": true,
    "actief": true
   },
@@ -563,7 +573,10 @@
     [
      "gelijke geschiktheid",
      "even geschikt",
-     "gelijk geschikt"
+     "gelijk geschikt",
+     "geschiktheid gelijk",
+     "even goed geschikt",
+     "gelijkwaardig geschikt"
     ]
    ],
    "bron": "Wervingsprocedure",
@@ -658,9 +671,9 @@
     ]
    ],
    "bron": "Privacy statement AHMN 2.0",
-   "zeker": false,
-   "let_op": "Wettelijke bewaartermijn medisch dossier is sinds 2020 20 jaar (WGBO); het privacy statement noemt 'minimaal 15 jaar'. Regeling cliëntdossier 3.0 noemt geen getal. Tijdelijk uit de run tot de termijn bevestigd is.",
-   "actief": false
+   "zeker": true,
+   "let_op": "Besluit Younes (2026-10-04): de test volgt het Privacy statement (15 jaar). De wettelijke termijn (WGBO) is sinds 2020 20 jaar; het document is mogelijk verouderd.",
+   "actief": true
   },
   {
    "id": 35,
@@ -761,7 +774,10 @@
      "kan ik niet vinden",
      "niet in de kennisbank",
      "niet in onze kennisbank",
-     "vind ik niet"
+     "vind ik niet",
+     "niet in mijn kennisbank",
+     "staat helaas niet",
+     "niet bekend"
     ]
    ],
    "bron": "GEEN — controle dat de bot niets verzint en netjes zegt dat hij het niet weet",
@@ -872,7 +888,9 @@
     [
      "vakantieuren",
      "vakantie-uren",
-     "vakantie uren"
+     "vakantie uren",
+     "vakantiedag",
+     "vakantieverlof"
     ],
     [
      "balansverlof"
@@ -881,7 +899,8 @@
    "bron": "Verlofoverzicht.docx",
    "documenttype": "tabel",
    "zeker": true,
-   "actief": true
+   "actief": false,
+   "let_op": "Tijdelijk uit de run (besluit Younes 2026-10-04) tot de tegenstrijdigheid is opgelost: de tabel in het Verlofoverzicht zegt 'geen bijzonder verlof bij verhuizing', maar de alinea 'Bijzonder verlof' in hetzelfde document en de drie Handleidingen uurcodes ONS weekkaart noemen verhuizing als voorbeeld van bijzonder verlof."
   },
   {
    "id": 47,
@@ -923,10 +942,13 @@
    "teams": [],
    "kernfeiten": [
     [
-     "breaking the glass"
+     "breaking the glass",
+     "breaking-the-glass",
+     "break the glass",
+     "zelf autoriseren"
     ]
    ],
-   "bron": "Formulier vakantievervanging 2.0.docx",
+   "bron": "Formulier vakantievervanging 2.0 ('breaking the glass') + Regeling back-up teams 6.0, Startcyclus nieuwe cliënt 3.0, Veel gestelde vragen ONS ('jezelf autoriseren')",
    "documenttype": "formulier",
    "zeker": true,
    "actief": true
@@ -1036,7 +1058,9 @@
    "kernfeiten": [
     [
      "14 dagen",
-     "veertien dagen"
+     "veertien dagen",
+     "2 weken",
+     "twee weken"
     ]
    ],
    "bron": "RESPIJTZORG.docx",
@@ -1072,21 +1096,47 @@
      "gesloten opname"
     ],
     [
-     "psychotisch"
+     "psychotisch",
+     "psychose"
     ],
     [
      "agressie"
     ],
     [
-     "onvrijwillige zorg"
+     "onvrijwillige zorg",
+     "wet zorg en dwang",
+     "wzd"
     ],
     [
      "verslaving",
+     "verslaafd",
      "onder invloed"
+    ],
+    [
+     "24-uurs zorg",
+     "24 uurs zorg",
+     "24-uurszorg",
+     "dementie"
+    ],
+    [
+     "overname van adl",
+     "overname van de adl",
+     "adl-overname",
+     "volledige overname",
+     "complete overname"
+    ],
+    [
+     "desoriëntatie",
+     "gedesoriënteerd",
+     "desorientatie"
+    ],
+    [
+     "eigen woonruimte",
+     "eigen woning"
     ]
    ],
    "min_treffers": 3,
-   "bron": "Uitsluitingscriteria 4.0.docx",
+   "bron": "Uitsluitingscriteria 4.0 (9 criteria + voorwaarde eigen woonruimte; Wzd en onvrijwillige zorg tellen als één)",
    "documenttype": "lijst",
    "zeker": true,
    "actief": true
@@ -1118,10 +1168,12 @@
    "teams": [],
    "kernfeiten": [
     [
-     "manager zorg"
+     "manager zorg",
+     "zorgmanager",
+     "dijkstra"
     ]
    ],
-   "bron": "Veiligheidsbeleid cliënten 3.0.docx",
+   "bron": "Veiligheidsbeleid cliënten 3.0 + AHMN_Organisatiestructuur_v5 (manager Zorg = Ben Dijkstra)",
    "documenttype": "nooit gevonden",
    "zeker": true,
    "actief": true
@@ -1150,12 +1202,17 @@
    "teams": [],
    "kernfeiten": [
     [
-     "rode knop"
+     "rode knop",
+     "rode alarmknop",
+     "rode noodknop"
     ],
     [
      "5x",
      "5 keer",
-     "vijf keer"
+     "vijf keer",
+     "5 maal",
+     "vijf maal",
+     "vijfmaal"
     ]
    ],
    "bron": "Werkinstructie mobiel alarm (Twig) 1.0.docx",
