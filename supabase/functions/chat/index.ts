@@ -877,6 +877,56 @@ Deno.serve(async (req: Request) => {
       profile.teams = Array.isArray(body.teams) ? body.teams : [];
     }
 
+    // ---- Modelproef (alleen testmodus) ----
+    // Met de testsleutel kan een testaanroep een ander model kiezen via
+    // body.test_model (en optioneel body.test_effort). Zonder testsleutel is
+    // proefModel altijd null en is claudeFetch precies fetch: gewone gebruikers
+    // houden Haiku 4.5 met ongewijzigde aanroepen.
+    const PROEF_MODELLEN = ["claude-haiku-5-5"];
+    const proefModel: string | null = isTest && PROEF_MODELLEN.includes(body.test_model) ? body.test_model : null;
+    const proefEffort: string | null = proefModel && ["low", "medium", "high"].includes(body.test_effort) ? body.test_effort : null;
+    const proefStops: Array<Record<string, unknown>> = [];
+    // Past een Haiku 4.5-aanroep aan voor het proefmodel (migratiegids Haiku 5.5):
+    // denkstappen tellen mee in max_tokens, het antwoord staat niet altijd in het
+    // eerste blok, geen sampling-parameters en geen voorgevuld assistent-bericht.
+    const proefAanroep = async (url: string, init: RequestInit): Promise<Response> => {
+      const verzoek = JSON.parse(String(init.body));
+      const maxOrigineel = verzoek.max_tokens;
+      verzoek.model = proefModel;
+      verzoek.max_tokens = maxOrigineel + 16000;
+      if (proefEffort) verzoek.output_config = { effort: proefEffort };
+      delete verzoek.temperature; delete verzoek.top_p; delete verzoek.top_k;
+      while (Array.isArray(verzoek.messages) && verzoek.messages.length > 1 && verzoek.messages[verzoek.messages.length - 1].role === "assistant") {
+        verzoek.messages.pop();
+      }
+      const start = Date.now();
+      let resp: Response;
+      try {
+        resp = await fetch(url, { ...init, body: JSON.stringify(verzoek) });
+      } catch (e) {
+        proefStops.push({ max_tokens_origineel: maxOrigineel, fout: e instanceof Error ? e.name : String(e), ms: Date.now() - start });
+        throw e;
+      }
+      if (!resp.ok) {
+        const tekst = await resp.text();
+        proefStops.push({ max_tokens_origineel: maxOrigineel, http: resp.status, fout: tekst.substring(0, 300), ms: Date.now() - start });
+        return new Response(tekst, { status: resp.status, headers: resp.headers });
+      }
+      const json = await resp.json();
+      const blokken: Array<{ type: string; text?: string }> = Array.isArray(json.content) ? json.content : [];
+      const tekst = blokken.filter((b) => b.type === "text").map((b) => b.text || "").join("");
+      proefStops.push({
+        max_tokens_origineel: maxOrigineel, stop_reason: json.stop_reason, stop_details: json.stop_details ?? undefined,
+        denkblokken: blokken.filter((b) => b.type === "thinking" || b.type === "redacted_thinking").length,
+        tekst_leeg: tekst.trim().length === 0, output_tokens: json.usage?.output_tokens, ms: Date.now() - start,
+      });
+      // Bestaande code leest content[0].text: geef alleen de tekst terug.
+      json.content = tekst.length > 0 ? [{ type: "text", text: tekst }] : [];
+      return new Response(JSON.stringify(json), { status: resp.status, headers: { "Content-Type": "application/json" } });
+    };
+    const claudeFetch = (url: string, init: RequestInit): Promise<Response> =>
+      proefModel ? proefAanroep(url, init) : fetch(url, init);
+
     // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
     // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
     // Roept per vraag de eigen chat-functie in testmodus aan (geen persistentie),
@@ -1137,7 +1187,7 @@ Geen uitleg, alleen JSON.`;
       }
 
       try {
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1263,7 +1313,7 @@ Document titel: ${doc.naam}
 Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
       try {
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1481,7 +1531,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
             // Zoektermen genereren via Claude Haiku — best-effort
             if (docInserted && (docInserted as { id: string }).id) {
               try {
-                const ztResp = await fetch("https://api.anthropic.com/v1/messages", {
+                const ztResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -1973,7 +2023,7 @@ Vragen (${gebruikteVragen.length}):
 ${vraagLijst}${trendGedekteContext}`;
 
       try {
-        const trendResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const trendResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
@@ -2311,7 +2361,7 @@ ${vraagLijst}${trendGedekteContext}`;
       }
 
       try {
-        const briefResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const briefResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
@@ -2432,7 +2482,7 @@ Retourneer ALLEEN een JSON array, geen tekst eromheen, in dit exacte formaat:
 ${vragenContext || "(geen vragen beschikbaar — gebruik de kennisbank documenten als basis)"}
 
 ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over ambulante zorg)"}`;
-        const quizResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const quizResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
@@ -2449,7 +2499,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (body.generate_tips && body.week_nummer) {
       const fg = profile.functiegroep || "medewerker";
       try {
-        const tipResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const tipResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
@@ -2492,7 +2542,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // ---- Rol-wissel vergelijking genereren ----
     if (body.generate_rolwissel && body.oude_functie && body.nieuwe_functie) {
       try {
-        const rwResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const rwResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
@@ -2804,7 +2854,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (body.extract_pdf && body.pdf_base64) {
       console.log("[PDF Extract] Start extractie, grootte:", body.pdf_base64.length);
       try {
-        const pdfResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        const pdfResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
@@ -3259,7 +3309,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       // keywords al gedefinieerd in outer scope; verrijken met Haiku zoektermen
       if (allDocs.length > 0 && keywords.length > 0) {
         try {
-          const synResponse = await fetch("https://api.anthropic.com/v1/messages", {
+          const synResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
             body: JSON.stringify({
@@ -3526,7 +3576,7 @@ Vraag: ${vraag.trim()}
 Fragmenten:
 ${chunksBlob}`;
 
-        const extractResp = await fetch("https://api.anthropic.com/v1/messages", {
+        const extractResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
@@ -3812,7 +3862,7 @@ Gebruik het label dat hoort bij de hoogste bron die je daadwerkelijk gebruikt he
 ${alleKennisbronnen}`;
 
     // ---- 8. Claude Haiku aanroepen ----
-    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    const anthropicResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
@@ -3889,8 +3939,10 @@ ${alleKennisbronnen}`;
 
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
     if (isTest) {
-      const inKost = (testTokens.input / 1_000_000) * 1.0;   // Haiku 4.5: $1 / 1M input
-      const uitKost = (testTokens.output / 1_000_000) * 5.0; // Haiku 4.5: $5 / 1M output
+      // Haiku 4.5: $1 / $5 per 1M; Haiku 5.5 (prompts tot 100k tokens): $0,10 / $0,50 per 1M.
+      const [prijsIn, prijsUit] = proefModel === "claude-haiku-5-5" ? [0.10, 0.50] : [1.0, 5.0];
+      const inKost = (testTokens.input / 1_000_000) * prijsIn;
+      const uitKost = (testTokens.output / 1_000_000) * prijsUit;
       return new Response(
         JSON.stringify({
           test_modus: true,
@@ -3902,6 +3954,9 @@ ${alleKennisbronnen}`;
           tokens: testTokens,
           kosten_usd: Math.round((inKost + uitKost) * 1e6) / 1e6,
           latency_ms: Date.now() - testStart,
+          model: proefModel || "claude-haiku-4-5-20251001",
+          effort: proefEffort,
+          proef_aanroepen: proefModel ? proefStops : undefined,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -3985,7 +4040,7 @@ ${alleKennisbronnen}`;
       // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
       let trainingRelevant = false;
       try {
-        const relRes = await fetch("https://api.anthropic.com/v1/messages", {
+        const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
@@ -4024,7 +4079,7 @@ ${alleKennisbronnen}`;
           // Stap 5: Laat Haiku de 3 meest relevante selecteren
           const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
           try {
-            const selectRes = await fetch("https://api.anthropic.com/v1/messages", {
+            const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", {
               method: "POST",
               headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
               body: JSON.stringify({
