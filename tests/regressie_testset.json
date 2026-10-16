@@ -1,5 +1,5 @@
 {
- "versie": "2026-10-04",
+ "versie": "2026-10-16",
  "tenant": "AHMN",
  "toelichting": "61 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging).",
  "aanname_kosten": {
@@ -777,7 +777,15 @@
      "vind ik niet",
      "niet in mijn kennisbank",
      "staat helaas niet",
-     "niet bekend"
+     "niet bekend",
+     "weet ik helaas niet",
+     "geen informatie",
+     "geen specifieke informatie",
+     "niets over",
+     "niets in de kennisbank",
+     "heb ik niet",
+     "niet beantwoorden",
+     "buiten mijn kennisbank"
     ]
    ],
    "bron": "GEEN — controle dat de bot niets verzint en netjes zegt dat hij het niet weet",
