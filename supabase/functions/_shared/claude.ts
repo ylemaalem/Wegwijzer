@@ -4,7 +4,7 @@
 // dit model. Omzetten of terugschakelen = alleen deze regel aanpassen en
 // daarna beide functies opnieuw deployen.
 // =============================================
-export const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+export const CLAUDE_MODEL = "claude-haiku-5-5"; // terugschakelen naar Haiku 4.5: "claude-haiku-4-5-20251001"
 
 // Leest de antwoordtekst uit een Claude-antwoord op soort ("text") in plaats
 // van op positie. Nieuwere modellen zetten eerst een denkblok vóór de tekst;
