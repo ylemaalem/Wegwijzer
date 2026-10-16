@@ -127,6 +127,12 @@ const WEIGER_MELDING = "Op deze vraag kan ik helaas geen antwoord geven. Gaat he
 // conventie uit de mapnaam afgeleid; vergelijking is hoofdletterongevoelig.
 const EXTERNE_MAPPEN = ["cao"];
 
+// Retrieval optie D (migratie 088): naast vector-zoeken ook op trefwoord zoeken.
+// Zoveel trefwoordstukken worden TOEGEVOEGD aan de stukken van vector-zoeken
+// (er valt niets weg). 0 = uit. Gemeten 2026-10-16: met 2 kwamen bij 8 mislukte
+// testvragen de kernfeiten in de context, zonder verlies bij de andere vragen.
+const TREFWOORD_AANVULLING = 2;
+
 type Herkomst = {
   type: "organisatie" | "extern" | "organisatie_extern" | "geen_document";
   organisatie: string[];
@@ -3163,6 +3169,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let fglMatchCount: number | null = null;
     let fglChunksOpgehaald: number | null = null;
     let fglChunksNaRerank: number | null = null;
+    // Optie D: welke trefwoordstukken zijn toegevoegd (voor log en testmodus).
+    let trefwoordAanvulling: Array<{ document_id: string; similarity: number }> = [];
     // Herkomst: documenten die daadwerkelijk als context naar het model gaan, in
     // volgorde van relevantie. Basis voor het herkomstlabel — afgeleid uit data,
     // niet uit de bronregel die het model zelf schrijft.
@@ -3243,12 +3251,26 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           // Rerank + extractie versmallen daarna weer aan de onderkant.
           const matchCountGebruikt = isFeitVraag ? 25 : 8;
           fglMatchCount = matchCountGebruikt;
-          const { data: chunkMatches, error: chunkErr } = await supabaseAdmin.rpc("match_document_chunks", {
-            query_embedding: JSON.stringify(queryEmbedding),
-            match_org_id: profile.tenant_id,
-            match_count: matchCountGebruikt,
-            match_threshold: 0.5,
-          });
+          // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken.
+          const [vectorRes, trefwoordRes] = await Promise.all([
+            supabaseAdmin.rpc("match_document_chunks", {
+              query_embedding: JSON.stringify(queryEmbedding),
+              match_org_id: profile.tenant_id,
+              match_count: matchCountGebruikt,
+              match_threshold: 0.5,
+            }),
+            TREFWOORD_AANVULLING > 0
+              ? supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+                zoekvraag: vraag,
+                query_embedding: JSON.stringify(queryEmbedding),
+                match_org_id: profile.tenant_id,
+                match_count: 10,
+              })
+              : Promise.resolve({ data: null, error: null }),
+          ]);
+          const { data: chunkMatches, error: chunkErr } = vectorRes;
+          if (trefwoordRes.error) console.warn("[Chat] Trefwoord-zoeken fout:", trefwoordRes.error.message);
+          const trefwoordMatches = (trefwoordRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
           const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
           fglChunksOpgehaald = chunksOpgehaaldVoorFilter;
 
@@ -3306,6 +3328,25 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 });
                 const uniekeDocs = [...new Set(feitChunks.map(c => c.docNaam))];
                 console.log(`[FGL] extractie-input: ${feitChunks.length} chunks uit ${uniekeDocs.length} docs: ${uniekeDocs.map(n => `"${n}"`).join(", ")}`);
+              }
+
+              // ---- Optie D: trefwoord-aanvulling ----
+              // De beste trefwoordstukken die nog niet meedoen komen erbij (na de
+              // herrangschikking, dus de extractie-call blijft gelijk). Vindt
+              // bv. namen/datums uit roosters, bedragen uit tabellen en
+              // afkortingen (O&O) die vector-zoeken mist.
+              const aanwezig = new Set(werkChunks.map((c) => (c as { id?: string }).id));
+              const extraChunks = trefwoordMatches.filter((c) => !aanwezig.has(c.id)).slice(0, TREFWOORD_AANVULLING);
+              if (extraChunks.length > 0) {
+                const nieuweDocIds = [...new Set(extraChunks.map((c) => c.document_id))].filter((id) => !metaMap.has(id));
+                if (nieuweDocIds.length > 0) {
+                  const { data: extraMeta } = await supabaseAdmin.from("documents").select("id, naam, notitie, map").in("id", nieuweDocIds);
+                  for (const d of (extraMeta || []) as Array<{ id: string; naam: string; notitie: string | null; map: string | null }>) metaMap.set(d.id, d);
+                }
+                werkChunks = [...werkChunks, ...extraChunks];
+                gebruikteDocIds = [...new Set([...gebruikteDocIds, ...extraChunks.map((c) => c.document_id)])];
+                trefwoordAanvulling = extraChunks.map((c) => ({ document_id: c.document_id, similarity: c.similarity }));
+                console.log(`[Chat] Trefwoord-aanvulling: +${extraChunks.length} uit ${extraChunks.map((c) => `"${(metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || c.document_id}"`).join(", ")}`);
               }
 
               const chunkTexts: string[] = [];
@@ -4118,6 +4159,7 @@ ${alleKennisbronnen}`;
           effort: proefEffort,
           weigering: weigering || undefined,
           proef_aanroepen: proefStops,
+          trefwoord_aanvulling: trefwoordAanvulling,
           trainingen: body.test_trainingen === true ? await bepaalTrainingen() : undefined,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
