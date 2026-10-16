@@ -852,6 +852,44 @@
     return data.extracted_text || '';
   }
 
+  // Voegt de tekststukjes van één PDF-pagina samen. pdf.js knipt tekst waar de
+  // opmaak of letterafstand verandert, soms midden in een woord ("S tabiliteit").
+  // Daarom alleen een spatie als er op de pagina ruimte tussen twee stukjes zit
+  // (meer dan 0,15 x de letterhoogte); een regeleinde wordt een spatie. Een
+  // afbreking aan het regeleinde ("arbeids-|ongeschiktheid") wordt weer één
+  // woord; na een afkorting ("Wmo-|consulent") of bij een opsomming
+  // ("avond-|en") blijft het streepje staan.
+  function pdfItemsNaarTekst(items) {
+    var uit = '';
+    var vorige = null;
+    var regelEinde = false;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.str === '') { if (it.hasEOL) regelEinde = true; continue; }
+      if (vorige) {
+        var hoogte = Math.abs(vorige.transform[3]) || Math.hypot(vorige.transform[2], vorige.transform[3]) || 10;
+        var zelfdeRegel = !regelEinde && !vorige.hasEOL && Math.abs(it.transform[5] - vorige.transform[5]) < hoogte * 0.5;
+        if (!zelfdeRegel) {
+          if (/[A-Za-zÀ-ÿ]-$/.test(uit) && /^[a-zà-ÿ]/.test(it.str)) {
+            var links = (uit.match(/([A-Za-zÀ-ÿ]+)-$/) || [])[1] || '';
+            var rechts = (it.str.match(/^\S+/) || [''])[0];
+            if (/^(en|of|en\/of|tot|t\/m|noch)$/i.test(rechts)) uit += ' ';
+            else if (/^[a-zà-ÿ]{2,}$/.test(links)) uit = uit.slice(0, -1);
+          } else if (!/\s$/.test(uit) && !/^\s/.test(it.str)) {
+            uit += ' ';
+          }
+        } else {
+          var gat = it.transform[4] - (vorige.transform[4] + vorige.width);
+          if (gat > hoogte * 0.15 && !/\s$/.test(uit) && !/^\s/.test(it.str)) uit += ' ';
+        }
+      }
+      uit += it.str;
+      vorige = it;
+      regelEinde = !!it.hasEOL;
+    }
+    return uit;
+  }
+
   async function extractPdfText(file) {
     try {
       var arrayBuffer = await file.arrayBuffer();
@@ -860,7 +898,7 @@
       for (var i = 1; i <= pdf.numPages; i++) {
         var page = await pdf.getPage(i);
         var content = await page.getTextContent();
-        var pageText = content.items.map(function (item) { return item.str; }).join(' ');
+        var pageText = pdfItemsNaarTekst(content.items);
         texts.push(pageText);
       }
       return texts.join('\n\n');
@@ -897,7 +935,7 @@
         for (var i = 1; i <= pdf.numPages; i++) {
           var page = await pdf.getPage(i);
           var content = await page.getTextContent();
-          var pageText = content.items.map(function (item) { return item.str; }).join(' ');
+          var pageText = pdfItemsNaarTekst(content.items);
           texts.push(pageText);
         }
         return texts.join('\n\n');
