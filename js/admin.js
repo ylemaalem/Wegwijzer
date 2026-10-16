@@ -6745,6 +6745,7 @@
     DOC_AANVRAAG_AFGEWEZEN: 'Doc. aanvraag afgewezen',
     PRIVACY_VERZOEK_ONTVANGEN: 'Privacyverzoek ontvangen',
     PRIVACY_VERZOEK_AFGEHANDELD: 'Privacyverzoek afgehandeld',
+    MODEL_WEIGERING: 'Weigering door AI-model',
   };
 
   var auditLogLoaded = false;
