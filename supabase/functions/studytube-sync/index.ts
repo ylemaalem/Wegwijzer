@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, claudeTekst } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
           });
           if (descRes.ok) {
             const descData = await descRes.json();
-            const tekst = descData.content?.[0]?.text || "";
+            const tekst = claudeTekst(descData) || "";
             const regels = tekst.split("\n").filter((r: string) => r.trim().length > 0);
             for (const regel of regels) {
               const match = regel.match(/^(\d+)\.\s*(.+)/);

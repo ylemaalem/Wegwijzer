@@ -3,7 +3,7 @@
 // =============================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, claudeTekst } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -921,8 +921,6 @@ Deno.serve(async (req: Request) => {
         denkblokken: blokken.filter((b) => b.type === "thinking" || b.type === "redacted_thinking").length,
         tekst_leeg: tekst.trim().length === 0, output_tokens: json.usage?.output_tokens, ms: Date.now() - start,
       });
-      // Bestaande code leest content[0].text: geef alleen de tekst terug.
-      json.content = tekst.length > 0 ? [{ type: "text", text: tekst }] : [];
       return new Response(JSON.stringify(json), { status: resp.status, headers: { "Content-Type": "application/json" } });
     };
     const claudeFetch = (url: string, init: RequestInit): Promise<Response> =>
@@ -1210,7 +1208,7 @@ Geen uitleg, alleen JSON.`;
         }
 
         const aiJson = await aiResp.json();
-        let raw = aiJson.content?.[0]?.text || "[]";
+        let raw = claudeTekst(aiJson) || "[]";
         console.log("[KennisScan] Raw response:", raw.substring(0, 500));
 
         // Strip markdown code blocks (openings- en sluit-fences kunnen overal staan)
@@ -1336,7 +1334,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         }
 
         const aiJson = await aiResp.json();
-        let raw = aiJson.content?.[0]?.text || "[]";
+        let raw = claudeTekst(aiJson) || "[]";
         raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
         const match = raw.match(/\[[\s\S]*\]/);
         if (match) raw = match[0];
@@ -1547,7 +1545,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
                 });
                 if (ztResp.ok) {
                   const ztJson = await ztResp.json();
-                  let zRaw = ztJson.content?.[0]?.text || "[]";
+                  let zRaw = claudeTekst(ztJson) || "[]";
                   zRaw = zRaw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
                   const sIdx = zRaw.indexOf("[");
                   const eIdx = zRaw.lastIndexOf("]");
@@ -2034,7 +2032,7 @@ ${vraagLijst}${trendGedekteContext}`;
           }),
         });
         const trendResult = await trendResp.json();
-        const tekst = trendResult.content?.[0]?.text || "";
+        const tekst = claudeTekst(trendResult) || "";
 
         let savedRapport: Record<string, unknown> | null = null;
         if (tekst.trim().length > 0) {
@@ -2372,7 +2370,7 @@ ${vraagLijst}${trendGedekteContext}`;
           }),
         });
         const briefResult = await briefResp.json();
-        const briefText = briefResult.content?.[0]?.text || "Welkom in week " + wk + "!";
+        const briefText = claudeTekst(briefResult) || "Welkom in week " + wk + "!";
         await supabaseAdmin.from("weekstart_briefings").insert({ user_id: user.id, week_nummer: wk, briefing_tekst: briefText });
 
         // Push naar de medewerker zelf (geen expired accounts)
@@ -2489,7 +2487,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
         });
         const quizResult = await quizResp.json();
-        return new Response(JSON.stringify({ antwoord: quizResult.content?.[0]?.text || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ antwoord: claudeTekst(quizResult) || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[Quiz] Fout:", err);
         return new Response(JSON.stringify({ error: "Quiz genereren mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2506,7 +2504,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
         });
         const tipResult = await tipResp.json();
-        return new Response(JSON.stringify({ tips: tipResult.content?.[0]?.text || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ tips: claudeTekst(tipResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch { /* skip */ }
     }
 
@@ -2549,7 +2547,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
         });
         const rwResult = await rwResp.json();
-        return new Response(JSON.stringify({ vergelijking: rwResult.content?.[0]?.text || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ vergelijking: claudeTekst(rwResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch { /* skip */ }
     }
 
@@ -2873,7 +2871,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           return new Response(JSON.stringify({ error: "PDF extractie mislukt", extracted_text: "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         const pdfResult = await pdfResponse.json();
-        const extractedText = pdfResult.content?.[0]?.text || "";
+        const extractedText = claudeTekst(pdfResult) || "";
         return new Response(JSON.stringify({ extracted_text: extractedText }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[PDF Extract] Fout:", err);
@@ -3321,7 +3319,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           });
           if (synResponse.ok) {
             const synResult = await synResponse.json();
-            const synText = synResult.content?.[0]?.text || "";
+            const synText = claudeTekst(synResult) || "";
             const rawTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
             const extraTerms: string[] = [];
             for (const term of rawTerms) {
@@ -3591,7 +3589,7 @@ ${chunksBlob}`;
         if (extractResp.ok) {
           const extractData = await extractResp.json();
           telTest(extractData.usage);
-          const raw = (extractData.content?.[0]?.text || "").trim();
+          const raw = (claudeTekst(extractData) || "").trim();
           if (raw === "NIET_GEVONDEN" || raw.toUpperCase().startsWith("NIET_GEVONDEN")) {
             feitenNietGevonden = true;
             console.log(`[FGL] Extractie: NIET_GEVONDEN (${feitLatency}ms)`);
@@ -3884,7 +3882,7 @@ ${alleKennisbronnen}`;
 
     const aiResult = await anthropicResponse.json();
     telTest(aiResult.usage);
-    const rawAntwoord = aiResult.content?.[0]?.text || "Geen antwoord ontvangen.";
+    const rawAntwoord = claudeTekst(aiResult) || "Geen antwoord ontvangen.";
 
     // ---- 9b. Kennisgat-detectie ----
     // Op basis van de RETRIEVAL-staat, niet van de antwoordtekst. Voorheen besliste
@@ -4052,7 +4050,7 @@ ${alleKennisbronnen}`;
         });
         if (relRes.ok) {
           const relData = await relRes.json();
-          const antwoord = (relData.content?.[0]?.text || "").trim().toUpperCase();
+          const antwoord = (claudeTekst(relData) || "").trim().toUpperCase();
           trainingRelevant = antwoord.startsWith("JA");
           console.log("[StudyTube] Relevantie-check:", antwoord);
         }
@@ -4091,7 +4089,7 @@ ${alleKennisbronnen}`;
             });
             if (selectRes.ok) {
               const selectData = await selectRes.json();
-              const selectie = (selectData.content?.[0]?.text || "").trim().toLowerCase();
+              const selectie = (claudeTekst(selectData) || "").trim().toLowerCase();
               console.log("[StudyTube] Haiku selectie:", selectie);
               if (selectie !== "geen") {
                 const nummers = selectie.match(/\d+/g);
