@@ -2888,6 +2888,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (vraag.length > 2000) {
       return new Response(JSON.stringify({ error: "Vraag is te lang (max 2000 tekens)" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    // Een meegestuurd gesprek moet eindigen met een vraag van de gebruiker. Een
+    // afsluitend assistent-bericht (een voorgevuld antwoord) komt in de app niet
+    // voor en wordt door nieuwere modellen met een foutmelding geweigerd.
+    if (Array.isArray(clientMessages) && clientMessages.length > 0 && clientMessages[clientMessages.length - 1]?.role !== "user") {
+      return new Response(JSON.stringify({ error: "Het gesprek moet eindigen met een vraag." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ---- 5b. Patroonherkenning zorgwekkende onderwerpen ----
     const vraagLower = vraag.toLowerCase();
