@@ -14,6 +14,8 @@ const EMBEDDING_BATCH_SIZE = 20;
 const MAX_EMBEDDING_PER_SYNC = 100;
 const BESCHRIJVING_BATCH_SIZE = 50;
 const MAX_BESCHRIJVING_PER_SYNC = 100;
+const TEST_TENANT_ID = "a74e9800-eafd-4fc8-bcb6-fb651db10a8e";
+const TEST_AANTAL_CURSUSSEN = 5;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -31,32 +33,46 @@ Deno.serve(async (req) => {
   if (!openaiKey) console.error("[Sync] OPENAI_API_KEY niet geconfigureerd");
   if (!anthropicKey) console.warn("[Sync] ANTHROPIC_API_KEY niet geconfigureerd");
 
-  // Auth
-  const authHeader = req.headers.get("Authorization") || "";
-  const supabaseUser = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user }, error: authErr } = await supabaseUser.auth.getUser();
-  if (authErr || !user) {
-    return new Response(JSON.stringify({ error: "Niet ingelogd" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  // Testmodus (alleen met de testsleutel): geen inlog, niets wegschrijven, geen
+  // embeddings; alleen voor 5 cursussen een beschrijving laten maken, optioneel
+  // met een ander model (body.test_model).
+  const testSleutel = req.headers.get("x-wegwijzer-test") || "";
+  const testVerwacht = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
+  const isTest = testSleutel.length > 0 && testVerwacht.length > 0 && testSleutel === testVerwacht;
+  const testBody = isTest ? await req.json().catch(() => ({})) : {};
+  const model: string = isTest && ["claude-haiku-5-5"].includes(testBody.test_model) ? testBody.test_model : CLAUDE_MODEL;
+  const testAanroepen: Array<Record<string, unknown>> = [];
 
   const supabaseAdmin = createClient(supabaseUrl, serviceKey);
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("role, tenant_id")
-    .eq("user_id", user.id)
-    .single();
+  let tenantId = TEST_TENANT_ID;
 
-  if (!profile || profile.role !== "admin") {
-    return new Response(JSON.stringify({ error: "Alleen admins kunnen synchroniseren" }), {
-      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  // Auth (in testmodus overgeslagen)
+  if (!isTest) {
+    const authHeader = req.headers.get("Authorization") || "";
+    const supabaseUser = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
     });
-  }
+    const { data: { user }, error: authErr } = await supabaseUser.auth.getUser();
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: "Niet ingelogd" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-  const tenantId = profile.tenant_id as string;
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("role, tenant_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Alleen admins kunnen synchroniseren" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    tenantId = profile.tenant_id as string;
+  }
 
   try {
     // 1. Bestaande cursussen ophalen incl. beschrijving voor embedding input
@@ -112,13 +128,15 @@ Deno.serve(async (req) => {
 
     // Delta bepalen — max 100 embeddings per sync
     const alleZonderEmbedding = allCourses.filter((c) => !bestaandMap.get(String(c.id))?.heeftEmbedding);
-    const teEmbeddenCursussen = alleZonderEmbedding.sort((a, b) => a.id - b.id).slice(0, MAX_EMBEDDING_PER_SYNC);
+    const teEmbeddenCursussen = alleZonderEmbedding.sort((a, b) => a.id - b.id).slice(0, isTest ? 0 : MAX_EMBEDDING_PER_SYNC);
 
     // Cursussen zonder beschrijving — max 100 per sync
-    const zonderBeschrijving = allCourses
-      .filter((c) => !bestaandMap.get(String(c.id))?.heeftBeschrijving)
-      .sort((a, b) => a.id - b.id)
-      .slice(0, MAX_BESCHRIJVING_PER_SYNC);
+    const zonderBeschrijving = isTest
+      ? [...allCourses].sort((a, b) => a.id - b.id).slice(0, TEST_AANTAL_CURSUSSEN)
+      : allCourses
+        .filter((c) => !bestaandMap.get(String(c.id))?.heeftBeschrijving)
+        .sort((a, b) => a.id - b.id)
+        .slice(0, MAX_BESCHRIJVING_PER_SYNC);
 
     console.log(`[Sync] ${alleZonderEmbedding.length} totaal zonder embedding, ${teEmbeddenCursussen.length} in deze batch`);
     console.log(`[Sync] ${zonderBeschrijving.length} cursussen zonder beschrijving in deze batch`);
@@ -169,8 +187,8 @@ Deno.serve(async (req) => {
           const descRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify(claudeVerzoek(CLAUDE_MODEL, "hulp", {
-              model: CLAUDE_MODEL,
+            body: JSON.stringify(claudeVerzoek(model, "hulp", {
+              model: model,
               max_tokens: 4096,
               messages: [{ role: "user", content: `Genereer voor elke training hieronder een korte beschrijving (max 15 woorden) met relevante zoekwoorden waar een zorgmedewerker op zou zoeken. Focus op: doelgroep, methodiek, vaardigheid, ziektebeeld. Gebruik Nederlandse zorgtermen en synoniemen.\n\nFormaat: één regel per training, genummerd.\nVoorbeeld:\n1. Omgaan met agressie, grensoverschrijdend gedrag, de-escalatie, veiligheid\n2. NAH niet-aangeboren hersenletsel, cognitieve beperkingen, revalidatie\n\nTrainingen:\n${namenLijst}` }],
             })),
@@ -178,6 +196,7 @@ Deno.serve(async (req) => {
           if (descRes.ok) {
             const descData = await descRes.json();
             const tekst = claudeTekst(descData) || "";
+            if (isTest) testAanroepen.push({ stop_reason: descData.stop_reason, usage: descData.usage, tekst_leeg: tekst.trim().length === 0 });
             const regels = tekst.split("\n").filter((r: string) => r.trim().length > 0);
             for (const regel of regels) {
               const match = regel.match(/^(\d+)\.\s*(.+)/);
@@ -197,6 +216,15 @@ Deno.serve(async (req) => {
       }
     }
     console.log(`[Sync] Beschrijvingen: ${beschrijvingSucces} aangemaakt in deze batch`);
+
+    // Testmodus: niets wegschrijven, de gemaakte beschrijvingen teruggeven.
+    if (isTest) {
+      return new Response(JSON.stringify({
+        test_modus: true, model, aantal_cursussen_studytube: allCourses.length,
+        cursussen: zonderBeschrijving.map((c) => ({ id: c.id, naam: c.name, beschrijving: beschrijvingMap.get(c.id) ?? null })),
+        aanroepen: testAanroepen,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // 6. Basis upsert voor alle cursussen
     const UPSERT_BATCH = 200;

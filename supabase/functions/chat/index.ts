@@ -892,7 +892,7 @@ Deno.serve(async (req: Request) => {
     const proefEffort: string | null = proefModel && ["low", "medium", "high"].includes(body.test_effort) ? body.test_effort : null;
     const actiefModel: string = proefModel || CLAUDE_MODEL;
     const proefStops: Array<Record<string, unknown>> = [];
-    // Alleen in een proef: houdt per aanroep stopreden, denkblokken, tokens en
+    // Alleen in testmodus: houdt per aanroep stopreden, denkblokken, tokens en
     // duur bij voor de testrapportage. Verandert het verzoek niet.
     const proefAanroep = async (url: string, init: RequestInit, soort: ClaudeSoort): Promise<Response> => {
       const start = Date.now();
@@ -913,7 +913,8 @@ Deno.serve(async (req: Request) => {
       proefStops.push({
         soort, stop_reason: json.stop_reason, stop_details: json.stop_details ?? undefined,
         denkblokken: blokken.filter((b) => b.type === "thinking" || b.type === "redacted_thinking").length,
-        tekst_leeg: claudeTekst(json).trim().length === 0, output_tokens: json.usage?.output_tokens, ms: Date.now() - start,
+        tekst_leeg: claudeTekst(json).trim().length === 0, input_tokens: json.usage?.input_tokens, output_tokens: json.usage?.output_tokens,
+        kosten_usd: claudeKosten(actiefModel, json.usage), ms: Date.now() - start,
       });
       return new Response(JSON.stringify(json), { status: resp.status, headers: { "Content-Type": "application/json" } });
     };
@@ -926,8 +927,14 @@ Deno.serve(async (req: Request) => {
         const body = claudeVerzoek(actiefModel, soort, JSON.parse(String(verzoek.body)), proefEffort);
         verzoek.body = JSON.stringify(body);
       }
-      return proefModel ? proefAanroep(url, verzoek, soort) : fetch(url, verzoek);
+      return isTest ? proefAanroep(url, verzoek, soort) : fetch(url, verzoek);
     };
+    // Alleen in testmodus: extra velden voor de antwoorden van losse onderdelen
+    // (kennisscan, weekbrief, quiz enz.). Voor gewone gebruikers een leeg object.
+    const testExtra = (): Record<string, unknown> => isTest
+      ? { test_modus: true, model: actiefModel, proef_aanroepen: proefStops,
+          kosten_usd: Math.round(proefStops.reduce((t, a) => t + ((a.kosten_usd as number) || 0), 0) * 1e6) / 1e6 }
+      : {};
 
     // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
     // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
@@ -1059,7 +1066,7 @@ Deno.serve(async (req: Request) => {
 
     // ---- Kennissuggesties scan (snel of grondig, admin only) ----
     if (body.kennis_scan && (body.scan_type === "snel" || body.scan_type === "grondig")) {
-      if (profile.role !== "admin") {
+      if (profile.role !== "admin" && !isTest) {
         return new Response(
           JSON.stringify({ error: "Alleen admin" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1250,6 +1257,14 @@ Geen uitleg, alleen JSON.`;
           );
         }
 
+        // Testmodus: niets opslaan, suggesties teruggeven.
+        if (isTest) {
+          return new Response(
+            JSON.stringify({ success: true, count: suggesties.length, scan_type: scanType, suggesties, ...testExtra() }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         let inserted = 0;
         for (const s of suggesties) {
           if (!s.type || !s.omschrijving) continue;
@@ -1292,7 +1307,7 @@ Geen uitleg, alleen JSON.`;
 
     // ---- Zoektermen genereren voor een document (admin only) ----
     if (body.generate_zoektermen && body.document_id) {
-      if (profile.role !== "admin") {
+      if (profile.role !== "admin" && !isTest) {
         return new Response(
           JSON.stringify({ error: "Alleen admin" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1369,6 +1384,14 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           .map((t: string) => t.trim().toLowerCase())
           .slice(0, 50);
 
+        // Testmodus: niets opslaan, zoektermen teruggeven.
+        if (isTest) {
+          return new Response(
+            JSON.stringify({ success: true, count: zoektermen.length, zoektermen, ...testExtra() }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         await supabaseAdmin
           .from("documents")
           .update({ zoektermen })
@@ -1399,7 +1422,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     // Fetcht de hoofdpagina, extracteert interne links, fetcht max 50
     // subpagina's, slaat elk op als is_crawled_page document met zoektermen.
     if (body.crawl_website && body.url) {
-      if (profile.role !== "admin") {
+      if (profile.role !== "admin" && !isTest) {
         return new Response(
           JSON.stringify({ error: "Alleen admin" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1418,7 +1441,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       const startStartTime = Date.now();
       const TOTAL_TIMEOUT_MS = 55_000;
       const PAGE_TIMEOUT_MS = 10_000;
-      const MAX_PAGES = 50;
+      const MAX_PAGES = isTest ? 2 : 50; // testmodus: hooguit 2 pagina's
+      const testZoektermen: Array<{ titel: string; zoektermen: string[] }> = [];
       const MIN_TEXT = 200;
 
       function fetchWithTimeout(u: string, ms: number) {
@@ -1522,7 +1546,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
             if (tekst.length < MIN_TEXT) { mislukt++; continue; }
 
             // Insert document
-            const { data: docInserted } = await supabaseAdmin
+            // Testmodus: geen document aanmaken, wel zoektermen laten maken.
+            const { data: docInserted } = isTest ? { data: { id: "testmodus" } } : await supabaseAdmin
               .from("documents")
               .insert({
                 tenant_id: tenantIdForCrawl,
@@ -1567,7 +1592,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
                       .filter((t) => typeof t === "string" && (t as string).trim().length > 0)
                       .map((t) => (t as string).trim().toLowerCase())
                       .slice(0, 30);
-                    await supabaseAdmin.from("documents").update({ zoektermen: finaleZt }).eq("id", (docInserted as { id: string }).id);
+                    if (isTest) testZoektermen.push({ titel, zoektermen: finaleZt });
+                    else await supabaseAdmin.from("documents").update({ zoektermen: finaleZt }).eq("id", (docInserted as { id: string }).id);
                   }
                 }
               } catch { /* zoektermen mislukt — geen blocker */ }
@@ -1590,7 +1616,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       console.log("[Crawl] klaar:", geslaagd, "geslaagd,", mislukt, "mislukt");
 
       return new Response(
-        JSON.stringify({ geslaagd, mislukt, paginas: verwerktePaginas, fouten: fouten.slice(0, 10) }),
+        JSON.stringify({ geslaagd, mislukt, paginas: verwerktePaginas, fouten: fouten.slice(0, 10), ...(isTest ? { zoektermen_per_pagina: testZoektermen } : {}), ...testExtra() }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -1946,7 +1972,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
     // ---- Teamleider: trendanalyse op anonieme vraaglijst ----
     if (body.generate_trendanalyse === true) {
-      if (profile.role !== "teamleider" && profile.role !== "admin") {
+      if (profile.role !== "teamleider" && profile.role !== "admin" && !isTest) {
         return new Response(
           JSON.stringify({ error: "Alleen teamleiders" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1957,7 +1983,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       // van het RLS-lek kan (en mag) de frontend de vraagteksten niet meer lezen.
       // Zo verlaat de ruwe vraagtekst de database alleen richting de AI, nooit richting
       // de browser van de teamleider.
-      const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null);
+      const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, isTest ? { ...profile, role: "admin" } : profile, user.email || null);
       let vragen: string[] = [];
       if (monitorIdsTrend.length > 0) {
         const sinds30 = new Date();
@@ -2045,7 +2071,7 @@ ${vraagLijst}${trendGedekteContext}`;
         const tekst = claudeTekst(trendResult) || "";
 
         let savedRapport: Record<string, unknown> | null = null;
-        if (tekst.trim().length > 0) {
+        if (tekst.trim().length > 0 && !isTest) {
           const { data: inserted, error: insertErr } = await supabaseAdmin
             .from("trendanalyse_rapporten")
             .insert({
@@ -2063,7 +2089,7 @@ ${vraagLijst}${trendGedekteContext}`;
         }
 
         return new Response(
-          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length }),
+          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length, ...testExtra() }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {
@@ -2381,10 +2407,10 @@ ${vraagLijst}${trendGedekteContext}`;
         });
         const briefResult = await briefResp.json();
         const briefText = claudeTekst(briefResult) || "Welkom in week " + wk + "!";
-        await supabaseAdmin.from("weekstart_briefings").insert({ user_id: user.id, week_nummer: wk, briefing_tekst: briefText });
+        if (!isTest) await supabaseAdmin.from("weekstart_briefings").insert({ user_id: user.id, week_nummer: wk, briefing_tekst: briefText });
 
-        // Push naar de medewerker zelf (geen expired accounts)
-        if (profile.account_type !== "tijdelijk" || !profile.einddatum || new Date(profile.einddatum) > new Date()) {
+        // Push naar de medewerker zelf (geen expired accounts; niet in testmodus)
+        if (!isTest && (profile.account_type !== "tijdelijk" || !profile.einddatum || new Date(profile.einddatum) > new Date())) {
           pushNaarGebruikers(supabaseAdmin, [user.id], profile.tenant_id,
             { title: "Wegwijzer — Week " + wk, body: "Je weekstart briefing voor week " + wk + " staat klaar.", url: "/medewerker.html" },
             "weekstart_briefing",
@@ -2392,7 +2418,7 @@ ${vraagLijst}${trendGedekteContext}`;
           );
         }
 
-        return new Response(JSON.stringify({ briefing: briefText, cached: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ briefing: briefText, cached: false, ...testExtra() }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[Briefing] Fout:", err);
         return new Response(JSON.stringify({ briefing: "Welkom in week " + wk + "! Succes deze week.", cached: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2497,7 +2523,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: actiefModel, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
         });
         const quizResult = await quizResp.json();
-        return new Response(JSON.stringify({ antwoord: claudeTekst(quizResult) || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ antwoord: claudeTekst(quizResult) || "", bron: vragenBron, ...testExtra() }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[Quiz] Fout:", err);
         return new Response(JSON.stringify({ error: "Quiz genereren mislukt" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2514,7 +2540,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: actiefModel, max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
         });
         const tipResult = await tipResp.json();
-        return new Response(JSON.stringify({ tips: claudeTekst(tipResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ tips: claudeTekst(tipResult) || "", ...testExtra() }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch { /* skip */ }
     }
 
@@ -2557,7 +2583,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           body: JSON.stringify({ model: actiefModel, max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
         });
         const rwResult = await rwResp.json();
-        return new Response(JSON.stringify({ vergelijking: claudeTekst(rwResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ vergelijking: claudeTekst(rwResult) || "", ...testExtra() }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch { /* skip */ }
     }
 
@@ -2882,7 +2908,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         }
         const pdfResult = await pdfResponse.json();
         const extractedText = claudeTekst(pdfResult) || "";
-        return new Response(JSON.stringify({ extracted_text: extractedText }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ extracted_text: extractedText, ...testExtra() }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (err) {
         console.error("[PDF Extract] Fout:", err);
         return new Response(JSON.stringify({ error: "PDF extractie fout", extracted_text: "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -3965,6 +3991,114 @@ ${alleKennisbronnen}`;
     const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag && !weigering;
     const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
 
+    // ---- 10. Trainingsuggesties (StudyTube) ----
+    // Als functie, zodat de testmodus dezelfde code kan draaien (body.test_trainingen).
+    const bepaalTrainingen = async (): Promise<Array<{ naam: string; duur_minuten: number | null }>> => {
+      const geenInfoZinnen = [
+        "ik vind geen informatie",
+        "ik vind hier geen informatie",
+        "ik vind hier geen specifieke informatie",
+        "staat niet in de kennisbank",
+        "niet in onze documenten",
+        "niet in de kennisbank",
+        "geen relevante informatie",
+        "geen specifieke informatie",
+        "raad ik aan dit na te vragen",
+        "controleer dit bij je leidinggevende",
+        "neem contact op met je leidinggevende",
+        "kan ik je hier niet mee helpen",
+      ];
+      const antwoordLower = antwoord.toLowerCase();
+      const antwoordIsInhoudelijk = !weigering && HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
+      if (!antwoordIsInhoudelijk) {
+        console.log(`[StudyTube] Overgeslagen: antwoord niet inhoudelijk (kennisbank_match=${HEEFT_KENNISBANK_MATCH})`);
+      }
+
+      let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
+      if (antwoordIsInhoudelijk) {
+      try {
+        // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
+        let trainingRelevant = false;
+        try {
+          const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: actiefModel,
+              max_tokens: 5,
+              messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
+            }),
+          });
+          if (relRes.ok) {
+            const relData = await relRes.json();
+            const antwoord = (claudeTekst(relData) || "").trim().toUpperCase();
+            trainingRelevant = antwoord.startsWith("JA");
+            console.log("[StudyTube] Relevantie-check:", antwoord);
+          }
+        } catch (e) { console.log("[StudyTube] Relevantie-check fout:", e); }
+
+        if (!trainingRelevant) {
+          console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
+        } else {
+        // Gebruik gedeelde embedding — zoektermen niet meer nodig
+        const queryEmbedding = gedeeldeQueryEmbedding;
+        if (!queryEmbedding) {
+          console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
+        } else {
+          const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+            query_embedding: JSON.stringify(queryEmbedding),
+            match_tenant_id: profile.tenant_id,
+            match_count: 10,
+            match_threshold: 0.35,
+          });
+          if (rpcErr) {
+            console.error("[StudyTube] RPC fout:", rpcErr.message);
+          } else if (topCursussen && topCursussen.length > 0) {
+            console.log("[StudyTube] Embedding top-10:", topCursussen.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
+
+            // Stap 5: Laat Haiku de 3 meest relevante selecteren
+            const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
+            try {
+              const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+                body: JSON.stringify({
+                  model: actiefModel,
+                  max_tokens: 20,
+                  messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
+                }),
+              });
+              if (selectRes.ok) {
+                const selectData = await selectRes.json();
+                const selectie = (claudeTekst(selectData) || "").trim().toLowerCase();
+                console.log("[StudyTube] Haiku selectie:", selectie);
+                if (selectie !== "geen") {
+                  const nummers = selectie.match(/\d+/g);
+                  if (nummers) {
+                    trainingen = nummers
+                      .map((n: string) => parseInt(n, 10) - 1)
+                      .filter((i: number) => i >= 0 && i < topCursussen.length)
+                      .slice(0, 3)
+                      .map((i: number) => ({ naam: topCursussen[i].naam, duur_minuten: topCursussen[i].duur_minuten }));
+                  }
+                }
+              }
+            } catch (e) { console.warn("[StudyTube] Haiku selectie fout:", e); }
+            if (trainingen.length > 0) {
+              console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
+            }
+          } else {
+            console.log("[StudyTube] Geen embedding matches boven threshold");
+          }
+        }
+        } // einde else trainingRelevant
+      } catch (stErr) {
+        console.error("[StudyTube] Exception:", stErr);
+      }
+      } // einde antwoordIsInhoudelijk
+      return trainingen;
+    };
+
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
     if (isTest) {
       return new Response(
@@ -3981,7 +4115,8 @@ ${alleKennisbronnen}`;
           model: actiefModel,
           effort: proefEffort,
           weigering: weigering || undefined,
-          proef_aanroepen: proefModel ? proefStops : undefined,
+          proef_aanroepen: proefStops,
+          trainingen: body.test_trainingen === true ? await bepaalTrainingen() : undefined,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -4047,108 +4182,7 @@ ${alleKennisbronnen}`;
     }
 
     // ---- 10. StudyTube trainingsverwijzing ----
-    const geenInfoZinnen = [
-      "ik vind geen informatie",
-      "ik vind hier geen informatie",
-      "ik vind hier geen specifieke informatie",
-      "staat niet in de kennisbank",
-      "niet in onze documenten",
-      "niet in de kennisbank",
-      "geen relevante informatie",
-      "geen specifieke informatie",
-      "raad ik aan dit na te vragen",
-      "controleer dit bij je leidinggevende",
-      "neem contact op met je leidinggevende",
-      "kan ik je hier niet mee helpen",
-    ];
-    const antwoordLower = antwoord.toLowerCase();
-    const antwoordIsInhoudelijk = !weigering && HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
-    if (!antwoordIsInhoudelijk) {
-      console.log(`[StudyTube] Overgeslagen: antwoord niet inhoudelijk (kennisbank_match=${HEEFT_KENNISBANK_MATCH})`);
-    }
-
-    let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
-    if (antwoordIsInhoudelijk) {
-    try {
-      // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
-      let trainingRelevant = false;
-      try {
-        const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({
-            model: actiefModel,
-            max_tokens: 5,
-            messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
-          }),
-        });
-        if (relRes.ok) {
-          const relData = await relRes.json();
-          const antwoord = (claudeTekst(relData) || "").trim().toUpperCase();
-          trainingRelevant = antwoord.startsWith("JA");
-          console.log("[StudyTube] Relevantie-check:", antwoord);
-        }
-      } catch (e) { console.log("[StudyTube] Relevantie-check fout:", e); }
-
-      if (!trainingRelevant) {
-        console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
-      } else {
-      // Gebruik gedeelde embedding — zoektermen niet meer nodig
-      const queryEmbedding = gedeeldeQueryEmbedding;
-      if (!queryEmbedding) {
-        console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
-      } else {
-        const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
-          query_embedding: JSON.stringify(queryEmbedding),
-          match_tenant_id: profile.tenant_id,
-          match_count: 10,
-          match_threshold: 0.35,
-        });
-        if (rpcErr) {
-          console.error("[StudyTube] RPC fout:", rpcErr.message);
-        } else if (topCursussen && topCursussen.length > 0) {
-          console.log("[StudyTube] Embedding top-10:", topCursussen.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
-
-          // Stap 5: Laat Haiku de 3 meest relevante selecteren
-          const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
-          try {
-            const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-              body: JSON.stringify({
-                model: actiefModel,
-                max_tokens: 20,
-                messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
-              }),
-            });
-            if (selectRes.ok) {
-              const selectData = await selectRes.json();
-              const selectie = (claudeTekst(selectData) || "").trim().toLowerCase();
-              console.log("[StudyTube] Haiku selectie:", selectie);
-              if (selectie !== "geen") {
-                const nummers = selectie.match(/\d+/g);
-                if (nummers) {
-                  trainingen = nummers
-                    .map((n: string) => parseInt(n, 10) - 1)
-                    .filter((i: number) => i >= 0 && i < topCursussen.length)
-                    .slice(0, 3)
-                    .map((i: number) => ({ naam: topCursussen[i].naam, duur_minuten: topCursussen[i].duur_minuten }));
-                }
-              }
-            }
-          } catch (e) { console.warn("[StudyTube] Haiku selectie fout:", e); }
-          if (trainingen.length > 0) {
-            console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
-          }
-        } else {
-          console.log("[StudyTube] Geen embedding matches boven threshold");
-        }
-      }
-      } // einde else trainingRelevant
-    } catch (stErr) {
-      console.error("[StudyTube] Exception:", stErr);
-    }
-    } // einde antwoordIsInhoudelijk
+    const trainingen = await bepaalTrainingen();
 
     if (trainingen.length > 0 && conversation?.id) {
       supabaseAdmin.from("conversations").update({ studytube_trainingen: trainingen }).eq("id", conversation.id).then(() => {}).catch(() => {});
