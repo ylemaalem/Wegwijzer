@@ -10,6 +10,7 @@ const STUDYTUBE_COURSES_URL = "https://public-api.studytube.nl/api/v2/courses";
 const STUDYTUBE_DEEPLINK_BASE = "https://app.studytube.nl/nl/courses";
 
 const EMBEDDING_BATCH_SIZE = 20;
+const MAX_EMBEDDING_PER_SYNC = 100;
 const BESCHRIJVING_BATCH_SIZE = 50;
 const MAX_BESCHRIJVING_PER_SYNC = 100;
 
@@ -57,20 +58,21 @@ Deno.serve(async (req) => {
   const tenantId = profile.tenant_id as string;
 
   try {
-    // 1. Bestaande cursussen ophalen
+    // 1. Bestaande cursussen ophalen incl. beschrijving voor embedding input
     const { data: bestaandRows } = await supabaseAdmin
       .from("studytube_cursussen")
       .select("studytube_course_id, embedding, beschrijving")
       .eq("tenant_id", tenantId);
 
-    const bestaandMap = new Map<string, { heeftEmbedding: boolean; heeftBeschrijving: boolean }>();
+    const bestaandMap = new Map<string, { heeftEmbedding: boolean; heeftBeschrijving: boolean; beschrijving: string }>();
     for (const r of bestaandRows ?? []) {
       bestaandMap.set(String(r.studytube_course_id), {
         heeftEmbedding: !!r.embedding,
         heeftBeschrijving: r.beschrijving !== null && r.beschrijving !== undefined && r.beschrijving !== "",
+        beschrijving: r.beschrijving || "",
       });
     }
-    console.log(`[Sync] ${bestaandMap.size} cursussen al in DB, ${[...bestaandMap.values()].filter(v => v.heeftBeschrijving).length} met beschrijving`);
+    console.log(`[Sync] ${bestaandMap.size} cursussen al in DB, ${[...bestaandMap.values()].filter(v => v.heeftEmbedding).length} met embedding, ${[...bestaandMap.values()].filter(v => v.heeftBeschrijving).length} met beschrijving`);
 
     // 2. OAuth token
     const tokenRes = await fetch(STUDYTUBE_OAUTH_URL, {
@@ -107,29 +109,37 @@ Deno.serve(async (req) => {
     }
     console.log(`[Sync] ${allCourses.length} cursussen opgehaald van StudyTube API`);
 
-    // Delta bepalen
-    const nieuweCursussen = allCourses.filter((c) => !bestaandMap.get(String(c.id))?.heeftEmbedding);
-    // Cursussen zonder beschrijving — gesorteerd op course_id zodat we altijd de volgende batch pakken
+    // Delta bepalen — max 100 embeddings per sync
+    const alleZonderEmbedding = allCourses.filter((c) => !bestaandMap.get(String(c.id))?.heeftEmbedding);
+    const teEmbeddenCursussen = alleZonderEmbedding.sort((a, b) => a.id - b.id).slice(0, MAX_EMBEDDING_PER_SYNC);
+
+    // Cursussen zonder beschrijving — max 100 per sync
     const zonderBeschrijving = allCourses
       .filter((c) => !bestaandMap.get(String(c.id))?.heeftBeschrijving)
       .sort((a, b) => a.id - b.id)
       .slice(0, MAX_BESCHRIJVING_PER_SYNC);
 
-    console.log(`[Sync] ${nieuweCursussen.length} nieuwe cursussen (embedding nodig)`);
-    console.log(`[Sync] ${zonderBeschrijving.length} cursussen zonder beschrijving in deze batch (van ${allCourses.filter(c => !bestaandMap.get(String(c.id))?.heeftBeschrijving).length} totaal)`);
+    console.log(`[Sync] ${alleZonderEmbedding.length} totaal zonder embedding, ${teEmbeddenCursussen.length} in deze batch`);
+    console.log(`[Sync] ${zonderBeschrijving.length} cursussen zonder beschrijving in deze batch`);
 
-    // 4. Embeddings voor nieuwe cursussen
+    // 4. Embeddings genereren op naam + beschrijving
     const embeddingMap = new Map<number, number[]>();
     let embeddingSucces = 0;
 
-    if (openaiKey && nieuweCursussen.length > 0) {
-      for (let i = 0; i < nieuweCursussen.length; i += EMBEDDING_BATCH_SIZE) {
-        const batch = nieuweCursussen.slice(i, i + EMBEDDING_BATCH_SIZE);
+    if (openaiKey && teEmbeddenCursussen.length > 0) {
+      for (let i = 0; i < teEmbeddenCursussen.length; i += EMBEDDING_BATCH_SIZE) {
+        const batch = teEmbeddenCursussen.slice(i, i + EMBEDDING_BATCH_SIZE);
         try {
+          // Embedding input: naam + beschrijving (indien beschikbaar)
+          const inputs = batch.map((c) => {
+            const bestaand = bestaandMap.get(String(c.id));
+            const beschrijving = bestaand?.beschrijving || "";
+            return beschrijving ? `${c.name} ${beschrijving}` : c.name;
+          });
           const embRes = await fetch("https://api.openai.com/v1/embeddings", {
             method: "POST",
             headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "text-embedding-3-small", input: batch.map(c => c.name) }),
+            body: JSON.stringify({ model: "text-embedding-3-small", input: inputs }),
           });
           if (embRes.ok) {
             const embData = await embRes.json();
@@ -137,13 +147,16 @@ Deno.serve(async (req) => {
               const emb = embData.data?.[j]?.embedding;
               if (emb && Array.isArray(emb)) { embeddingMap.set(batch[j].id, emb); embeddingSucces++; }
             }
+          } else {
+            const errText = await embRes.text();
+            console.error(`[Sync] Embedding batch ${i} HTTP ${embRes.status}: ${errText.substring(0, 200)}`);
           }
         } catch (e) { console.error(`[Sync] Embedding batch ${i} exception:`, e); }
       }
     }
-    console.log(`[Sync] Embeddings: ${embeddingSucces} nieuwe`);
+    console.log(`[Sync] Embeddings: ${embeddingSucces} aangemaakt in deze batch`);
 
-    // 5. Beschrijvingen voor deze batch
+    // 5. Beschrijvingen genereren (indien nog cursussen zonder beschrijving)
     const beschrijvingMap = new Map<number, string>();
     let beschrijvingSucces = 0;
 
@@ -182,13 +195,9 @@ Deno.serve(async (req) => {
         } catch (e) { console.error(`[Sync] Beschrijving batch ${i} exception:`, e); }
       }
     }
-    console.log(`[Sync] Beschrijvingen: ${beschrijvingSucces} aangemaakt voor deze batch`);
+    console.log(`[Sync] Beschrijvingen: ${beschrijvingSucces} aangemaakt in deze batch`);
 
-    // 6. Twee aparte upserts:
-    // A) Alle cursussen: naam/duur/deeplink/timestamp bijwerken (ZONDER beschrijving en embedding te overschrijven)
-    // B) Alleen cursussen met nieuwe data: embedding of beschrijving apart updaten
-
-    // Stap A: Basis upsert voor alle cursussen (geen beschrijving/embedding in payload)
+    // 6. Basis upsert voor alle cursussen
     const UPSERT_BATCH = 200;
     const basisRows = allCourses.map((c) => ({
       tenant_id: tenantId,
@@ -213,7 +222,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Stap B: Embeddings apart updaten (alleen nieuwe cursussen)
+    // 7. Embeddings apart updaten
     for (const [courseId, embedding] of embeddingMap.entries()) {
       await supabaseAdmin
         .from("studytube_cursussen")
@@ -222,7 +231,7 @@ Deno.serve(async (req) => {
         .eq("studytube_course_id", String(courseId));
     }
 
-    // Stap C: Beschrijvingen apart updaten (alleen cursussen in deze batch)
+    // 8. Beschrijvingen apart updaten
     for (const [courseId, beschrijving] of beschrijvingMap.entries()) {
       await supabaseAdmin
         .from("studytube_cursussen")
@@ -231,20 +240,20 @@ Deno.serve(async (req) => {
         .eq("studytube_course_id", String(courseId));
     }
 
-    const totaalZonderBeschrijving = allCourses.filter((c) =>
+    const nogZonderEmbedding = alleZonderEmbedding.length - embeddingSucces;
+    const nogZonderBeschrijving = allCourses.filter((c) =>
       !beschrijvingMap.has(c.id) && !bestaandMap.get(String(c.id))?.heeftBeschrijving
     ).length;
 
-    console.log(`[Sync] Klaar. Nog ${totaalZonderBeschrijving} zonder beschrijving.`);
+    console.log(`[Sync] Klaar. Nog ${nogZonderEmbedding} zonder embedding, ${nogZonderBeschrijving} zonder beschrijving.`);
 
     return new Response(
       JSON.stringify({
         cursussen_gesynchroniseerd: allCourses.length,
-        nieuwe_cursussen: nieuweCursussen.length,
         embeddings_gegenereerd: embeddingSucces,
+        nog_zonder_embedding: nogZonderEmbedding,
         beschrijvingen_gegenereerd: beschrijvingSucces,
-        nog_zonder_beschrijving: totaalZonderBeschrijving,
-        beschrijvingen_totaal: [...bestaandMap.values()].filter(v => v.heeftBeschrijving).length + beschrijvingSucces,
+        nog_zonder_beschrijving: nogZonderBeschrijving,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
