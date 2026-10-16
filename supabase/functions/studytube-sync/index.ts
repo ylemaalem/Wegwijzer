@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL, claudeTekst } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, claudeTekst, claudeVerzoek } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -169,11 +169,11 @@ Deno.serve(async (req) => {
           const descRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({
+            body: JSON.stringify(claudeVerzoek(CLAUDE_MODEL, "hulp", {
               model: CLAUDE_MODEL,
               max_tokens: 4096,
               messages: [{ role: "user", content: `Genereer voor elke training hieronder een korte beschrijving (max 15 woorden) met relevante zoekwoorden waar een zorgmedewerker op zou zoeken. Focus op: doelgroep, methodiek, vaardigheid, ziektebeeld. Gebruik Nederlandse zorgtermen en synoniemen.\n\nFormaat: één regel per training, genummerd.\nVoorbeeld:\n1. Omgaan met agressie, grensoverschrijdend gedrag, de-escalatie, veiligheid\n2. NAH niet-aangeboren hersenletsel, cognitieve beperkingen, revalidatie\n\nTrainingen:\n${namenLijst}` }],
-            }),
+            })),
           });
           if (descRes.ok) {
             const descData = await descRes.json();

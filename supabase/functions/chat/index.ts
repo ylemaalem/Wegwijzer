@@ -3,7 +3,7 @@
 // =============================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL, claudeTekst } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -878,53 +878,52 @@ Deno.serve(async (req: Request) => {
       profile.teams = Array.isArray(body.teams) ? body.teams : [];
     }
 
-    // ---- Modelproef (alleen testmodus) ----
-    // Met de testsleutel kan een testaanroep een ander model kiezen via
-    // body.test_model (en optioneel body.test_effort). Zonder testsleutel is
-    // proefModel altijd null en is claudeFetch precies fetch: gewone gebruikers
-    // houden Haiku 4.5 met ongewijzigde aanroepen.
+    // ---- Modelkeuze per aanroep ----
+    // Standaard CLAUDE_MODEL (_shared/claude.ts). Alleen met de testsleutel kan
+    // een testaanroep een ander model kiezen via body.test_model (en de effort
+    // van het hoofdantwoord via body.test_effort). Zonder testsleutel is
+    // proefModel altijd null.
     const PROEF_MODELLEN = ["claude-haiku-5-5"];
     const proefModel: string | null = isTest && PROEF_MODELLEN.includes(body.test_model) ? body.test_model : null;
     const proefEffort: string | null = proefModel && ["low", "medium", "high"].includes(body.test_effort) ? body.test_effort : null;
+    const actiefModel: string = proefModel || CLAUDE_MODEL;
     const proefStops: Array<Record<string, unknown>> = [];
-    // Past een Haiku 4.5-aanroep aan voor het proefmodel (migratiegids Haiku 5.5):
-    // denkstappen tellen mee in max_tokens, het antwoord staat niet altijd in het
-    // eerste blok, geen sampling-parameters en geen voorgevuld assistent-bericht.
-    const proefAanroep = async (url: string, init: RequestInit): Promise<Response> => {
-      const verzoek = JSON.parse(String(init.body));
-      const maxOrigineel = verzoek.max_tokens;
-      verzoek.model = proefModel;
-      verzoek.max_tokens = maxOrigineel + 16000;
-      if (proefEffort) verzoek.output_config = { effort: proefEffort };
-      delete verzoek.temperature; delete verzoek.top_p; delete verzoek.top_k;
-      while (Array.isArray(verzoek.messages) && verzoek.messages.length > 1 && verzoek.messages[verzoek.messages.length - 1].role === "assistant") {
-        verzoek.messages.pop();
-      }
+    // Alleen in een proef: houdt per aanroep stopreden, denkblokken, tokens en
+    // duur bij voor de testrapportage. Verandert het verzoek niet.
+    const proefAanroep = async (url: string, init: RequestInit, soort: ClaudeSoort): Promise<Response> => {
       const start = Date.now();
       let resp: Response;
       try {
-        resp = await fetch(url, { ...init, body: JSON.stringify(verzoek) });
+        resp = await fetch(url, init);
       } catch (e) {
-        proefStops.push({ max_tokens_origineel: maxOrigineel, fout: e instanceof Error ? e.name : String(e), ms: Date.now() - start });
+        proefStops.push({ soort, fout: e instanceof Error ? e.name : String(e), ms: Date.now() - start });
         throw e;
       }
       if (!resp.ok) {
         const tekst = await resp.text();
-        proefStops.push({ max_tokens_origineel: maxOrigineel, http: resp.status, fout: tekst.substring(0, 300), ms: Date.now() - start });
+        proefStops.push({ soort, http: resp.status, fout: tekst.substring(0, 300), ms: Date.now() - start });
         return new Response(tekst, { status: resp.status, headers: resp.headers });
       }
       const json = await resp.json();
-      const blokken: Array<{ type: string; text?: string }> = Array.isArray(json.content) ? json.content : [];
-      const tekst = blokken.filter((b) => b.type === "text").map((b) => b.text || "").join("");
+      const blokken: Array<{ type: string }> = Array.isArray(json.content) ? json.content : [];
       proefStops.push({
-        max_tokens_origineel: maxOrigineel, stop_reason: json.stop_reason, stop_details: json.stop_details ?? undefined,
+        soort, stop_reason: json.stop_reason, stop_details: json.stop_details ?? undefined,
         denkblokken: blokken.filter((b) => b.type === "thinking" || b.type === "redacted_thinking").length,
-        tekst_leeg: tekst.trim().length === 0, output_tokens: json.usage?.output_tokens, ms: Date.now() - start,
+        tekst_leeg: claudeTekst(json).trim().length === 0, output_tokens: json.usage?.output_tokens, ms: Date.now() - start,
       });
       return new Response(JSON.stringify(json), { status: resp.status, headers: { "Content-Type": "application/json" } });
     };
-    const claudeFetch = (url: string, init: RequestInit): Promise<Response> =>
-      proefModel ? proefAanroep(url, init) : fetch(url, init);
+    // Elke Claude-aanroep geeft zijn soort mee. Voor een model dat standaard
+    // nadenkt past claudeVerzoek de body aan (lengtegrens, effort, denken);
+    // voor Haiku 4.5 gaat de aanroep ongewijzigd naar fetch.
+    const claudeFetch = (url: string, init: RequestInit & { soort: ClaudeSoort }): Promise<Response> => {
+      const { soort, ...verzoek } = init;
+      if (denktStandaard(actiefModel)) {
+        const body = claudeVerzoek(actiefModel, soort, JSON.parse(String(verzoek.body)), proefEffort);
+        verzoek.body = JSON.stringify(body);
+      }
+      return proefModel ? proefAanroep(url, verzoek, soort) : fetch(url, verzoek);
+    };
 
     // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
     // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
@@ -1186,7 +1185,7 @@ Geen uitleg, alleen JSON.`;
       }
 
       try {
-        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1194,7 +1193,7 @@ Geen uitleg, alleen JSON.`;
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: scanType === "grondig" ? 4096 : 2048,
             messages: [{ role: "user", content: scanPrompt }],
           }),
@@ -1312,7 +1311,7 @@ Document titel: ${doc.naam}
 Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
       try {
-        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const aiResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1320,7 +1319,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 1024,
             messages: [{ role: "user", content: prompt }],
           }),
@@ -1530,7 +1529,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
             // Zoektermen genereren via Claude Haiku — best-effort
             if (docInserted && (docInserted as { id: string }).id) {
               try {
-                const ztResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+                const ztResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -1538,7 +1537,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
                     "anthropic-version": "2023-06-01",
                   },
                   body: JSON.stringify({
-                    model: CLAUDE_MODEL,
+                    model: actiefModel,
                     max_tokens: 512,
                     messages: [{ role: "user", content: `Genereer 20 zoektermen in het Nederlands voor dit document. Geef ALLEEN een JSON array, geen uitleg.\n\nTitel: ${titel}\nInhoud: ${tekst.substring(0, 1500)}` }],
                   }),
@@ -2022,11 +2021,11 @@ Vragen (${gebruikteVragen.length}):
 ${vraagLijst}${trendGedekteContext}`;
 
       try {
-        const trendResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const trendResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "tekst",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 600,
             messages: [{ role: "user", content: trendPrompt }],
           }),
@@ -2360,11 +2359,11 @@ ${vraagLijst}${trendGedekteContext}`;
       }
 
       try {
-        const briefResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const briefResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "tekst",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 256,
             messages: [{ role: "user", content: `Je bent een inwerkcoach voor een zorgmedewerker. Week: ${wk}. Functiegroep: ${fg.replace(/_/g, " ")}. Gebruik de onderstaande documenten om concrete focuspunten te benoemen voor deze week. Wees kort, warm en praktisch. Maximaal 4 zinnen. Begin met: 'Goedemorgen, je bent nu in week ${wk} van je inwerktraject.'\n\n${docContext || "Geen documenten beschikbaar."}` }],
           }),
@@ -2481,10 +2480,10 @@ Retourneer ALLEEN een JSON array, geen tekst eromheen, in dit exacte formaat:
 ${vragenContext || "(geen vragen beschikbaar — gebruik de kennisbank documenten als basis)"}
 
 ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over ambulante zorg)"}`;
-        const quizResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const quizResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "tekst",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ model: actiefModel, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
         });
         const quizResult = await quizResp.json();
         return new Response(JSON.stringify({ antwoord: claudeTekst(quizResult) || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2498,10 +2497,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (body.generate_tips && body.week_nummer) {
       const fg = profile.functiegroep || "medewerker";
       try {
-        const tipResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const tipResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "tekst",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
+          body: JSON.stringify({ model: actiefModel, max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
         });
         const tipResult = await tipResp.json();
         return new Response(JSON.stringify({ tips: claudeTekst(tipResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2541,10 +2540,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // ---- Rol-wissel vergelijking genereren ----
     if (body.generate_rolwissel && body.oude_functie && body.nieuwe_functie) {
       try {
-        const rwResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const rwResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "tekst",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
+          body: JSON.stringify({ model: actiefModel, max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
         });
         const rwResult = await rwResp.json();
         return new Response(JSON.stringify({ vergelijking: claudeTekst(rwResult) || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2853,11 +2852,11 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     if (body.extract_pdf && body.pdf_base64) {
       console.log("[PDF Extract] Start extractie, grootte:", body.pdf_base64.length);
       try {
-        const pdfResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const pdfResponse = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "pdf",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 4096,
             messages: [{ role: "user", content: [
               { type: "document", source: { type: "base64", media_type: body.media_type || "application/pdf", data: body.pdf_base64 } },
@@ -3308,11 +3307,11 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       // keywords al gedefinieerd in outer scope; verrijken met Haiku zoektermen
       if (allDocs.length > 0 && keywords.length > 0) {
         try {
-          const synResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
+          const synResponse = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
             body: JSON.stringify({
-              model: CLAUDE_MODEL,
+              model: actiefModel,
               max_tokens: 200,
               messages: [{ role: "user", content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden in een kennisbank. Denk breed: gebruik synoniemen, officiële HR-termen, gerelateerde begrippen, samengestelde woorden, praktische varianten en specifieke regelingen of beleidsdocumenten. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"` }],
             }),
@@ -3575,11 +3574,11 @@ Vraag: ${vraag.trim()}
 Fragmenten:
 ${chunksBlob}`;
 
-        const extractResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const extractResp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 400,
             messages: [{ role: "user", content: extractPrompt }],
           }),
@@ -3861,11 +3860,11 @@ Gebruik het label dat hoort bij de hoogste bron die je daadwerkelijk gebruikt he
 ${alleKennisbronnen}`;
 
     // ---- 8. Claude Haiku aanroepen ----
-    const anthropicResponse = await claudeFetch("https://api.anthropic.com/v1/messages", {
+    const anthropicResponse = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hoofdantwoord",
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model: actiefModel,
         max_tokens: 1024,
         system: systemPrompt,
         messages: (clientMessages && Array.isArray(clientMessages) && clientMessages.length > 0)
@@ -3953,7 +3952,7 @@ ${alleKennisbronnen}`;
           tokens: testTokens,
           kosten_usd: Math.round((inKost + uitKost) * 1e6) / 1e6,
           latency_ms: Date.now() - testStart,
-          model: proefModel || CLAUDE_MODEL,
+          model: actiefModel,
           effort: proefEffort,
           proef_aanroepen: proefModel ? proefStops : undefined,
         }),
@@ -4039,11 +4038,11 @@ ${alleKennisbronnen}`;
       // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
       let trainingRelevant = false;
       try {
-        const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", {
+        const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: CLAUDE_MODEL,
+            model: actiefModel,
             max_tokens: 5,
             messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
           }),
@@ -4078,11 +4077,11 @@ ${alleKennisbronnen}`;
           // Stap 5: Laat Haiku de 3 meest relevante selecteren
           const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
           try {
-            const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", {
+            const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
               method: "POST",
               headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
               body: JSON.stringify({
-                model: CLAUDE_MODEL,
+                model: actiefModel,
                 max_tokens: 20,
                 messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
               }),
