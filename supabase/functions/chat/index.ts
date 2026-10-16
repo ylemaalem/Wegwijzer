@@ -3,7 +3,7 @@
 // =============================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -958,7 +958,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const details: Array<Record<string, unknown>> = [];
-      let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0;
+      let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0, kostenTotaal = 0;
       // kernfeit_groepen: elke groep = één feit met alleen schrijfvarianten van dat feit.
       // min_treffers: hoeveel groepen gevonden moeten worden (null = alle groepen).
       type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string };
@@ -987,7 +987,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [] }),
+            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -1007,7 +1007,8 @@ Deno.serve(async (req: Request) => {
             antwoord_fragment: (r.antwoord || "").substring(0, 200),
             // Bij een mislukte vraag het volledige antwoord bewaren voor de analyse.
             antwoord: ok ? undefined : (r.antwoord || ""),
-            _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0,
+            model: r.model,
+            _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0, _kosten: r.kosten_usd || 0,
           };
         } catch (e) {
           return { id: v.id, vraag: v.vraag, geslaagd: false, reden: e instanceof Error ? e.message : String(e) };
@@ -1023,14 +1024,16 @@ Deno.serve(async (req: Request) => {
         for (const d of groep) {
           tinput += (d._tin as number) || 0;
           toutput += (d._tout as number) || 0;
-          delete d._tin; delete d._tout;
+          kostenTotaal += (d._kosten as number) || 0;
+          delete d._tin; delete d._tout; delete d._kosten;
           if (d.geslaagd) geslaagd++; else gefaald++;
           details.push(d);
         }
       }
       details.sort((a, b) => (a.id as number) - (b.id as number));
 
-      const kosten = Math.round(((tinput / 1_000_000) * 1.0 + (toutput / 1_000_000) * 5.0) * 1e4) / 1e4;
+      // Som van de kosten per vraag, berekend met de prijs van het gebruikte model.
+      const kosten = Math.round(kostenTotaal * 1e4) / 1e4;
       const { data: runRow } = await supabaseAdmin.from("regressie_runs").insert({
         tenant_id: runTenant, aantal_vragen: vragen.length, geslaagd, gefaald,
         tokens_input: tinput, tokens_output: toutput, kosten_usd: kosten, trigger, details,
@@ -1045,8 +1048,12 @@ Deno.serve(async (req: Request) => {
 
     // Tokentelling voor de kostenrapportage van een testrun (alle Haiku-calls samen).
     const testTokens = { input: 0, output: 0 };
+    let testKosten = 0;
     const telTest = (usage: { input_tokens?: number; output_tokens?: number } | undefined) => {
-      if (isTest && usage) { testTokens.input += usage.input_tokens || 0; testTokens.output += usage.output_tokens || 0; }
+      if (isTest && usage) {
+        testTokens.input += usage.input_tokens || 0; testTokens.output += usage.output_tokens || 0;
+        testKosten += claudeKosten(actiefModel, usage);
+      }
     };
     const testStart = Date.now();
 
@@ -3328,6 +3335,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           });
           if (synResponse.ok) {
             const synResult = await synResponse.json();
+            telTest(synResult.usage);
             const synText = claudeTekst(synResult) || "";
             const rawTerms = synText.split(",").map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 2);
             const extraTerms: string[] = [];
@@ -3959,10 +3967,6 @@ ${alleKennisbronnen}`;
 
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
     if (isTest) {
-      // Haiku 4.5: $1 / $5 per 1M; Haiku 5.5 (prompts tot 100k tokens): $0,10 / $0,50 per 1M.
-      const [prijsIn, prijsUit] = proefModel === "claude-haiku-5-5" ? [0.10, 0.50] : [1.0, 5.0];
-      const inKost = (testTokens.input / 1_000_000) * prijsIn;
-      const uitKost = (testTokens.output / 1_000_000) * prijsUit;
       return new Response(
         JSON.stringify({
           test_modus: true,
@@ -3972,7 +3976,7 @@ ${alleKennisbronnen}`;
           herkomst,
           gebruikte_document_ids: gebruikteDocIds,
           tokens: testTokens,
-          kosten_usd: Math.round((inKost + uitKost) * 1e6) / 1e6,
+          kosten_usd: Math.round(testKosten * 1e6) / 1e6,
           latency_ms: Date.now() - testStart,
           model: actiefModel,
           effort: proefEffort,

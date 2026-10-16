@@ -64,3 +64,22 @@ export function claudeVerzoek(
       return { ...uit, max_tokens: Math.max(max, 16000), thinking: { type: "disabled" }, output_config: { effort: "low" } };
   }
 }
+
+// Prijzen in dollar per miljoen tokens (platform.claude.com/docs/en/about-claude/pricing,
+// oktober 2026). Haiku 5.5 kent een hoger tarief voor aanvragen boven 100.000 invoertokens.
+const PRIJZEN: Record<string, { invoer: number; uitvoer: number; grens?: number; invoerBoven?: number; uitvoerBoven?: number }> = {
+  "claude-haiku-4-5-20251001": { invoer: 1.0, uitvoer: 5.0 },
+  "claude-haiku-5-5": { invoer: 0.10, uitvoer: 0.50, grens: 100_000, invoerBoven: 0.50, uitvoerBoven: 2.50 },
+};
+
+// Kosten in dollar van één aanroep, op basis van het gebruikte model en de
+// werkelijk verbruikte tokens (bij Haiku 5.5 inclusief de denkstappen).
+export function claudeKosten(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined): number {
+  const p = PRIJZEN[model];
+  if (!p || !usage) return 0;
+  const invoer = usage.input_tokens || 0;
+  const boven = p.grens !== undefined && invoer > p.grens;
+  const prijsIn = boven ? p.invoerBoven ?? p.invoer : p.invoer;
+  const prijsUit = boven ? p.uitvoerBoven ?? p.uitvoer : p.uitvoer;
+  return (invoer * prijsIn + (usage.output_tokens || 0) * prijsUit) / 1_000_000;
+}
