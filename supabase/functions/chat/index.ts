@@ -3993,6 +3993,10 @@ ${alleKennisbronnen}`;
     // ---- 10. Trainingsuggesties (StudyTube) ----
     // Als functie, zodat de testmodus dezelfde code kan draaien (body.test_trainingen).
     const bepaalTrainingen = async (): Promise<Array<{ naam: string; duur_minuten: number | null }>> => {
+      // "controleer dit bij je leidinggevende" staat hier bewust niet in: die zin
+      // staat ook onder inhoudelijke antwoorden. Een echt "niets gevonden"-antwoord
+      // ("Ik vind hier geen specifieke informatie … controleer dit bij je
+      // leidinggevende") wordt al herkend aan het eerste deel.
       const geenInfoZinnen = [
         "ik vind geen informatie",
         "ik vind hier geen informatie",
@@ -4003,7 +4007,6 @@ ${alleKennisbronnen}`;
         "geen relevante informatie",
         "geen specifieke informatie",
         "raad ik aan dit na te vragen",
-        "controleer dit bij je leidinggevende",
         "neem contact op met je leidinggevende",
         "kan ik je hier niet mee helpen",
       ];
