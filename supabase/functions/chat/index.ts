@@ -4047,7 +4047,7 @@ ${alleKennisbronnen}`;
         } else {
           const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
             query_embedding: JSON.stringify(queryEmbedding),
-            match_tenant_id: profile.tenant_id,
+            tenant_id_input: profile.tenant_id,
             match_count: 10,
             match_threshold: 0.35,
           });
