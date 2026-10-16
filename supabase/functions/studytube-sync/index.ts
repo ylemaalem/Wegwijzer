@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { CLAUDE_MODEL } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
             body: JSON.stringify({
-              model: "claude-haiku-4-5-20251001",
+              model: CLAUDE_MODEL,
               max_tokens: 4096,
               messages: [{ role: "user", content: `Genereer voor elke training hieronder een korte beschrijving (max 15 woorden) met relevante zoekwoorden waar een zorgmedewerker op zou zoeken. Focus op: doelgroep, methodiek, vaardigheid, ziektebeeld. Gebruik Nederlandse zorgtermen en synoniemen.\n\nFormaat: één regel per training, genummerd.\nVoorbeeld:\n1. Omgaan met agressie, grensoverschrijdend gedrag, de-escalatie, veiligheid\n2. NAH niet-aangeboren hersenletsel, cognitieve beperkingen, revalidatie\n\nTrainingen:\n${namenLijst}` }],
             }),

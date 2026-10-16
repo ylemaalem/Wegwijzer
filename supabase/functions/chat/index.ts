@@ -3,6 +3,7 @@
 // =============================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { CLAUDE_MODEL } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1195,7 +1196,7 @@ Geen uitleg, alleen JSON.`;
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: scanType === "grondig" ? 4096 : 2048,
             messages: [{ role: "user", content: scanPrompt }],
           }),
@@ -1321,7 +1322,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 1024,
             messages: [{ role: "user", content: prompt }],
           }),
@@ -1539,7 +1540,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
                     "anthropic-version": "2023-06-01",
                   },
                   body: JSON.stringify({
-                    model: "claude-haiku-4-5-20251001",
+                    model: CLAUDE_MODEL,
                     max_tokens: 512,
                     messages: [{ role: "user", content: `Genereer 20 zoektermen in het Nederlands voor dit document. Geef ALLEEN een JSON array, geen uitleg.\n\nTitel: ${titel}\nInhoud: ${tekst.substring(0, 1500)}` }],
                   }),
@@ -2027,7 +2028,7 @@ ${vraagLijst}${trendGedekteContext}`;
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 600,
             messages: [{ role: "user", content: trendPrompt }],
           }),
@@ -2365,7 +2366,7 @@ ${vraagLijst}${trendGedekteContext}`;
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 256,
             messages: [{ role: "user", content: `Je bent een inwerkcoach voor een zorgmedewerker. Week: ${wk}. Functiegroep: ${fg.replace(/_/g, " ")}. Gebruik de onderstaande documenten om concrete focuspunten te benoemen voor deze week. Wees kort, warm en praktisch. Maximaal 4 zinnen. Begin met: 'Goedemorgen, je bent nu in week ${wk} van je inwerktraject.'\n\n${docContext || "Geen documenten beschikbaar."}` }],
           }),
@@ -2485,7 +2486,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const quizResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }),
         });
         const quizResult = await quizResp.json();
         return new Response(JSON.stringify({ antwoord: quizResult.content?.[0]?.text || "", bron: vragenBron }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2502,7 +2503,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const tipResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
+          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 256, messages: [{ role: "user", content: `Geef 3 concrete praktische tips voor een ${fg.replace(/_/g, " ")} in week ${body.week_nummer} van het inwerktraject. Kort en bemoedigend. Nederlands.` }] }),
         });
         const tipResult = await tipResp.json();
         return new Response(JSON.stringify({ tips: tipResult.content?.[0]?.text || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2545,7 +2546,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const rwResp = await claudeFetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
+          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 512, messages: [{ role: "user", content: `Vergelijk de rol ${body.oude_functie.replace(/_/g, " ")} met ${body.nieuwe_functie.replace(/_/g, " ")} bij een ambulante zorgorganisatie. Geef de 5 grootste praktische verschillen in dagelijkse taken en verantwoordelijkheden. Wees concreet en bondig. Nederlands.` }] }),
         });
         const rwResult = await rwResp.json();
         return new Response(JSON.stringify({ vergelijking: rwResult.content?.[0]?.text || "" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2858,7 +2859,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 4096,
             messages: [{ role: "user", content: [
               { type: "document", source: { type: "base64", media_type: body.media_type || "application/pdf", data: body.pdf_base64 } },
@@ -3313,7 +3314,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
             body: JSON.stringify({
-              model: "claude-haiku-4-5-20251001",
+              model: CLAUDE_MODEL,
               max_tokens: 200,
               messages: [{ role: "user", content: `Je krijgt een vraag van een zorgmedewerker. Genereer 10 zoektermen in het Nederlands die helpen het juiste document te vinden in een kennisbank. Denk breed: gebruik synoniemen, officiële HR-termen, gerelateerde begrippen, samengestelde woorden, praktische varianten en specifieke regelingen of beleidsdocumenten. Gebruik alleen losse woorden of samengestelde woorden — geen zinnen. Geef alleen de 10 termen gescheiden door komma's, geen uitleg.\n\nVraag: "${vraag.trim()}"` }],
             }),
@@ -3580,7 +3581,7 @@ ${chunksBlob}`;
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 400,
             messages: [{ role: "user", content: extractPrompt }],
           }),
@@ -3866,7 +3867,7 @@ ${alleKennisbronnen}`;
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: CLAUDE_MODEL,
         max_tokens: 1024,
         system: systemPrompt,
         messages: (clientMessages && Array.isArray(clientMessages) && clientMessages.length > 0)
@@ -3954,7 +3955,7 @@ ${alleKennisbronnen}`;
           tokens: testTokens,
           kosten_usd: Math.round((inKost + uitKost) * 1e6) / 1e6,
           latency_ms: Date.now() - testStart,
-          model: proefModel || "claude-haiku-4-5-20251001",
+          model: proefModel || CLAUDE_MODEL,
           effort: proefEffort,
           proef_aanroepen: proefModel ? proefStops : undefined,
         }),
@@ -4044,7 +4045,7 @@ ${alleKennisbronnen}`;
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: CLAUDE_MODEL,
             max_tokens: 5,
             messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
           }),
@@ -4083,7 +4084,7 @@ ${alleKennisbronnen}`;
               method: "POST",
               headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
               body: JSON.stringify({
-                model: "claude-haiku-4-5-20251001",
+                model: CLAUDE_MODEL,
                 max_tokens: 20,
                 messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
               }),
