@@ -1227,6 +1227,33 @@
    "documenttype": "lijst",
    "zeker": true,
    "actief": true
+  },
+  {
+   "id": 62,
+   "categorie": "werkwijze",
+   "vraag": "welke wmo trajecten heb je in Almere en wat zijn de verschillen in type cliënten en vooral uren en evaluatiemomenten",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "ontwikkeling & ondersteuning",
+     "ontwikkeling en ondersteuning"
+    ],
+    [
+     "ondersteuning & stabiliteit",
+     "ondersteuning en stabiliteit"
+    ],
+    [
+     "inzicht & overzicht",
+     "inzicht en overzicht"
+    ]
+   ],
+   "min_treffers": 3,
+   "bron": "20240508 Uitvoeringsafspraken Wmo-ondersteuning 2023 (2).pdf (inhoudsopgave stuk 1; I&O stuk 3, O&S stuk 4, O&O stuk 5-6)",
+   "documenttype": "protocol",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Alleen volledige namen tellen; afkortingen niet (de bot noemde O&O ten onrechte 'O&S'). Uren per traject staan in geen document vast (alleen voorbeeld 208 uur, stuk 8)."
   }
  ]
 }
