@@ -133,6 +133,13 @@ const EXTERNE_MAPPEN = ["cao"];
 // testvragen de kernfeiten in de context, zonder verlies bij de andere vragen.
 const TREFWOORD_AANVULLING = 2;
 
+// Retrieval punt 3: de vraag herschrijven voor het trefwoord-zoeken. Het model
+// voegt de woorden toe die officiële documenten voor hetzelfde onderwerp
+// gebruiken (bv. "cliënt" waar het document "inwoner" zegt). De oorspronkelijke
+// vraag zoekt gewoon mee; dit levert hooguit zoveel EXTRA stukken op, bovenop
+// TREFWOORD_AANVULLING (er valt niets weg). 0 = uit.
+const HERSCHRIJF_AANVULLING = 2;
+
 type Herkomst = {
   type: "organisatie" | "extern" | "organisatie_extern" | "geen_document";
   organisatie: string[];
@@ -1020,6 +1027,13 @@ Deno.serve(async (req: Request) => {
             // Bij een mislukte vraag het volledige antwoord bewaren voor de analyse.
             antwoord: ok ? undefined : (r.antwoord || ""),
             model: r.model,
+            // Wachttijd per vraag; herschrijf_wacht_ms = extra wachttijd door punt 3.
+            latency_ms: r.latency_ms ?? null,
+            herschrijf_ms: r.herschrijf_ms ?? null,
+            herschrijf_wacht_ms: r.herschrijf_wacht_ms ?? null,
+            herschreven_stukken: Array.isArray(r.trefwoord_aanvulling)
+              ? r.trefwoord_aanvulling.filter((t: { herschreven?: boolean }) => t.herschreven).length : null,
+            zoek_extra_termen: r.zoek_extra_termen || undefined,
             _tin: r.tokens?.input || 0, _tout: r.tokens?.output || 0, _kosten: r.kosten_usd || 0,
           };
         } catch (e) {
@@ -3170,7 +3184,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let fglChunksOpgehaald: number | null = null;
     let fglChunksNaRerank: number | null = null;
     // Optie D: welke trefwoordstukken zijn toegevoegd (voor log en testmodus).
-    let trefwoordAanvulling: Array<{ document_id: string; similarity: number }> = [];
+    let trefwoordAanvulling: Array<{ document_id: string; similarity: number; herschreven: boolean }> = [];
     // Herkomst: documenten die daadwerkelijk als context naar het model gaan, in
     // volgorde van relevantie. Basis voor het herkomstlabel — afgeleid uit data,
     // niet uit de bronregel die het model zelf schrijft.
@@ -3237,6 +3251,34 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     // Genereer embedding één keer — hergebruikt voor documenten EN StudyTube
     // Sla over bij bronvraag (geen retrieval nodig).
     let gedeeldeQueryEmbedding: number[] | null = null;
+
+    // Punt 3: herschrijving voor het trefwoord-zoeken; loopt tegelijk met de
+    // embedding, zodat de extra wachttijd klein blijft.
+    let zoekExtraTermen = "";
+    let herschrijfMs: number | null = null;
+    let herschrijfWachtMs: number | null = null;
+    const herschrijfStart = Date.now();
+    const herschrijfPromise: Promise<string> = (HERSCHRIJF_AANVULLING > 0 && TREFWOORD_AANVULLING > 0 && openaiKeyForChat && !vraagtBron && anthropicApiKey)
+      ? claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: actiefModel,
+          max_tokens: 120,
+          messages: [{ role: "user", content: `Je helpt zoeken in de kennisbank van een zorgorganisatie. Geef 6 tot 10 extra zoekwoorden voor de vraag hieronder: de woorden die officiële documenten (regelingen, afspraken, protocollen, werkinstructies) voor hetzelfde onderwerp gebruiken. Denk aan formele termen en synoniemen, bijvoorbeeld ziek -> verzuim, ziekmelding; vrij -> verlof; baas -> leidinggevende. Herhaal de woorden uit de vraag niet. Geef alleen de woorden, gescheiden door komma's, zonder uitleg.\n\nVraag: "${vraag.trim()}"` }],
+        }),
+      })
+        .then(async (r) => {
+          if (!r.ok) return "";
+          const j = await r.json();
+          telTest(j.usage);
+          zoekExtraTermen = (claudeTekst(j) || "").replace(/\s+/g, " ").trim().slice(0, 400);
+          return zoekExtraTermen;
+        })
+        .catch((e) => { console.warn("[Chat] Herschrijven mislukt:", e); return ""; })
+        .finally(() => { herschrijfMs = Date.now() - herschrijfStart; })
+      : Promise.resolve("");
+
     if (openaiKeyForChat && !vraagtBron) {
       gedeeldeQueryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
     }
@@ -3251,26 +3293,45 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           // Rerank + extractie versmallen daarna weer aan de onderkant.
           const matchCountGebruikt = isFeitVraag ? 25 : 8;
           fglMatchCount = matchCountGebruikt;
-          // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken.
-          const [vectorRes, trefwoordRes] = await Promise.all([
-            supabaseAdmin.rpc("match_document_chunks", {
-              query_embedding: JSON.stringify(queryEmbedding),
-              match_org_id: profile.tenant_id,
-              match_count: matchCountGebruikt,
-              match_threshold: 0.5,
-            }),
-            TREFWOORD_AANVULLING > 0
+          // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken; het
+          // zoeken met de herschreven vraag (punt 3) start zodra die klaar is.
+          // De klaar-tijden meten hoeveel langer een vraag wacht door punt 3:
+          // zonder herschrijving zou het antwoord verdergaan op basisKlaar.
+          type TrefwoordRes = { data: unknown; error: { message: string } | null };
+          let basisKlaar = 0, herschrijfKlaar = 0;
+          const [[vectorRes, trefwoordRes], herschrijfRes] = await Promise.all([
+            Promise.all([
+              supabaseAdmin.rpc("match_document_chunks", {
+                query_embedding: JSON.stringify(queryEmbedding),
+                match_org_id: profile.tenant_id,
+                match_count: matchCountGebruikt,
+                match_threshold: 0.5,
+              }),
+              TREFWOORD_AANVULLING > 0
+                ? supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+                  zoekvraag: vraag,
+                  query_embedding: JSON.stringify(queryEmbedding),
+                  match_org_id: profile.tenant_id,
+                  match_count: 10,
+                })
+                : Promise.resolve({ data: null, error: null }),
+            ]).then((r) => { basisKlaar = Date.now(); return r; }),
+            herschrijfPromise.then((extra): PromiseLike<TrefwoordRes> | TrefwoordRes => extra
               ? supabaseAdmin.rpc("zoek_chunks_trefwoord", {
-                zoekvraag: vraag,
+                zoekvraag: `${vraag}\n${extra}`,
                 query_embedding: JSON.stringify(queryEmbedding),
                 match_org_id: profile.tenant_id,
                 match_count: 10,
               })
-              : Promise.resolve({ data: null, error: null }),
+              : { data: null, error: null })
+              .then((r) => { herschrijfKlaar = Date.now(); return r; }),
           ]);
+          herschrijfWachtMs = Math.max(0, herschrijfKlaar - basisKlaar);
           const { data: chunkMatches, error: chunkErr } = vectorRes;
           if (trefwoordRes.error) console.warn("[Chat] Trefwoord-zoeken fout:", trefwoordRes.error.message);
+          if (herschrijfRes.error) console.warn("[Chat] Trefwoord-zoeken (herschreven) fout:", herschrijfRes.error.message);
           const trefwoordMatches = (trefwoordRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
+          const herschrijfMatches = (herschrijfRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
           const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
           fglChunksOpgehaald = chunksOpgehaaldVoorFilter;
 
@@ -3337,6 +3398,11 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               // afkortingen (O&O) die vector-zoeken mist.
               const aanwezig = new Set(werkChunks.map((c) => (c as { id?: string }).id));
               const extraChunks = trefwoordMatches.filter((c) => !aanwezig.has(c.id)).slice(0, TREFWOORD_AANVULLING);
+              // Punt 3: daarna hooguit HERSCHRIJF_AANVULLING stukken uit het zoeken
+              // met de herschreven vraag die er nog niet bij zitten.
+              for (const c of extraChunks) aanwezig.add(c.id);
+              const aantalVraag = extraChunks.length;
+              extraChunks.push(...herschrijfMatches.filter((c) => !aanwezig.has(c.id)).slice(0, HERSCHRIJF_AANVULLING));
               if (extraChunks.length > 0) {
                 const nieuweDocIds = [...new Set(extraChunks.map((c) => c.document_id))].filter((id) => !metaMap.has(id));
                 if (nieuweDocIds.length > 0) {
@@ -3345,8 +3411,8 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 }
                 werkChunks = [...werkChunks, ...extraChunks];
                 gebruikteDocIds = [...new Set([...gebruikteDocIds, ...extraChunks.map((c) => c.document_id)])];
-                trefwoordAanvulling = extraChunks.map((c) => ({ document_id: c.document_id, similarity: c.similarity }));
-                console.log(`[Chat] Trefwoord-aanvulling: +${extraChunks.length} uit ${extraChunks.map((c) => `"${(metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || c.document_id}"`).join(", ")}`);
+                trefwoordAanvulling = extraChunks.map((c, i) => ({ document_id: c.document_id, similarity: c.similarity, herschreven: i >= aantalVraag }));
+                console.log(`[Chat] Trefwoord-aanvulling: +${aantalVraag} (vraag) +${extraChunks.length - aantalVraag} (herschreven) uit ${extraChunks.map((c) => `"${(metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || c.document_id}"`).join(", ")}`);
               }
 
               const chunkTexts: string[] = [];
@@ -4160,6 +4226,9 @@ ${alleKennisbronnen}`;
           weigering: weigering || undefined,
           proef_aanroepen: proefStops,
           trefwoord_aanvulling: trefwoordAanvulling,
+          zoek_extra_termen: zoekExtraTermen,
+          herschrijf_ms: herschrijfMs,
+          herschrijf_wacht_ms: herschrijfWachtMs,
           trainingen: body.test_trainingen === true ? await bepaalTrainingen() : undefined,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
