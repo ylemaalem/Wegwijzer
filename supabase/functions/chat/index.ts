@@ -3,7 +3,7 @@
 // =============================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -887,8 +887,7 @@ Deno.serve(async (req: Request) => {
     // een testaanroep een ander model kiezen via body.test_model (en de effort
     // van het hoofdantwoord via body.test_effort). Zonder testsleutel is
     // proefModel altijd null.
-    const PROEF_MODELLEN = ["claude-haiku-5-5"];
-    const proefModel: string | null = isTest && PROEF_MODELLEN.includes(body.test_model) ? body.test_model : null;
+    const proefModel: string | null = isTest && TEST_MODELLEN.includes(body.test_model) ? body.test_model : null;
     const proefEffort: string | null = proefModel && ["low", "medium", "high"].includes(body.test_effort) ? body.test_effort : null;
     const actiefModel: string = proefModel || CLAUDE_MODEL;
     const proefStops: Array<Record<string, unknown>> = [];

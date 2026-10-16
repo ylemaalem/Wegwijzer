@@ -6,6 +6,10 @@
 // =============================================
 export const CLAUDE_MODEL = "claude-haiku-5-5"; // terugschakelen naar Haiku 4.5: "claude-haiku-4-5-20251001"
 
+// Modellen die een testaanroep (alleen met de testsleutel) via test_model mag
+// kiezen, zodat je kunt vergelijken zonder het live model om te zetten.
+export const TEST_MODELLEN = ["claude-haiku-5-5", "claude-haiku-4-5-20251001"];
+
 // Leest de antwoordtekst uit een Claude-antwoord op soort ("text") in plaats
 // van op positie. Nieuwere modellen zetten eerst een denkblok vóór de tekst;
 // bij Haiku 4.5 is het eerste blok altijd de tekst, dus daar is de uitkomst

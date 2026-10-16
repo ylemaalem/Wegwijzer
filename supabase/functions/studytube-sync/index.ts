@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLAUDE_MODEL, claudeTekst, claudeVerzoek } from "../_shared/claude.ts";
+import { CLAUDE_MODEL, TEST_MODELLEN, claudeTekst, claudeVerzoek } from "../_shared/claude.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   const testVerwacht = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
   const isTest = testSleutel.length > 0 && testVerwacht.length > 0 && testSleutel === testVerwacht;
   const testBody = isTest ? await req.json().catch(() => ({})) : {};
-  const model: string = isTest && ["claude-haiku-5-5"].includes(testBody.test_model) ? testBody.test_model : CLAUDE_MODEL;
+  const model: string = isTest && TEST_MODELLEN.includes(testBody.test_model) ? testBody.test_model : CLAUDE_MODEL;
   const testAanroepen: Array<Record<string, unknown>> = [];
 
   const supabaseAdmin = createClient(supabaseUrl, serviceKey);
