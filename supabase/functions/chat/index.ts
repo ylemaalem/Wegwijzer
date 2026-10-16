@@ -138,7 +138,9 @@ const TREFWOORD_AANVULLING = 2;
 // gebruiken (bv. "cliënt" waar het document "inwoner" zegt). De oorspronkelijke
 // vraag zoekt gewoon mee; dit levert hooguit zoveel EXTRA stukken op, bovenop
 // TREFWOORD_AANVULLING (er valt niets weg). 0 = uit.
-const HERSCHRIJF_AANVULLING = 2;
+// Uit sinds 2026-10-16: testset 57/61 met en zonder, dus geen winst, wel
+// ~0,8 s extra wachttijd en ~9% hogere kosten. Bij 0 vindt geen aanroep plaats.
+const HERSCHRIJF_AANVULLING = 0;
 
 type Herkomst = {
   type: "organisatie" | "extern" | "organisatie_extern" | "geen_document";
