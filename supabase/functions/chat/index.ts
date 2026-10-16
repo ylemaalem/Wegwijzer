@@ -119,6 +119,10 @@ const META_VERVOLG_PATROON = /^(zoek|kijk|probeer|check|controleer)\b|^(ja|nee|e
 // samenvoeging verbergt een apart kennisgat.
 const KENNISKLOOF_CLUSTER_DREMPEL = 0.70;
 
+// Melding voor de medewerker als het model een vraag weigert (stop_reason
+// "refusal"). Nieuwere modellen hebben veiligheidsfilters die dat kunnen doen.
+const WEIGER_MELDING = "Op deze vraag kan ik helaas geen antwoord geven. Gaat het om een concrete situatie? Overleg dan met je teamleider of de bereikbaarheidsdienst. Bij direct gevaar: bel 112.";
+
 // Mappen met externe (sector)documenten i.p.v. eigen beleid. Herkomst wordt per
 // conventie uit de mapnaam afgeleid; vergelijking is hoofdletterongevoelig.
 const EXTERNE_MAPPEN = ["cao"];
@@ -3879,9 +3883,21 @@ ${alleKennisbronnen}`;
       return new Response(JSON.stringify({ error: "AI kon de vraag niet verwerken. Probeer het later opnieuw." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const aiResult = await anthropicResponse.json();
-    telTest(aiResult.usage);
-    const rawAntwoord = claudeTekst(aiResult) || "Geen antwoord ontvangen.";
+    const aiEcht = await anthropicResponse.json();
+    telTest(aiEcht.usage);
+    // Alleen in testmodus: een weigering nabootsen om de afhandeling te testen.
+    const aiResult = isTest && body.test_simuleer_weigering === true
+      ? { ...aiEcht, stop_reason: "refusal", stop_details: { type: "refusal", category: "general_harms" }, content: [] }
+      : aiEcht;
+
+    // ---- 9a. Weigering door het model ----
+    // Bij stop_reason "refusal" krijgt de medewerker een nette melding. Na het
+    // opslaan van het gesprek wordt de weigering vastgelegd in het auditlogboek.
+    const weigering: { categorie: string | null } | null = aiResult.stop_reason === "refusal"
+      ? { categorie: aiResult.stop_details?.category ?? null }
+      : null;
+    if (weigering) console.warn(`[Weigering] model=${actiefModel} categorie=${weigering.categorie}`);
+    const rawAntwoord = weigering ? WEIGER_MELDING : (claudeTekst(aiResult) || "Geen antwoord ontvangen.");
 
     // ---- 9b. Kennisgat-detectie ----
     // Op basis van de RETRIEVAL-staat, niet van de antwoordtekst. Voorheen besliste
@@ -3892,7 +3908,7 @@ ${alleKennisbronnen}`;
     // training) of voor meta-vervolgvragen. Gelijkende meldingen worden samengevoegd.
     const heeftGespreksContext = Array.isArray(clientMessages) && clientMessages.length > 1;
     const isMetaVervolgvraag = heeftGespreksContext && META_VERVOLG_PATROON.test(vraag.trim());
-    if (!isTest && !HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && !isTrainingVraag && !isMetaVervolgvraag) {
+    if (!isTest && !weigering && !HEEFT_KENNISBANK_MATCH && !vraagtBron && !isSparringRequest && !isTeamVraag && !isTrainingVraag && !isMetaVervolgvraag) {
       supabaseAdmin.rpc("registreer_kenniskloof", {
         p_tenant_id: profile.tenant_id,
         p_onderwerp: vraag.trim(),
@@ -3932,7 +3948,7 @@ ${alleKennisbronnen}`;
 
     // Herkomstlabel: niet bij routes die niet uit de kennisbank putten (bronvraag
     // beantwoordt zelf met documentnamen, sparring en team-query hebben eigen bronnen).
-    const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag;
+    const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag && !weigering;
     const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
 
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
@@ -3954,6 +3970,7 @@ ${alleKennisbronnen}`;
           latency_ms: Date.now() - testStart,
           model: actiefModel,
           effort: proefEffort,
+          weigering: weigering || undefined,
           proef_aanroepen: proefModel ? proefStops : undefined,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -3976,6 +3993,14 @@ ${alleKennisbronnen}`;
       .single();
 
     if (convError) console.error("Conversation opslaan mislukt:", convError);
+
+    if (weigering) {
+      await logAuditEvent(
+        supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+        "MODEL_WEIGERING", "conversation", conversation?.id || null,
+        { categorie: weigering.categorie, model: actiefModel },
+      );
+    }
 
     // ---- 9b. Last online — adoptiesignaal voor teamleider ----
     const updateFields: Record<string, unknown> = { laatste_actief: new Date().toISOString() };
@@ -4027,7 +4052,7 @@ ${alleKennisbronnen}`;
       "kan ik je hier niet mee helpen",
     ];
     const antwoordLower = antwoord.toLowerCase();
-    const antwoordIsInhoudelijk = HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
+    const antwoordIsInhoudelijk = !weigering && HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
     if (!antwoordIsInhoudelijk) {
       console.log(`[StudyTube] Overgeslagen: antwoord niet inhoudelijk (kennisbank_match=${HEEFT_KENNISBANK_MATCH})`);
     }
@@ -4120,7 +4145,7 @@ ${alleKennisbronnen}`;
     }
 
     // ---- 11. Response cache write (na StudyTube zodat trainingen beschikbaar zijn) ----
-    if (!skipCache && vraagHash && antwoord && antwoord !== "Geen antwoord ontvangen." && antwoord.trim().length > 0) {
+    if (!skipCache && !weigering && vraagHash && antwoord && antwoord !== "Geen antwoord ontvangen." && antwoord.trim().length > 0) {
       try {
         const isCAOVraag = WEBSITE_TRIGGERS.some(t => vraag.toLowerCase().includes(t.toLowerCase()))
           || vraag.toLowerCase().includes("cao")
