@@ -3863,52 +3863,37 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Opslaan...';
 
-      // Check of functiegroep is gewijzigd — log in functie_historie
-      var huidigProfiel = allProfiles.find(function (pr) { return pr.id === profileId; });
-      if (huidigProfiel && huidigProfiel.functiegroep && huidigProfiel.functiegroep !== functiegroep) {
-        // Log functiewijziging
-        try {
-          await supabaseClient.from('functie_historie').insert({
-            profile_id: profileId,
-            vorige_functie: huidigProfiel.functiegroep,
-            nieuwe_functie: functiegroep,
-            gewijzigd_op: new Date().toISOString()
-          });
-        } catch (e) { /* functie_historie tabel bestaat mogelijk niet */ }
-        // Rol-wissel: sla oude functie op en reset gezien-status
-        updateData.vorige_functiegroep = huidigProfiel.functiegroep;
-        updateData.rolwissel_gezien = false;
-      }
+      // try/finally: de knop komt altijd weer vrij, ook bij een onverwachte fout.
+      try {
+        // Bouw update object — sla alleen niet-lege velden op
+        var updateData = { naam: naam, functiegroep: functiegroep };
+        if (nieuwEmail) updateData.email = nieuwEmail;
+        if (startdatum) updateData.startdatum = startdatum;
+        if (inwerktrajectUrl !== undefined) updateData.inwerktraject_url = inwerktrajectUrl || null;
+        if (werkuren !== undefined) updateData.werkuren = werkuren || null;
+        if (accountType) updateData.account_type = accountType;
+        if (einddatum !== undefined) updateData.einddatum = einddatum || null;
+        if (teams.length > 0) updateData.teams = teams;
+        if (teamleiderNaam !== undefined) updateData.teamleider_naam = teamleiderNaam || null;
+        // Optionele kolommen — alleen toevoegen als ze bestaan
+        try { updateData.afdeling = afdeling || null; } catch(e) {}
+        try { updateData.inwerktraject_actief = document.getElementById('edit-inwerktraject-actief').checked; } catch(e) {}
 
-      // Bouw update object — sla alleen niet-lege velden op
-      var updateData = { naam: naam, functiegroep: functiegroep };
-      if (nieuwEmail) updateData.email = nieuwEmail;
-      if (startdatum) updateData.startdatum = startdatum;
-      if (inwerktrajectUrl !== undefined) updateData.inwerktraject_url = inwerktrajectUrl || null;
-      if (werkuren !== undefined) updateData.werkuren = werkuren || null;
-      if (accountType) updateData.account_type = accountType;
-      if (einddatum !== undefined) updateData.einddatum = einddatum || null;
-      if (teams.length > 0) updateData.teams = teams;
-      if (teamleiderNaam !== undefined) updateData.teamleider_naam = teamleiderNaam || null;
-      // Optionele kolommen — alleen toevoegen als ze bestaan
-      try { updateData.afdeling = afdeling || null; } catch(e) {}
-      try { updateData.inwerktraject_actief = document.getElementById('edit-inwerktraject-actief').checked; } catch(e) {}
+        console.log('[Edit] Update data:', JSON.stringify(updateData));
+        // Bij een gewijzigde functiegroep ook rolwissel + functie_historie
+        // (pas na een geslaagde update), zie js/medewerker-opslaan.js.
+        var opslag = await window.WegwijzerMedewerker.slaMedewerkerOp(supabaseClient, profileId, updateData);
+        console.log('[Edit] Result:', opslag.fout ? 'FOUT: ' + opslag.fout : 'OK', opslag.functiegroepGewijzigd ? '(functiegroep gewijzigd)' : '');
 
-      console.log('[Edit] Update data:', JSON.stringify(updateData));
-      var result = await supabaseClient
-        .from('profiles')
-        .update(updateData)
-        .eq('id', profileId);
+        if (opslag.fout) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Opslaan mislukt: ' + opslag.fout;
+          return;
+        }
 
-      console.log('[Edit] Result:', result.error ? 'FOUT: ' + result.error.message : 'OK, status: ' + result.status);
-
-      if (result.error) {
-        alertBox.className = 'alert alert-error show';
-        alertMsg.textContent = 'Opslaan mislukt: ' + result.error.message;
-      } else {
         // Update ook auth.users metadata via Edge Function
-        var huidigProfiel2 = allProfiles.find(function (pr) { return pr.id === profileId; });
-        if (huidigProfiel2 && huidigProfiel2.user_id) {
+        var huidigProfiel = allProfiles.find(function (pr) { return pr.id === profileId; });
+        if (huidigProfiel && huidigProfiel.user_id) {
           try {
             var session = await supabaseClient.auth.getSession();
             var token = session.data.session.access_token;
@@ -3917,7 +3902,7 @@
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
               body: JSON.stringify({
                 update_user_meta: true,
-                update_user_id: huidigProfiel2.user_id,
+                update_user_id: huidigProfiel.user_id,
                 user_metadata: { naam: naam, functiegroep: functiegroep }
               })
             });
@@ -3927,16 +3912,26 @@
           }
         }
 
-        alertBox.className = 'alert alert-success show';
-        alertMsg.textContent = 'Medewerker bijgewerkt.';
         await loadMedewerkers();
-        setTimeout(function () {
-          modal.classList.remove('show');
-        }, 1500);
+        if (opslag.historieFout) {
+          // Modal blijft open zodat de waarschuwing gelezen kan worden.
+          alertBox.className = 'alert alert-warning show';
+          alertMsg.textContent = 'Medewerker bijgewerkt, maar de functiewijziging is niet in de functiehistorie vastgelegd: ' + opslag.historieFout;
+        } else {
+          alertBox.className = 'alert alert-success show';
+          alertMsg.textContent = 'Medewerker bijgewerkt.';
+          setTimeout(function () {
+            modal.classList.remove('show');
+          }, 1500);
+        }
+      } catch (err) {
+        console.error('[Edit] Opslaan mislukt:', err);
+        alertBox.className = 'alert alert-error show';
+        alertMsg.textContent = 'Opslaan mislukt: ' + (err && err.message ? err.message : String(err));
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Opslaan';
       }
-
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Opslaan';
     });
   })();
 
