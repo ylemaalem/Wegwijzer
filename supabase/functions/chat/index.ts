@@ -39,6 +39,12 @@ const WEBSITE_TRIGGERS = [
   "contract", "proeftijd", "ontslag"
 ];
 
+// Antwoordcache (tabel response_cache). Uit sinds 2026-10-17: in zes maanden
+// geen enkele treffer voor echte medewerkers, terwijl de sleutel geen model,
+// instructies of gespreksgeschiedenis kent (risico op verouderde antwoorden).
+// Bij false wordt de cache niet gelezen en niet geschreven; de tabel blijft.
+const ANTWOORD_CACHE_AAN = false;
+
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
 const PERSOONLIJKE_WOORDEN = [
@@ -3039,7 +3045,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isFeitVraag = FEIT_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t))
       || /\b\d{1,2}[:.]\d{2}\b/.test(vraag)
       || /\b(hoeveel|hoe\s?laat|wanneer|welke?\s+(tijd|dag|datum|nummer|bedrag|prijs|kosten))\b/i.test(vraag);
-    const skipCache = isTest
+    const skipCache = !ANTWOORD_CACHE_AAN
+      || isTest
       || PERSOONLIJKE_WOORDEN.some(w => vraag.toLowerCase().includes(w))
       || vraag.length < 10
       || isSparringRequest
