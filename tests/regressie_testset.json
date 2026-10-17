@@ -1,7 +1,7 @@
 {
  "versie": "2026-10-17",
  "tenant": "AHMN",
- "toelichting": "71 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle.",
+ "toelichting": "72 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
  "aanname_kosten": {
   "model": "claude-haiku-4-5-20251001",
   "prijs_input_per_mln_usd": 1.0,
@@ -1384,6 +1384,37 @@
    "zeker": true,
    "actief": true,
    "let_op": "Geen kernfeiten: fout als de tekst zegt dat er geen training is terwijl er trainingen onder staan of aan het model zijn meegegeven, of als de tekst naar trainingen 'hieronder' verwijst terwijl er geen staan."
+  },
+  {
+   "id": 73,
+   "categorie": "salaris",
+   "vraag": "Wat verdient een ambulant begeleider (FWG 35) in de hoogste trede?",
+   "functiegroep": "ambulant_persoonlijk_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.635",
+     "3635"
+    ],
+    [
+     "3.708",
+     "3708"
+    ]
+   ],
+   "min_treffers": 2,
+   "verboden": [
+    "niet fwg 35",
+    "geen fwg 35",
+    "niet in fwg 35",
+    "niet ingeschaald in fwg 35",
+    "valt niet onder fwg 35",
+    "hoort niet bij fwg 35"
+   ],
+   "bron": "CAO_H4_Salariering_FWG.pdf (stuk 6: per 1 mei 2026 FWG 35 trede 12 = 3.635; stuk 7: per 1 november 2026 = 3.708)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Profielregel: profiel = ambulant persoonlijk begeleider (FWG 40), vraag gaat over FWG 35; de bot mag een neutrale zin toevoegen maar de vraagsteller niet verbeteren (verboden). Na 1 november 2026 bijwerken: dan geldt 3.708 en staat er geen volgende wijziging meer in de tabellen."
   }
  ]
 }

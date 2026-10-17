@@ -981,7 +981,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: vragen } = await supabaseAdmin
         .from("regressie_vragen")
-        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle")
+        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle, verboden")
         .eq("tenant_id", runTenant)
         .eq("actief", true)
         .order("id");
@@ -998,7 +998,7 @@ Deno.serve(async (req: Request) => {
       // controle "trainingen": fout als de tekst zegt dat er geen training is terwijl er
       // trainingen onder staan of aan het model zijn meegegeven, of als de tekst naar
       // trainingen "hieronder" verwijst terwijl er geen staan.
-      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string; controle: string | null };
+      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string; controle: string | null; verboden: string[] | null };
 
       // Supabase begrenst aanroepen van functies binnen één trace ("Rate limit
       // exceeded for trace … Retry after Nms"). Dat is geen fout van de bot:
@@ -1046,10 +1046,14 @@ Deno.serve(async (req: Request) => {
             ok = (groepen.length === 0 || ok) && !tegenspraak;
             trainingControle = { getoond, vooraf, zegt_geen_training: zegtGeen, verwijst_naar_hieronder: verwijst, vangnet: !!r.trainingen_vangnet, tegenspraak };
           }
+          // Verboden zinnen (bv. een correctie van de vraagsteller) maken de vraag fout.
+          const verbodenGevonden = (Array.isArray(v.verboden) ? v.verboden : []).filter((z) => antwoordLower.includes(String(z).toLowerCase()));
+          if (verbodenGevonden.length > 0) ok = false;
           return {
             id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
             treffers: v.controle === "trainingen" && groepen.length === 0 ? "n.v.t." : `${aantal}/${nodig}`,
             training_controle: trainingControle,
+            verboden_gevonden: verbodenGevonden.length > 0 ? verbodenGevonden : undefined,
             gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
             antwoord_fragment: (r.antwoord || "").substring(0, 200),
@@ -4075,7 +4079,7 @@ ALGEMEEN:
 - Baseer je antwoorden op de PERSOONLIJKE GEGEVENS hierboven en de KENNISBRONNEN hieronder. Verzin geen informatie.
 - Bij vragen over het eigen profiel (werkuren, team, leidinggevende, startdatum): gebruik de persoonlijke gegevens om DIRECT antwoord te geven.
 - Als het antwoord niet in de kennisbronnen staat EN het geen algemeen zorgbegrip is: verwijs naar de leidinggevende.
-- Pas je antwoorden aan op de functiegroep van de medewerker.
+- Pas je antwoorden aan op de functiegroep van de medewerker. Uitzondering: noemt de medewerker zelf een functie of functiegroep (bijvoorbeeld "ambulant begeleider" of "FWG 35"), beantwoord de vraag dan voor díe functie. Je mag één neutrale zin toevoegen als die functie afwijkt van de profielfunctie, bijvoorbeeld: "Je vroeg naar FWG 35 (ambulant begeleider). Jouw profielfunctie valt onder FWG 40." Verbeter of corrigeer de medewerker daarbij niet.
 - Houd antwoorden beknopt en praktisch. Gebruik opsommingstekens waar handig. Gebruik **vetgedrukte kopjes**.
 - FORMATTING: Gebruik NOOIT lege regels tussen gewone zinnen. Bullets alleen bij echte opsommingen. GEEN lege regel tussen bullets.
 - Verwerk NOOIT persoonsgegevens van cliënten.
