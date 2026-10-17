@@ -4,6 +4,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
+import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,11 +40,9 @@ const WEBSITE_TRIGGERS = [
   "contract", "proeftijd", "ontslag"
 ];
 
-// Trainingen: herkent een antwoord dat zegt dat er geen training is ("geen
-// specifieke training", "geen cursus") en een antwoord dat naar trainingen
-// onder het antwoord verwijst. Gebruikt door het vangnet na het antwoord en
-// door de regressietest (controle "trainingen").
-const GEEN_TRAINING_PATROON = /\bgeen\s+(?:\w+\s+){0,2}(?:training|trainingen|cursus|cursussen|e-learning|opleiding|opleidingen)\b/i;
+// Trainingen: herkent een antwoord dat naar trainingen onder het antwoord
+// verwijst. Gebruikt door de regressietest (controle "trainingen"); de zinnen
+// zelf worden afgestemd in _shared/trainingzinnen.ts.
 const VERWIJST_NAAR_TRAININGEN_PATROON = /(hieronder|onder dit antwoord|onderaan)[^\n.]{0,80}(training|cursus|opleiding)|(training|cursus|opleiding)[^\n.]{0,80}(hieronder|onder dit antwoord|onderaan)/i;
 
 // Antwoordcache (tabel response_cache). Uit sinds 2026-10-17: in zes maanden
@@ -1042,13 +1041,21 @@ Deno.serve(async (req: Request) => {
           let ok = groepen.length > 0 && aantal >= nodig;
           let trainingControle: Record<string, unknown> | undefined;
           if (v.controle === "trainingen") {
+            // Fout (besluit 2026-10-17): gevonden trainingen niet getoond; met blok
+            // een "geen training"-zin zonder documentbron of de systeemzin ontbreekt;
+            // zonder blok een verwijzing naar trainingen onder het antwoord.
+            // "In de documenten staat geen specifieke training" mag wel.
+            const tekst = r.antwoord || "";
             const getoond = Array.isArray(r.trainingen) ? r.trainingen.length : 0;
             const vooraf = Array.isArray(r.trainingen_vooraf) ? r.trainingen_vooraf.length : 0;
-            const zegtGeen = GEEN_TRAINING_PATROON.test(r.antwoord || "");
-            const verwijst = VERWIJST_NAAR_TRAININGEN_PATROON.test(r.antwoord || "");
-            const tegenspraak = (zegtGeen && (getoond > 0 || vooraf > 0)) || (verwijst && getoond === 0);
+            const geenZinnen = algemeneGeenTrainingZinnen(tekst);
+            const verwijst = VERWIJST_NAAR_TRAININGEN_PATROON.test(tekst);
+            const systeemzin = tekst.includes(TRAININGEN_ZIN);
+            const tegenspraak = (vooraf > 0 && getoond === 0)
+              || (getoond > 0 && (geenZinnen.length > 0 || !systeemzin))
+              || (getoond === 0 && verwijst);
             ok = (groepen.length === 0 || ok) && !tegenspraak;
-            trainingControle = { getoond, vooraf, zegt_geen_training: zegtGeen, verwijst_naar_hieronder: verwijst, vangnet: !!r.trainingen_vangnet, tegenspraak };
+            trainingControle = { getoond, vooraf, geen_training_zinnen: geenZinnen, verwijst_naar_hieronder: verwijst, systeemzin, zinnen: r.trainingen_zinnen, tegenspraak };
           }
           // Verboden zinnen (bv. een correctie van de vraagsteller) maken de vraag fout.
           const verbodenGevonden = (Array.isArray(v.verboden) ? v.verboden : []).filter((z) => antwoordLower.includes(String(z).toLowerCase()));
@@ -4130,12 +4137,21 @@ GEEF NU EEN CONCREET, PRAKTISCH ADVIES op basis van deze 3 antwoorden en de KENN
     // Trainingen voor het antwoord: zoals voorheen alleen bij een kennisbankmatch,
     // behalve als de vraag zelf over een training gaat (dan is het leerplatform de bron).
     const trainingenVooraf: Training[] = (HEEFT_KENNISBANK_MATCH || isTrainingVraag) ? await trainingenPromise : [];
+    // Twee bronnen voor trainingen: de documenten (kennisbronnen) en StudyTube
+    // (deze lijst). Het model noemt bij elke uitspraak over trainingen de bron; de
+    // zin dat er trainingen onder het antwoord staan zet het systeem er zelf bij
+    // (verwerkTrainingZinnen in _shared/trainingzinnen.ts).
     const trainingBlok = trainingenVooraf.length > 0
-      ? `TRAININGEN ONDER DIT ANTWOORD:
-Onder je antwoord toont het systeem deze trainingen uit het leerplatform van de organisatie:
+      ? `TRAININGEN UIT STUDYTUBE:
+In StudyTube zijn deze trainingen gevonden. Het systeem toont ze onder je antwoord, met een eigen zin dat ze daar staan:
 ${trainingenVooraf.map((t) => `- ${t.naam}${t.duur_minuten ? ` (${t.duur_minuten} min)` : ""}`).join("\n")}
-Spreek dit nooit tegen: zeg dus niet dat er geen training of cursus over dit onderwerp is. Herhaal de lijst niet in je tekst. Je mag er in één korte zin naar verwijzen, bijvoorbeeld: "Onder dit antwoord staan trainingen die hierbij passen."`
-      : `TRAININGEN: onder dit antwoord staan GEEN trainingen. Verwijs dus niet naar trainingen of opleidingen "hieronder" of "onder dit antwoord". Vraagt de medewerker naar een training of cursus, zeg dan dat je in het leerplatform geen passende training hebt gevonden en dat de leidinggevende kan helpen met het opleidingsaanbod.`;
+- Schrijf zelf geen zin dat er trainingen onder of hieronder staan, en herhaal de lijst niet.
+- Zeg nooit dat er geen training is of dat er in StudyTube geen training is: die zijn er wél.
+- Zeg je iets over trainingen, noem dan steeds de bron: "in de documenten" (de kennisbronnen) of "in StudyTube" (deze lijst). Bijvoorbeeld: "In de documenten staat geen aparte training over Wlz-indicaties."`
+      : `TRAININGEN: in StudyTube is voor deze vraag geen passende training gevonden; onder je antwoord staan geen trainingen.
+- Schrijf dus niet dat er trainingen onder of hieronder staan.
+- Vraagt de medewerker naar een training of cursus, zeg dan dat je in StudyTube geen passende training hebt gevonden en dat de leidinggevende kan helpen met het opleidingsaanbod.
+- Zeg je iets over trainingen, noem dan steeds de bron: "in de documenten" (de kennisbronnen) of "in StudyTube".`;
 
     const vandaagNl = new Date().toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Amsterdam" });
     const salarisBlok = isVerdienVraag ? `
@@ -4253,7 +4269,7 @@ Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
 ${salarisBlok}
 
 STUDYTUBE IN JE ANTWOORD:
-Noem StudyTube of app.studytube.nl niet zelf en verwijs niet naar zoektermen op StudyTube. Welke trainingen onder je antwoord staan, staat hieronder.
+Noem app.studytube.nl niet en verwijs niet naar zoektermen op StudyTube. StudyTube noem je alleen als bron bij een uitspraak over trainingen. Welke trainingen onder je antwoord staan, staat hieronder.
 
 ${trainingBlok}
 
@@ -4339,6 +4355,21 @@ ${alleKennisbronnen}`;
       antwoord = antwoord.trimEnd();
     }
 
+    // ---- 9d. Trainingen onder het antwoord ----
+    // De trainingen zijn vóór het antwoord gezocht (trainingenVooraf) en aan het
+    // model meegegeven. Gevonden trainingen worden altijd getoond (behalve bij een
+    // weigering). De tekst wordt erop afgestemd: eigen verwijzingen van het model
+    // eruit, een "geen training"-zin zonder documentbron vervangen, en de zin dat er
+    // trainingen onder staan zet het systeem er zelf bij (alleen met blok).
+    const trainingen: Training[] = weigering ? [] : trainingenVooraf;
+    let trainingenZinnen: TrainingZinnen | null = null;
+    if (!weigering) {
+      trainingenZinnen = verwerkTrainingZinnen(antwoord, trainingen.map((t) => t.naam));
+      antwoord = trainingenZinnen.tekst;
+      if (trainingenZinnen.vervangen > 0) console.warn(`[StudyTube] ${trainingenZinnen.vervangen} "geen training"-zin(nen) vervangen`);
+      if (trainingen.length > 0) console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
+    }
+
     // ---- 9. Gesprek opslaan — naam strippen uit DB-antwoord (privacy)
     // De medewerker zelf ziet de naam wél in de UI (rawAntwoord/antwoord
     // worden teruggegeven), maar in conversations.antwoord staat altijd
@@ -4354,46 +4385,6 @@ ${alleKennisbronnen}`;
     // beantwoordt zelf met documentnamen, sparring en team-query hebben eigen bronnen).
     const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag && !weigering;
     const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
-
-    // ---- 10. Trainingsuggesties: vangnet na het antwoord ----
-    // De trainingen zijn vóór het antwoord gezocht (trainingenVooraf) en aan het
-    // model meegegeven. Hier alleen nog: geen blok bij een weigering; geen blok als
-    // het antwoord tóch zegt dat er geen training is (vangnet: liever geen blok dan
-    // tegenspraak); en zoals voorheen geen blok onder een "niets gevonden"-antwoord,
-    // tenzij dat antwoord zelf naar de trainingen verwijst.
-    // "controleer dit bij je leidinggevende" staat bewust niet in geenInfoZinnen: die
-    // zin staat ook onder inhoudelijke antwoorden. Een echt "niets gevonden"-antwoord
-    // ("Ik vind hier geen specifieke informatie … controleer dit bij je
-    // leidinggevende") wordt al herkend aan het eerste deel.
-    const geenInfoZinnen = [
-      "ik vind geen informatie",
-      "ik vind hier geen informatie",
-      "ik vind hier geen specifieke informatie",
-      "staat niet in de kennisbank",
-      "niet in onze documenten",
-      "niet in de kennisbank",
-      "geen relevante informatie",
-      "geen specifieke informatie",
-      "raad ik aan dit na te vragen",
-      "neem contact op met je leidinggevende",
-      "kan ik je hier niet mee helpen",
-    ];
-    let trainingenVangnet = false;
-    const trainingen: Training[] = (() => {
-      if (weigering || trainingenVooraf.length === 0) return [];
-      if (GEEN_TRAINING_PATROON.test(antwoord)) {
-        trainingenVangnet = true;
-        console.warn("[StudyTube] Vangnet: antwoord zegt dat er geen training is — blok niet getoond");
-        return [];
-      }
-      const antwoordLower = antwoord.toLowerCase();
-      if (geenInfoZinnen.some((z) => antwoordLower.includes(z)) && !VERWIJST_NAAR_TRAININGEN_PATROON.test(antwoord)) {
-        console.log("[StudyTube] Overgeslagen: antwoord niet inhoudelijk");
-        return [];
-      }
-      console.log("[StudyTube] Getoond:", trainingenVooraf.map((t) => t.naam).join(", "));
-      return trainingenVooraf;
-    })();
 
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
     if (isTest) {
@@ -4418,7 +4409,7 @@ ${alleKennisbronnen}`;
           herschrijf_wacht_ms: herschrijfWachtMs,
           trainingen,
           trainingen_vooraf: trainingenVooraf,
-          trainingen_vangnet: trainingenVangnet,
+          trainingen_zinnen: trainingenZinnen,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
