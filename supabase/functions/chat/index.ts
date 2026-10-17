@@ -39,6 +39,13 @@ const WEBSITE_TRIGGERS = [
   "contract", "proeftijd", "ontslag"
 ];
 
+// Trainingen: herkent een antwoord dat zegt dat er geen training is ("geen
+// specifieke training", "geen cursus") en een antwoord dat naar trainingen
+// onder het antwoord verwijst. Gebruikt door het vangnet na het antwoord en
+// door de regressietest (controle "trainingen").
+const GEEN_TRAINING_PATROON = /\bgeen\s+(?:\w+\s+){0,2}(?:training|trainingen|cursus|cursussen|e-learning|opleiding|opleidingen)\b/i;
+const VERWIJST_NAAR_TRAININGEN_PATROON = /(hieronder|onder dit antwoord|onderaan)[^\n.]{0,80}(training|cursus|opleiding)|(training|cursus|opleiding)[^\n.]{0,80}(hieronder|onder dit antwoord|onderaan)/i;
+
 // Antwoordcache (tabel response_cache). Uit sinds 2026-10-17: in zes maanden
 // geen enkele treffer voor echte medewerkers, terwijl de sleutel geen model,
 // instructies of gespreksgeschiedenis kent (risico op verouderde antwoorden).
@@ -974,7 +981,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: vragen } = await supabaseAdmin
         .from("regressie_vragen")
-        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron")
+        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle")
         .eq("tenant_id", runTenant)
         .eq("actief", true)
         .order("id");
@@ -988,7 +995,10 @@ Deno.serve(async (req: Request) => {
       let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0, kostenTotaal = 0;
       // kernfeit_groepen: elke groep = één feit met alleen schrijfvarianten van dat feit.
       // min_treffers: hoeveel groepen gevonden moeten worden (null = alle groepen).
-      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string };
+      // controle "trainingen": fout als de tekst zegt dat er geen training is terwijl er
+      // trainingen onder staan of aan het model zijn meegegeven, of als de tekst naar
+      // trainingen "hieronder" verwijst terwijl er geen staan.
+      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string; controle: string | null };
 
       // Supabase begrenst aanroepen van functies binnen één trace ("Rate limit
       // exceeded for trace … Retry after Nms"). Dat is geen fout van de bot:
@@ -1025,10 +1035,21 @@ Deno.serve(async (req: Request) => {
           const gevonden = groepen.map((g) => g.some((k) => antwoordLower.includes(k.toLowerCase())));
           const nodig = v.min_treffers ?? groepen.length;
           const aantal = gevonden.filter(Boolean).length;
-          const ok = groepen.length > 0 && aantal >= nodig;
+          let ok = groepen.length > 0 && aantal >= nodig;
+          let trainingControle: Record<string, unknown> | undefined;
+          if (v.controle === "trainingen") {
+            const getoond = Array.isArray(r.trainingen) ? r.trainingen.length : 0;
+            const vooraf = Array.isArray(r.trainingen_vooraf) ? r.trainingen_vooraf.length : 0;
+            const zegtGeen = GEEN_TRAINING_PATROON.test(r.antwoord || "");
+            const verwijst = VERWIJST_NAAR_TRAININGEN_PATROON.test(r.antwoord || "");
+            const tegenspraak = (zegtGeen && (getoond > 0 || vooraf > 0)) || (verwijst && getoond === 0);
+            ok = (groepen.length === 0 || ok) && !tegenspraak;
+            trainingControle = { getoond, vooraf, zegt_geen_training: zegtGeen, verwijst_naar_hieronder: verwijst, vangnet: !!r.trainingen_vangnet, tegenspraak };
+          }
           return {
             id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
-            treffers: `${aantal}/${nodig}`,
+            treffers: v.controle === "trainingen" && groepen.length === 0 ? "n.v.t." : `${aantal}/${nodig}`,
+            training_controle: trainingControle,
             gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
             antwoord_fragment: (r.antwoord || "").substring(0, 200),
@@ -3288,9 +3309,100 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
         .finally(() => { herschrijfMs = Date.now() - herschrijfStart; })
       : Promise.resolve("");
 
-    if (openaiKeyForChat && !vraagtBron) {
-      gedeeldeQueryEmbedding = await generateEmbedding(vraag, openaiKeyForChat);
-    }
+    const embeddingPromise: Promise<number[] | null> = (openaiKeyForChat && !vraagtBron)
+      ? generateEmbedding(vraag, openaiKeyForChat)
+      : Promise.resolve(null);
+
+    // ---- Trainingsuggesties (StudyTube): vóór het antwoord ----
+    // Gezocht op basis van de vraag alleen, tegelijk met het zoeken in de
+    // kennisbank. Het model krijgt de gevonden trainingen mee (trainingBlok), zodat
+    // de tekst en het trainingsblok onder het antwoord elkaar niet tegenspreken.
+    // De relevantiecheck geldt ook als de medewerker zelf naar een training vraagt:
+    // zonder die check krijgt "training over declareren" losse treffers als
+    // "Finance voor beginners".
+    type Training = { naam: string; duur_minuten: number | null };
+    const zoekTrainingen = async (): Promise<Training[]> => {
+      let trainingRelevant = false;
+      try {
+        const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: actiefModel,
+            max_tokens: 5,
+            messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
+          }),
+        });
+        if (relRes.ok) {
+          const relData = await relRes.json();
+          const relAntwoord = (claudeTekst(relData) || "").trim().toUpperCase();
+          trainingRelevant = relAntwoord.startsWith("JA");
+          console.log("[StudyTube] Relevantie-check:", relAntwoord);
+        }
+      } catch (e) { console.log("[StudyTube] Relevantie-check fout:", e); }
+      if (!trainingRelevant) {
+        console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
+        return [];
+      }
+      // Gebruik gedeelde embedding — zoektermen niet meer nodig
+      const queryEmbedding = await embeddingPromise;
+      if (!queryEmbedding) {
+        console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
+        return [];
+      }
+      const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+        query_embedding: JSON.stringify(queryEmbedding),
+        tenant_id_input: profile.tenant_id,
+        match_count: 10,
+        match_threshold: 0.35,
+      });
+      if (rpcErr) {
+        console.error("[StudyTube] RPC fout:", rpcErr.message);
+        return [];
+      }
+      if (!topCursussen || topCursussen.length === 0) {
+        console.log("[StudyTube] Geen embedding matches boven threshold");
+        return [];
+      }
+      console.log("[StudyTube] Embedding top-10:", topCursussen.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
+
+      // Laat Haiku de 3 meest relevante selecteren
+      let gekozen: Training[] = [];
+      const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
+      try {
+        const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: actiefModel,
+            max_tokens: 20,
+            messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
+          }),
+        });
+        if (selectRes.ok) {
+          const selectData = await selectRes.json();
+          const selectie = (claudeTekst(selectData) || "").trim().toLowerCase();
+          console.log("[StudyTube] Haiku selectie:", selectie);
+          if (selectie !== "geen") {
+            const nummers = selectie.match(/\d+/g);
+            if (nummers) {
+              gekozen = nummers
+                .map((n: string) => parseInt(n, 10) - 1)
+                .filter((i: number) => i >= 0 && i < topCursussen.length)
+                .slice(0, 3)
+                .map((i: number) => ({ naam: topCursussen[i].naam, duur_minuten: topCursussen[i].duur_minuten }));
+            }
+          }
+        }
+      } catch (e) { console.warn("[StudyTube] Haiku selectie fout:", e); }
+      if (gekozen.length > 0) console.log("[StudyTube] Gevonden:", gekozen.map((t) => t.naam).join(", "));
+      return gekozen;
+    };
+    const trainingenPromise: Promise<Training[]> = (!vraagtBron && anthropicApiKey)
+      ? zoekTrainingen().catch((e) => { console.error("[StudyTube] Exception:", e); return []; })
+      : Promise.resolve([]);
+
+    gedeeldeQueryEmbedding = await embeddingPromise;
 
     // ---- Primair: vector similarity search via pgvector ----
     if (openaiKeyForChat && !vraagtBron) {
@@ -3900,6 +4012,16 @@ ${(ctx[2] || "").substring(0, 1500)}
 GEEF NU EEN CONCREET, PRAKTISCH ADVIES op basis van deze 3 antwoorden en de KENNISBRONNEN hieronder. Verwijs naar relevante protocollen of documenten waar van toepassing. STEL GEEN VRAGEN MEER. Geef direct een handelingsadvies in 3 tot 5 concrete stappen of bullets. Houd de privacy van de cliënt strikt in acht — gebruik geen namen, ook als de medewerker er per ongeluk eentje noemde.`;
     }
 
+    // Trainingen voor het antwoord: zoals voorheen alleen bij een kennisbankmatch,
+    // behalve als de vraag zelf over een training gaat (dan is het leerplatform de bron).
+    const trainingenVooraf: Training[] = (HEEFT_KENNISBANK_MATCH || isTrainingVraag) ? await trainingenPromise : [];
+    const trainingBlok = trainingenVooraf.length > 0
+      ? `TRAININGEN ONDER DIT ANTWOORD:
+Onder je antwoord toont het systeem deze trainingen uit het leerplatform van de organisatie:
+${trainingenVooraf.map((t) => `- ${t.naam}${t.duur_minuten ? ` (${t.duur_minuten} min)` : ""}`).join("\n")}
+Spreek dit nooit tegen: zeg dus niet dat er geen training of cursus over dit onderwerp is. Herhaal de lijst niet in je tekst. Je mag er in één korte zin naar verwijzen, bijvoorbeeld: "Onder dit antwoord staan trainingen die hierbij passen."`
+      : `TRAININGEN: onder dit antwoord staan GEEN trainingen. Verwijs dus niet naar trainingen of opleidingen "hieronder" of "onder dit antwoord". Vraagt de medewerker naar een training of cursus, zeg dan dat je in het leerplatform geen passende training hebt gevonden en dat de leidinggevende kan helpen met het opleidingsaanbod.`;
+
     const systemPrompt = `${basisPrompt}${profielInfo}${geheugenContext}${weekContext}${sparringBlock}
 
 INSTRUCTIES:
@@ -4002,11 +4124,10 @@ STUDYTUBE INTEGRATIE:
 Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN (app.studytube.nl). Dit is het officiële leerplatform waar medewerkers zich aanmelden voor trainingen, cursussen, e-learning en intervisie.
 Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
 
-STUDYTUBE VERMELDING VERBOD IN ANTWOORD:
-Noem StudyTube, app.studytube.nl of trainingsaanbod NOOIT zelf in je antwoord. Het systeem toont automatisch relevante trainingen onderaan elk antwoord als die beschikbaar zijn.
-Jouw taak is alleen het inhoudelijke antwoord geven.
-Verwijs ook NIET naar zoektermen op StudyTube — dat doet het systeem.
-Uitzondering: als een medewerker expliciet vraagt of iets op StudyTube staat, dan mag je zeggen dat het systeem trainingen toont als die beschikbaar zijn.
+STUDYTUBE IN JE ANTWOORD:
+Noem StudyTube of app.studytube.nl niet zelf en verwijs niet naar zoektermen op StudyTube. Welke trainingen onder je antwoord staan, staat hieronder.
+
+${trainingBlok}
 
 BRONVERMELDING — Voeg ALTIJD onderaan je antwoord op een nieuwe regel exact één van deze vijf bronlabels toe (volgorde komt overeen met de hiërarchie):
   📄 Bron: [documentnaam] — uit kennisbank
@@ -4106,116 +4227,45 @@ ${alleKennisbronnen}`;
     const toonHerkomst = !vraagtBron && !isSparringRequest && !isTeamVraag && !weigering;
     const herkomst: Herkomst | null = toonHerkomst ? bepaalHerkomst(contextDocs, HEEFT_KENNISBANK_MATCH) : null;
 
-    // ---- 10. Trainingsuggesties (StudyTube) ----
-    // Als functie, zodat de testmodus dezelfde code kan draaien (body.test_trainingen).
-    const bepaalTrainingen = async (): Promise<Array<{ naam: string; duur_minuten: number | null }>> => {
-      // "controleer dit bij je leidinggevende" staat hier bewust niet in: die zin
-      // staat ook onder inhoudelijke antwoorden. Een echt "niets gevonden"-antwoord
-      // ("Ik vind hier geen specifieke informatie … controleer dit bij je
-      // leidinggevende") wordt al herkend aan het eerste deel.
-      const geenInfoZinnen = [
-        "ik vind geen informatie",
-        "ik vind hier geen informatie",
-        "ik vind hier geen specifieke informatie",
-        "staat niet in de kennisbank",
-        "niet in onze documenten",
-        "niet in de kennisbank",
-        "geen relevante informatie",
-        "geen specifieke informatie",
-        "raad ik aan dit na te vragen",
-        "neem contact op met je leidinggevende",
-        "kan ik je hier niet mee helpen",
-      ];
+    // ---- 10. Trainingsuggesties: vangnet na het antwoord ----
+    // De trainingen zijn vóór het antwoord gezocht (trainingenVooraf) en aan het
+    // model meegegeven. Hier alleen nog: geen blok bij een weigering; geen blok als
+    // het antwoord tóch zegt dat er geen training is (vangnet: liever geen blok dan
+    // tegenspraak); en zoals voorheen geen blok onder een "niets gevonden"-antwoord,
+    // tenzij dat antwoord zelf naar de trainingen verwijst.
+    // "controleer dit bij je leidinggevende" staat bewust niet in geenInfoZinnen: die
+    // zin staat ook onder inhoudelijke antwoorden. Een echt "niets gevonden"-antwoord
+    // ("Ik vind hier geen specifieke informatie … controleer dit bij je
+    // leidinggevende") wordt al herkend aan het eerste deel.
+    const geenInfoZinnen = [
+      "ik vind geen informatie",
+      "ik vind hier geen informatie",
+      "ik vind hier geen specifieke informatie",
+      "staat niet in de kennisbank",
+      "niet in onze documenten",
+      "niet in de kennisbank",
+      "geen relevante informatie",
+      "geen specifieke informatie",
+      "raad ik aan dit na te vragen",
+      "neem contact op met je leidinggevende",
+      "kan ik je hier niet mee helpen",
+    ];
+    let trainingenVangnet = false;
+    const trainingen: Training[] = (() => {
+      if (weigering || trainingenVooraf.length === 0) return [];
+      if (GEEN_TRAINING_PATROON.test(antwoord)) {
+        trainingenVangnet = true;
+        console.warn("[StudyTube] Vangnet: antwoord zegt dat er geen training is — blok niet getoond");
+        return [];
+      }
       const antwoordLower = antwoord.toLowerCase();
-      const antwoordIsInhoudelijk = !weigering && HEEFT_KENNISBANK_MATCH && !geenInfoZinnen.some(z => antwoordLower.includes(z));
-      if (!antwoordIsInhoudelijk) {
-        console.log(`[StudyTube] Overgeslagen: antwoord niet inhoudelijk (kennisbank_match=${HEEFT_KENNISBANK_MATCH})`);
+      if (geenInfoZinnen.some((z) => antwoordLower.includes(z)) && !VERWIJST_NAAR_TRAININGEN_PATROON.test(antwoord)) {
+        console.log("[StudyTube] Overgeslagen: antwoord niet inhoudelijk");
+        return [];
       }
-
-      let trainingen: Array<{ naam: string; duur_minuten: number | null }> = [];
-      if (antwoordIsInhoudelijk) {
-      try {
-        // Stap 0: Relevantie-check — is een training zinvol voor deze vraag?
-        let trainingRelevant = false;
-        try {
-          const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({
-              model: actiefModel,
-              max_tokens: 5,
-              messages: [{ role: "user", content: `Is dit een onderwerp waar een training zinvol voor is?\nTrainingen zijn zinvol bij:\n- Vakinhoudelijke thema's (ziektebeelden, doelgroepen, methodieken)\n- Persoonlijke ontwikkeling en vaardigheden\n- Vragen die gaan over HOE je iets doet als zorgprofessional\n  (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)\n\nTrainingen zijn NIET zinvol bij:\n- Systeemvragen (hoe log ik in, hoe installeer ik een app)\n- Administratieve vragen (pauze, verlof, rooster, salaris, declareren)\n- Organisatorische procesvragen (wie bel ik, waar meld ik X)\n\nAntwoord met alleen JA of NEE.\n\nVraag: ${vraag}` }],
-            }),
-          });
-          if (relRes.ok) {
-            const relData = await relRes.json();
-            const antwoord = (claudeTekst(relData) || "").trim().toUpperCase();
-            trainingRelevant = antwoord.startsWith("JA");
-            console.log("[StudyTube] Relevantie-check:", antwoord);
-          }
-        } catch (e) { console.log("[StudyTube] Relevantie-check fout:", e); }
-
-        if (!trainingRelevant) {
-          console.log("[StudyTube] Geen trainingsonderwerp — overgeslagen");
-        } else {
-        // Gebruik gedeelde embedding — zoektermen niet meer nodig
-        const queryEmbedding = gedeeldeQueryEmbedding;
-        if (!queryEmbedding) {
-          console.warn("[StudyTube] Kon geen embedding genereren voor vraag");
-        } else {
-          const { data: topCursussen, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
-            query_embedding: JSON.stringify(queryEmbedding),
-            tenant_id_input: profile.tenant_id,
-            match_count: 10,
-            match_threshold: 0.35,
-          });
-          if (rpcErr) {
-            console.error("[StudyTube] RPC fout:", rpcErr.message);
-          } else if (topCursussen && topCursussen.length > 0) {
-            console.log("[StudyTube] Embedding top-10:", topCursussen.map((c: { naam: string; similarity: number }) => `${c.naam} (${c.similarity.toFixed(3)})`).join(", "));
-
-            // Stap 5: Laat Haiku de 3 meest relevante selecteren
-            const genummerd = topCursussen.map((c: { naam: string; beschrijving: string | null }, i: number) => `${i + 1}. ${c.naam}${c.beschrijving ? ' — ' + c.beschrijving.substring(0, 80) : ''}`).join("\n");
-            try {
-              const selectRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
-                body: JSON.stringify({
-                  model: actiefModel,
-                  max_tokens: 20,
-                  messages: [{ role: "user", content: `Hieronder staan ${topCursussen.length} trainingen. Selecteer maximaal 3 die het meest relevant zijn voor de vraag: "${vraag}"\nGeef alleen de nummers gescheiden door komma's, of "geen" als niets past.\n\n${genummerd}` }],
-                }),
-              });
-              if (selectRes.ok) {
-                const selectData = await selectRes.json();
-                const selectie = (claudeTekst(selectData) || "").trim().toLowerCase();
-                console.log("[StudyTube] Haiku selectie:", selectie);
-                if (selectie !== "geen") {
-                  const nummers = selectie.match(/\d+/g);
-                  if (nummers) {
-                    trainingen = nummers
-                      .map((n: string) => parseInt(n, 10) - 1)
-                      .filter((i: number) => i >= 0 && i < topCursussen.length)
-                      .slice(0, 3)
-                      .map((i: number) => ({ naam: topCursussen[i].naam, duur_minuten: topCursussen[i].duur_minuten }));
-                  }
-                }
-              }
-            } catch (e) { console.warn("[StudyTube] Haiku selectie fout:", e); }
-            if (trainingen.length > 0) {
-              console.log("[StudyTube] Getoond:", trainingen.map((t) => t.naam).join(", "));
-            }
-          } else {
-            console.log("[StudyTube] Geen embedding matches boven threshold");
-          }
-        }
-        } // einde else trainingRelevant
-      } catch (stErr) {
-        console.error("[StudyTube] Exception:", stErr);
-      }
-      } // einde antwoordIsInhoudelijk
-      return trainingen;
-    };
+      console.log("[StudyTube] Getoond:", trainingenVooraf.map((t) => t.naam).join(", "));
+      return trainingenVooraf;
+    })();
 
     // ---- Testmodus: retourneer resultaat + tokenkosten, schrijf NIETS weg ----
     if (isTest) {
@@ -4238,7 +4288,9 @@ ${alleKennisbronnen}`;
           zoek_extra_termen: zoekExtraTermen,
           herschrijf_ms: herschrijfMs,
           herschrijf_wacht_ms: herschrijfWachtMs,
-          trainingen: body.test_trainingen === true ? await bepaalTrainingen() : undefined,
+          trainingen,
+          trainingen_vooraf: trainingenVooraf,
+          trainingen_vangnet: trainingenVangnet,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -4303,9 +4355,7 @@ ${alleKennisbronnen}`;
       }
     }
 
-    // ---- 10. StudyTube trainingsverwijzing ----
-    const trainingen = await bepaalTrainingen();
-
+    // ---- 10. StudyTube trainingsverwijzing (trainingen zijn al bepaald) ----
     if (trainingen.length > 0 && conversation?.id) {
       supabaseAdmin.from("conversations").update({ studytube_trainingen: trainingen }).eq("id", conversation.id).then(() => {}).catch(() => {});
     }
