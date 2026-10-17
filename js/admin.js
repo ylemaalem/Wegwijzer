@@ -15,6 +15,8 @@
   var allTeamleiders = [];
   var allDocuments = [];
   var allFunctiegroepen = [];
+  // Aantal chunks per document-id; gevuld door loadDocuments, gelezen door de herindexeerknoppen.
+  var chunkCountMap = {};
   // Cache van geladen kennissuggesties voor lookup vanuit notitie-handler.
   var suggestiesCache = {};
 
@@ -979,7 +981,7 @@
     if (existing) existing.remove();
     var toast = document.createElement('div');
     toast.id = 'wegwijzer-toast';
-    var bg = type === 'error' ? '#dc3545' : '#0D5C6B';
+    var bg = type === 'error' ? '#dc3545' : type === 'warning' ? '#B45309' : '#0D5C6B';
     toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 18px;border-radius:8px;font-size:0.9rem;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,0.2);background:' + bg + ';color:#fff';
     toast.textContent = message;
     document.body.appendChild(toast);
@@ -1714,7 +1716,7 @@
     allDocuments = result.data;
 
     // Chunk counts ophalen voor semantisch zoek badges
-    var chunkCountMap = {};
+    chunkCountMap = {};
     try {
       var chunkResult = await supabaseClient
         .from('document_chunks')
@@ -2174,7 +2176,7 @@
           .eq('document_id', docId);
         count = countResult.count || 0;
       }
-      // chunkCountMap is lokaal in loadDocuments; update hier niet (scope-bug vermeden).
+      chunkCountMap[docId] = count;
 
       // Update badge in de DOM (zoek de rij zonder volledige reload)
       var tbody = document.getElementById('documents-body');
@@ -2278,7 +2280,7 @@
       return d.heeft_embeddings !== true && !(chunkCountMap[d.id] > 0);
     });
     if (ongeindexeerd.length === 0) {
-      showAlert('Alle documenten zijn al semantisch geïndexeerd.', 'success');
+      showToast('Alle documenten zijn al semantisch geïndexeerd.', 'success');
       return;
     }
     if (!confirm('Semantisch indexeren voor ' + ongeindexeerd.length + ' document(en)? Dit kan even duren.')) return;
@@ -2309,7 +2311,7 @@
     if (banner) banner.style.display = 'none';
     var boodschap = '✅ ' + geslaagd + ' van ' + ongeindexeerd.length + ' documenten geïndexeerd.';
     if (mislukt > 0) boodschap += ' ' + mislukt + ' mislukt — controleer de console.';
-    showAlert(boodschap, mislukt > 0 ? 'warning' : 'success');
+    showToast(boodschap, mislukt > 0 ? 'warning' : 'success');
     loadDocuments();
   };
 
@@ -2318,7 +2320,7 @@
 
   async function bulkHerindexeren(documentIds, titel) {
     if (bulkHerindexeerBezig) { alert('Er loopt al een herindexering. Wacht tot die klaar is.'); return; }
-    if (documentIds.length === 0) { showAlert('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
+    if (documentIds.length === 0) { showToast('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
     if (!confirm(titel + '\n\n' + documentIds.length + ' document(en) worden serieel verwerkt. Dit kan enkele minuten duren. Doorgaan?')) return;
 
     bulkHerindexeerBezig = true;
@@ -2376,7 +2378,7 @@
   // Volledig herindexeren: zoektermen + semantisch per document, serieel
   async function bulkVolledigHerindexeren(documentIds, titel) {
     if (bulkHerindexeerBezig) { alert('Er loopt al een herindexering. Wacht tot die klaar is.'); return; }
-    if (documentIds.length === 0) { showAlert('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
+    if (documentIds.length === 0) { showToast('Geen documenten gevonden om te herindexeren.', 'warning'); return; }
     if (!confirm(titel + '\n\n' + documentIds.length + ' document(en) worden volledig herindexeerd (zoektermen + semantisch). Dit kan lang duren. Doorgaan?')) return;
 
     bulkHerindexeerBezig = true;
@@ -2471,7 +2473,7 @@
           return geenZoektermen || geenChunks || foutStatus;
         }).map(function (d) { return d.id; });
         if (ids.length === 0) {
-          showAlert('Alle documenten zijn al geïndexeerd ✅', 'success');
+          showToast('Alle documenten zijn al geïndexeerd ✅', 'success');
           return;
         }
         bulkVolledigHerindexeren(ids, '⚠️ Alleen mislukte herindexeren (' + ids.length + ' documenten)');
