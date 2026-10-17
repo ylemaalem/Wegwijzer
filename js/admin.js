@@ -3323,6 +3323,9 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({
           resend_invite: true,
+          // Reset: bij een account in gebruik een resetmail; er wordt nooit een
+          // account verwijderd dat in gebruik is (zie _shared/accountcheck.ts).
+          reset_wachtwoord: !!isReset,
           invite_email: email,
           invite_naam: naam,
           redirect_url: 'https://app.mijnwegwijzer.com/wachtwoord-instellen.html'
@@ -3330,10 +3333,12 @@
       });
       var data = await resp.json();
       if (data.error) {
-        showToast('❌ Fout: ' + data.error, 'error');
+        // Melding over een bestaand account: als venster, zodat die gelezen wordt.
+        if (data.account_status) alert(data.error);
+        else showToast('❌ Fout: ' + data.error, 'error');
         btn.disabled = false; btn.textContent = origText;
       } else {
-        showToast(isReset ? '✅ Reset mail verstuurd naar ' + email : '✅ Uitnodiging verstuurd naar ' + email, 'success');
+        showToast('✅ ' + (data.message || (isReset ? 'Reset mail verstuurd' : 'Uitnodiging verstuurd')) + ' (' + email + ')', 'success');
         btn.textContent = '✅'; setTimeout(function() { btn.disabled = false; btn.textContent = origText; }, 3000);
       }
     } catch (err) {

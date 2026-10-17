@@ -84,7 +84,8 @@ function maakSupabase(tabellen) {
   };
 }
 
-// Laadt admin.js. opties.tabellen: nepdata; opties.confirm: antwoord op confirm().
+// Laadt admin.js. opties.tabellen: nepdata; opties.confirm: antwoord op confirm();
+// opties.fetch: nep-fetch (bijv. voor Edge Function-aanroepen).
 function laadAdmin(opties) {
   opties = opties || {};
   const elementen = {};
@@ -114,7 +115,7 @@ function laadAdmin(opties) {
     history: maakStub('history'),
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame: () => 0,
-    fetch: async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' }),
+    fetch: opties.fetch || (async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' })),
     confirm: (tekst) => { meldingen.confirm.push(tekst); return !!opties.confirm; },
     alert: (tekst) => { meldingen.alert.push(tekst); },
     prompt: () => null,

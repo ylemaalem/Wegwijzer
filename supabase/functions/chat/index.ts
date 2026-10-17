@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
+import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -345,7 +346,7 @@ async function generateEmbedding(text: string, openaiKey: string): Promise<numbe
 async function findAuthUserByEmail(
   supabaseAdmin: ReturnType<typeof createClient>,
   email: string
-): Promise<{ id: string; email: string } | null> {
+): Promise<{ id: string; email: string; last_sign_in_at?: string | null } | null> {
   let page = 1;
   const perPage = 1000;
   while (true) {
@@ -359,6 +360,34 @@ async function findAuthUserByEmail(
     page++;
   }
   return null;
+}
+
+// Bestaand account voor een e-mailadres beoordelen vóór (opnieuw) uitnodigen:
+// alle organisaties (auth-gebruikers zijn gedeeld), profielen van die gebruiker en
+// het aantal gesprekken. Zie _shared/accountcheck.ts.
+async function bepaalAccountBesluit(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  email: string,
+  tenantId: string,
+): Promise<{ authGebruiker: AuthGebruiker | null; besluit: AccountBesluit }> {
+  const authGebruiker = await findAuthUserByEmail(supabaseAdmin, email);
+  if (!authGebruiker) return { authGebruiker: null, besluit: beoordeelBestaandAccount(null, [], 0, tenantId) };
+  const { data: profielen, error: profielFout } = await supabaseAdmin
+    .from("profiles")
+    .select("id, tenant_id, eerste_login_op, laatste_actief")
+    .eq("user_id", authGebruiker.id);
+  if (profielFout) throw new Error("Profiel kon niet worden gecontroleerd: " + profielFout.message);
+  const lijst = (profielen ?? []) as Profiel[];
+  let aantalGesprekken = 0;
+  if (lijst.length > 0) {
+    const { count, error: gesprekFout } = await supabaseAdmin
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .in("user_id", lijst.map((p) => p.id));
+    if (gesprekFout) throw new Error("Gesprekken konden niet worden gecontroleerd: " + gesprekFout.message);
+    aantalGesprekken = count ?? 0;
+  }
+  return { authGebruiker, besluit: beoordeelBestaandAccount(authGebruiker, lijst, aantalGesprekken, tenantId) };
 }
 
 function berekenInwerkWeek(startdatum: string | null): number {
@@ -2298,11 +2327,32 @@ ${vraagLijst}${trendGedekteContext}`;
           );
         }
 
-        // Verwijder bestaande auth user zodat re-invite als fresh invite werkt
-        const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, inviteEmail);
-        if (existingAuthUser) {
-          console.log("[Invite] Bestaande auth user verwijderd voor fresh invite:", inviteEmail);
-          await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
+        // Bestaand account? Alleen verwijderen als het nooit gebruikt is (nooit
+        // ingelogd, geen profiel, geen gesprekken); anders niets verwijderen en de
+        // beheerder een melding geven. Zie _shared/accountcheck.ts.
+        const { authGebruiker: bestaandAccount, besluit: accountBesluit } = await bepaalAccountBesluit(supabaseAdmin, inviteEmail, profile.tenant_id);
+        if (accountBesluit.actie !== "nieuw" && accountBesluit.actie !== "verwijderen") {
+          console.warn(`[Invite] Niets verwijderd (${accountBesluit.actie}) voor:`, inviteEmail);
+          return new Response(
+            JSON.stringify({ error: meldingVoorBeheerder(accountBesluit, "uitnodigen"), invited: false, account_status: accountBesluit.actie }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        if (accountBesluit.actie === "verwijderen" && bestaandAccount) {
+          const { error: verwijderFout } = await supabaseAdmin.auth.admin.deleteUser(bestaandAccount.id);
+          if (verwijderFout) {
+            console.error("[Invite] Ongebruikt account opruimen mislukt:", verwijderFout.message);
+            return new Response(
+              JSON.stringify({ error: "Er bestaat een oud, nooit gebruikt account voor dit e-mailadres dat niet kon worden opgeruimd: " + verwijderFout.message, invited: false }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          console.log("[Invite] Nooit gebruikt account (geen profiel, geen gesprekken) verwijderd voor nieuwe uitnodiging:", inviteEmail);
+          await logAuditEvent(
+            supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+            "ONGEBRUIKT_ACCOUNT_VERWIJDERD", "medewerker", bestaandAccount.id,
+            { email: inviteEmail, reden: "nooit ingelogd, geen profiel, geen gesprekken" },
+          );
           await new Promise(r => setTimeout(r, 500));
         }
 
@@ -2371,7 +2421,38 @@ ${vraagLijst}${trendGedekteContext}`;
       const resendRedirect = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
 
       try {
-        const existingUser = await findAuthUserByEmail(supabaseAdmin, resendEmail);
+        // Bestaand account? Zie _shared/accountcheck.ts. Een account in gebruik wordt
+        // nooit verwijderd: 🔑 Reset (reset_wachtwoord) stuurt dan een resetmail.
+        const { authGebruiker: existingUser, besluit: resendBesluit } = await bepaalAccountBesluit(supabaseAdmin, resendEmail, profile.tenant_id);
+        const jsonAntwoord = (inhoud: Record<string, unknown>) => new Response(
+          JSON.stringify(inhoud), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+        if (resendBesluit.actie === "andere_organisatie") {
+          console.warn("[Resend] Niets verwijderd (andere organisatie):", resendEmail);
+          return jsonAntwoord({ error: meldingVoorBeheerder(resendBesluit, "opnieuw"), account_status: resendBesluit.actie });
+        }
+        if (resendBesluit.actie === "in_gebruik") {
+          if (body.reset_wachtwoord !== true) {
+            console.warn("[Resend] Niets verwijderd (account in gebruik):", resendEmail);
+            return jsonAntwoord({ error: meldingVoorBeheerder(resendBesluit, "opnieuw"), account_status: resendBesluit.actie });
+          }
+          const { error: resetFout } = await supabaseAdmin.auth.resetPasswordForEmail(resendEmail, { redirectTo: resendRedirect || undefined });
+          if (resetFout) return jsonAntwoord({ error: "Resetmail versturen mislukt: " + resetFout.message + ". Er is niets verwijderd." });
+          await logAuditEvent(
+            supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+            "WACHTWOORD_RESET_VERSTUURD", "medewerker", resendBesluit.profiel?.id || null, { email: resendEmail },
+          );
+          return jsonAntwoord({ success: true, message: "Resetmail verstuurd. Het account is niet gewijzigd." });
+        }
+        if (resendBesluit.actie === "opnieuw_sturen") {
+          // Nog niet ingelogd: Supabase Auth stuurt een nieuwe uitnodiging naar een
+          // bestaand, onbevestigd account. Profiel en gegevens blijven staan.
+          const { error: opnieuwFout } = await supabaseAdmin.auth.admin.inviteUserByEmail(resendEmail, {
+            redirectTo: resendRedirect || undefined,
+          });
+          if (opnieuwFout) return jsonAntwoord({ error: "Uitnodiging opnieuw sturen mislukt: " + opnieuwFout.message + ". Er is niets verwijderd." });
+          return jsonAntwoord({ success: true, message: "Uitnodiging opnieuw verstuurd" });
+        }
 
         // Haal bestaande profiel rol op voor re-invite metadata
         const { data: resendProfile } = await supabaseAdmin
@@ -2382,10 +2463,16 @@ ${vraagLijst}${trendGedekteContext}`;
           .maybeSingle();
         const resendRole = resendProfile?.role || "medewerker";
 
-        if (existingUser) {
-          // Verwijder auth user zodat nieuwe invite werkt voor ongeactiveerde accounts
-          console.log("[Resend] Verwijder bestaande auth user voor fresh invite:", resendEmail);
-          await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
+        if (resendBesluit.actie === "verwijderen" && existingUser) {
+          // Nooit ingelogd, geen profiel, geen gesprekken: veilig opruimen.
+          const { error: verwijderFout } = await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
+          if (verwijderFout) return jsonAntwoord({ error: "Oud, nooit gebruikt account kon niet worden opgeruimd: " + verwijderFout.message });
+          console.log("[Resend] Nooit gebruikt account (geen profiel, geen gesprekken) verwijderd voor nieuwe uitnodiging:", resendEmail);
+          await logAuditEvent(
+            supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+            "ONGEBRUIKT_ACCOUNT_VERWIJDERD", "medewerker", existingUser.id,
+            { email: resendEmail, reden: "nooit ingelogd, geen profiel, geen gesprekken" },
+          );
           await new Promise(r => setTimeout(r, 500));
         }
 
