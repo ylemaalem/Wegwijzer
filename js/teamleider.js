@@ -899,7 +899,10 @@
   function initAanvraagModal() {
     var modal = document.getElementById('modal-tl-aanvraag');
     var form = document.getElementById('tl-aanvraag-form');
-    var btn = document.getElementById('tl-aanvraag-btn');
+    // Twee knoppen openen hetzelfde formulier: "Mijn team" (teamleider) en
+    // "Aanvragen" (HR).
+    var openKnoppen = [document.getElementById('tl-aanvraag-btn'), document.getElementById('tl-aanvraag-btn-hr')]
+      .filter(function (k) { return !!k; });
     var cancelBtn = document.getElementById('tl-aanvraag-cancel');
     var submitBtn = document.getElementById('tl-aanvraag-submit');
     var alertBox = document.getElementById('tl-aanvraag-alert');
@@ -954,7 +957,7 @@
         teamsList.map(function (t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
     }
 
-    btn.addEventListener('click', function () {
+    function openAanvraagModal() {
       form.reset();
       alertBox.className = 'alert';
       document.querySelectorAll('#tl-aanvraag-form .field-error').forEach(function (el) { el.classList.remove('field-error'); });
@@ -969,7 +972,8 @@
         });
       }
       modal.classList.add('show');
-    });
+    }
+    openKnoppen.forEach(function (k) { k.addEventListener('click', openAanvraagModal); });
 
     cancelBtn.addEventListener('click', function () { modal.classList.remove('show'); });
     modal.addEventListener('click', function (e) {
@@ -1075,31 +1079,36 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Indienen...';
 
-      var result = await supabaseClient.from('aanvragen').insert({
-        tenant_id: tenantId,
-        type: 'nieuw',
-        aangevraagd_door: profile.id,
-        aanvrager_naam: profile.naam,
-        medewerker_naam: naam,
-        medewerker_email: email,
-        medewerker_functiegroep: fg,
-        medewerker_team: team,
-        medewerker_startdatum: startdatum || null,
-        medewerker_werkuren: werkuren || null
-      });
+      try {
+        var result = await supabaseClient.from('aanvragen').insert({
+          tenant_id: tenantId,
+          type: 'nieuw',
+          aangevraagd_door: profile.id,
+          aanvrager_naam: profile.naam,
+          medewerker_naam: naam,
+          medewerker_email: email,
+          medewerker_functiegroep: fg,
+          medewerker_team: team,
+          medewerker_startdatum: startdatum || null,
+          medewerker_werkuren: werkuren || null
+        });
 
-      if (result.error) {
+        if (result.error) {
+          alertBox.className = 'alert alert-error show';
+          alertMsg.textContent = 'Indienen mislukt: ' + result.error.message;
+        } else {
+          alertBox.className = 'alert alert-success show';
+          alertMsg.textContent = 'Aanvraag ingediend! De admin wordt op de hoogte gesteld.';
+          loadMijnAanvragen();
+          setTimeout(function () { modal.classList.remove('show'); }, 2000);
+        }
+      } catch (err) {
         alertBox.className = 'alert alert-error show';
-        alertMsg.textContent = 'Indienen mislukt: ' + result.error.message;
-      } else {
-        alertBox.className = 'alert alert-success show';
-        alertMsg.textContent = 'Aanvraag ingediend! De admin wordt op de hoogte gesteld.';
-        loadMijnAanvragen();
-        setTimeout(function () { modal.classList.remove('show'); }, 2000);
+        alertMsg.textContent = 'Indienen mislukt: ' + (err && err.message ? err.message : String(err));
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Aanvraag indienen';
       }
-
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Aanvraag indienen';
     });
   }
 

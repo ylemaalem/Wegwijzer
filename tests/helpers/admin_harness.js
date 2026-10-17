@@ -36,10 +36,18 @@ function maakStub(label, extra) {
 function maakElement(id) {
   const listeners = {};
   const kinderen = [];
+  const klassen = new Set();
   const el = maakStub('#' + id, {
     id,
     listeners,
     kinderen,
+    classList: {
+      add: (...k) => k.forEach((x) => klassen.add(x)),
+      remove: (...k) => k.forEach((x) => klassen.delete(x)),
+      contains: (k) => klassen.has(k),
+      toggle: (k, aan) => { const zet = aan === undefined ? !klassen.has(k) : !!aan; if (zet) klassen.add(k); else klassen.delete(k); return zet; },
+      replace: (oud, nieuw) => { if (!klassen.has(oud)) return false; klassen.delete(oud); klassen.add(nieuw); return true; },
+    },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     removeEventListener() {},
     appendChild(kind) { kinderen.push(kind); return kind; },
