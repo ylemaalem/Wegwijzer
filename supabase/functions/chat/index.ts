@@ -108,6 +108,10 @@ const TEAM_VRAAG_TRIGGERS = [
 
 // Trefwoorden die duiden op een feitvraag (tijden, bedragen, aantallen, nummers).
 // Bij true → Fact-Grounding Layer: chunk-reranking + dedicated extractie-call.
+// Verdienvragen (salaris): gelden als feitvraag (meer stukken + feitencontrole) en
+// krijgen de salaristabel van de functiegroep gericht mee.
+const VERDIEN_PATROON = /\b(\w*verdien\w*|\w*salaris\w*|\w*loon\w*|lonen|schaal|schalen|trede|treden)\b/i;
+
 const FEIT_VRAAG_TRIGGERS = [
   "hoe laat", "welke tijd", "wat is de tijd", "vanaf hoe laat", "tot hoe laat",
   "wanneer begint", "wanneer eindigt", "wanneer start", "wanneer stopt",
@@ -1074,13 +1078,22 @@ Deno.serve(async (req: Request) => {
         }
       };
 
-      // In groepjes van 4 parallel — houdt de totale looptijd ruim binnen de
-      // functietimeout zonder de Anthropic rate limits te raken.
-      const CONCURRENCY = 4;
+      // Vaste werkers die steeds de volgende vraag pakken (niet wachten op de
+      // traagste van een groepje). Na RUN_STARTGRENS_MS starten er geen nieuwe
+      // vragen meer, zodat de run altijd binnen de functietijd wordt opgeslagen;
+      // een niet-gedraaide vraag telt als fout, met de reden erbij. (Met 82 vragen
+      // in groepjes van 4 werd de functie na ~200 s afgesloten voordat de run was opgeslagen.)
+      const CONCURRENCY = 8;
+      const RUN_STARTGRENS_MS = 170_000;
+      const runStart = Date.now();
       const lijst = vragen as TV[];
-      for (let i = 0; i < lijst.length; i += CONCURRENCY) {
-        const groep = await Promise.all(lijst.slice(i, i + CONCURRENCY).map(draaiVraag));
-        for (const d of groep) {
+      let volgende = 0;
+      const werker = async () => {
+        while (volgende < lijst.length) {
+          const v = lijst[volgende++];
+          const d: Record<string, unknown> = Date.now() - runStart > RUN_STARTGRENS_MS
+            ? { id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: false, reden: "niet gedraaid: tijdslimiet van de testrun" }
+            : await draaiVraag(v);
           tinput += (d._tin as number) || 0;
           toutput += (d._tout as number) || 0;
           kostenTotaal += (d._kosten as number) || 0;
@@ -1088,7 +1101,9 @@ Deno.serve(async (req: Request) => {
           if (d.geslaagd) geslaagd++; else gefaald++;
           details.push(d);
         }
-      }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, werker));
+      console.log(`[Regressie] ${lijst.length} vragen in ${Math.round((Date.now() - runStart) / 1000)} s`);
       details.sort((a, b) => (a.id as number) - (b.id as number));
 
       // Som van de kosten per vraag, berekend met de prijs van het gebruikte model.
@@ -3067,7 +3082,9 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
     // Fact-Grounding: detecteer feitvragen. Bij true wordt reranking + extractie-call actief.
     // Bij twijfel true — false negative laat hallucinatie bestaan, false positive kost alleen één extra Haiku-call.
+    const isVerdienVraag = VERDIEN_PATROON.test(vraag);
     const isFeitVraag = FEIT_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t))
+      || isVerdienVraag
       || /\b\d{1,2}[:.]\d{2}\b/.test(vraag)
       || /\b(hoeveel|hoe\s?laat|wanneer|welke?\s+(tijd|dag|datum|nummer|bedrag|prijs|kosten))\b/i.test(vraag);
     const skipCache = !ANTWOORD_CACHE_AAN
@@ -3219,6 +3236,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let fglChunksNaRerank: number | null = null;
     // Optie D: welke trefwoordstukken zijn toegevoegd (voor log en testmodus).
     let trefwoordAanvulling: Array<{ document_id: string; similarity: number; herschreven: boolean }> = [];
+    // Verdienvragen: aantal salaristabelstukken in de context (0 = geen).
+    let salarisTabelStukken = 0;
     // Herkomst: documenten die daadwerkelijk als context naar het model gaan, in
     // volgorde van relevantie. Basis voor het herkomstlabel — afgeleid uit data,
     // niet uit de bronregel die het model zelf schrijft.
@@ -3408,6 +3427,48 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
 
     gedeeldeQueryEmbedding = await embeddingPromise;
 
+    // ---- Verdienvragen: eerst de FWG-functiegroep, dan het bedrag ----
+    // 1. FWG in de vraag ("FWG 35", "functiegroep 35", "schaal 35");
+    // 2. anders een functienaam uit de vraag, opgezocht in de FWG-lijst van de
+    //    veelgestelde vragen (regels "functie → FWG 35"), langste naam eerst;
+    // 3. anders, bij een vraag over de medewerker zelf, de profielfunctie.
+    let verdienFwg: string | null = null;
+    let verdienFwgBron: "vraag" | "functie" | "profiel" | null = null;
+    if (isVerdienVraag && !vraagtBron) {
+      const direct = vraag.match(/\b(?:fwg|functiegroep|schaal)\s*(\d{2})\b/i);
+      if (direct) {
+        verdienFwg = direct[1];
+        verdienFwgBron = "vraag";
+      } else {
+        const { data: fwgItems } = await supabaseAdmin.from("kennisbank_items").select("antwoord").eq("tenant_id", profile.tenant_id);
+        const fwgLijst: Array<{ functie: string; fwg: string }> = [];
+        for (const item of (fwgItems || []) as Array<{ antwoord: string }>) {
+          for (const m of String(item.antwoord || "").matchAll(/^\s*(.+?)\s*→\s*FWG\s*(\d{2})/gim)) {
+            const voluit = m[1].match(/\(([^)]+)\)/)?.[1]?.toLowerCase();
+            const functie = m[1].toLowerCase().replace(/\s*\([^)]*\)\s*/g, " ").trim();
+            fwgLijst.push({ functie, fwg: m[2] });
+            // Afkortingen ook voluit: "i.o." = "in opleiding", "SD (Specifieke Doelgroepen)".
+            if (/\bi\.o\.$/.test(functie)) fwgLijst.push({ functie: functie.replace(/\bi\.o\.$/, "in opleiding"), fwg: m[2] });
+            if (voluit && /\bsd\b/.test(functie)) fwgLijst.push({ functie: functie.replace(/\bsd\b/, voluit), fwg: m[2] });
+          }
+        }
+        fwgLijst.sort((a, b) => b.functie.length - a.functie.length);
+        const inVraag = fwgLijst.find((f) => vraagLower.includes(f.functie));
+        if (inVraag) {
+          verdienFwg = inVraag.fwg;
+          verdienFwgBron = "functie";
+        } else if (/\b(ik|mijn|mij)\b/i.test(vraag) && profile.functiegroep) {
+          const profielFunctie = profile.functiegroep.replace(/_/g, " ").toLowerCase();
+          const uitProfiel = fwgLijst.find((f) => f.functie === profielFunctie);
+          if (uitProfiel) {
+            verdienFwg = uitProfiel.fwg;
+            verdienFwgBron = "profiel";
+          }
+        }
+      }
+      console.log(`[Salaris] Verdienvraag: FWG ${verdienFwg ?? "onbekend"} (${verdienFwgBron ?? "-"})`);
+    }
+
     // ---- Primair: vector similarity search via pgvector ----
     if (openaiKeyForChat && !vraagtBron) {
       try {
@@ -3423,6 +3484,15 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           // De klaar-tijden meten hoeveel langer een vraag wacht door punt 3:
           // zonder herschrijving zou het antwoord verdergaan op basisKlaar.
           type TrefwoordRes = { data: unknown; error: { message: string } | null };
+          // Verdienvragen: de salaristabel van de functiegroep gericht ophalen.
+          const salarisPromise: Promise<TrefwoordRes> = verdienFwg
+            ? Promise.resolve(supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+              zoekvraag: `salarisschaal functiegroep ${verdienFwg} trede`,
+              query_embedding: JSON.stringify(queryEmbedding),
+              match_org_id: profile.tenant_id,
+              match_count: 10,
+            }))
+            : Promise.resolve({ data: null, error: null });
           let basisKlaar = 0, herschrijfKlaar = 0;
           const [[vectorRes, trefwoordRes], herschrijfRes] = await Promise.all([
             Promise.all([
@@ -3452,11 +3522,26 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               .then((r) => { herschrijfKlaar = Date.now(); return r; }),
           ]);
           herschrijfWachtMs = Math.max(0, herschrijfKlaar - basisKlaar);
-          const { data: chunkMatches, error: chunkErr } = vectorRes;
+          const { data: vectorMatches, error: chunkErr } = vectorRes;
           if (trefwoordRes.error) console.warn("[Chat] Trefwoord-zoeken fout:", trefwoordRes.error.message);
           if (herschrijfRes.error) console.warn("[Chat] Trefwoord-zoeken (herschreven) fout:", herschrijfRes.error.message);
           const trefwoordMatches = (trefwoordRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
           const herschrijfMatches = (herschrijfRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
+          // Alleen stukken waarin de tabel van de functiegroep leesbaar staat
+          // ("Salarisschaal functiegroep 35 trede inpas. nr. €"), één per ingangsdatum.
+          const salarisRes = await salarisPromise;
+          if (salarisRes.error) console.warn("[Salaris] Tabel zoeken fout:", salarisRes.error.message);
+          const salarisPatroon = verdienFwg ? new RegExp(`functiegroep\\s+${verdienFwg}\\s+trede`, "i") : null;
+          const salarisChunks = salarisPatroon
+            ? ((salarisRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[])
+              .filter((c) => salarisPatroon.test(c.chunk_text)).slice(0, 4)
+            : [];
+          salarisTabelStukken = salarisChunks.length;
+          // De tabelstukken tellen mee als treffer: een korte vraag als "schaal 45
+          // trede 10" haalt anders soms geen 3 vectortreffers (terugvalroute).
+          const chunkMatches = salarisChunks.length > 0
+            ? [...salarisChunks, ...((vectorMatches || []) as { id: string }[]).filter((c) => !salarisChunks.some((sc) => sc.id === c.id))]
+            : vectorMatches;
           const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
           fglChunksOpgehaald = chunksOpgehaaldVoorFilter;
 
@@ -3514,6 +3599,28 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 });
                 const uniekeDocs = [...new Set(feitChunks.map(c => c.docNaam))];
                 console.log(`[FGL] extractie-input: ${feitChunks.length} chunks uit ${uniekeDocs.length} docs: ${uniekeDocs.map(n => `"${n}"`).join(", ")}`);
+              }
+
+              // ---- Verdienvragen: salaristabel vooraan ----
+              // Vooraan in de context (zodat de lengtegrens hem niet afkapt) en in de
+              // feitencontrole (anders kan die "niet gevonden" melden).
+              if (salarisChunks.length > 0) {
+                const salarisIds = new Set(salarisChunks.map((c) => c.id));
+                werkChunks = [...salarisChunks, ...werkChunks.filter((c) => !salarisIds.has((c as { id?: string }).id || ""))];
+                const salarisDocIds = [...new Set(salarisChunks.map((c) => c.document_id))].filter((id) => !metaMap.has(id));
+                if (salarisDocIds.length > 0) {
+                  const { data: salarisMeta } = await supabaseAdmin.from("documents").select("id, naam, notitie, map").in("id", salarisDocIds);
+                  for (const d of (salarisMeta || []) as Array<{ id: string; naam: string; notitie: string | null; map: string | null }>) metaMap.set(d.id, d);
+                }
+                gebruikteDocIds = [...new Set([...salarisChunks.map((c) => c.document_id), ...gebruikteDocIds])];
+                if (isFeitVraag) {
+                  const salarisTeksten = new Set(salarisChunks.map((c) => c.chunk_text));
+                  feitChunks = [
+                    ...salarisChunks.map((c) => ({ document_id: c.document_id, chunk_text: c.chunk_text, similarity: c.similarity, docNaam: (metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || "Document" })),
+                    ...feitChunks.filter((c) => !salarisTeksten.has(c.chunk_text)),
+                  ];
+                }
+                console.log(`[Salaris] FWG ${verdienFwg} (${verdienFwgBron}): +${salarisChunks.length} tabelstukken vooraan`);
               }
 
               // ---- Optie D: trefwoord-aanvulling ----
@@ -3843,7 +3950,9 @@ VOLLEDIGHEID:
 FORMAAT:
 - Maximaal 5 korte regels of zinnen.
 - Als de fragmenten het antwoord op geen enkele manier bevatten: antwoord letterlijk NIET_GEVONDEN
-
+${salarisTabelStukken > 0 ? `
+SALARISVRAAG: de fragmenten bevatten salaristabellen per ingangsdatum ("Salarisschaal functiegroep NN trede inpas. nr. €"; elke rij is trede, inpassingsnummer, bedrag). Noem voor ${verdienFwg ? `functiegroep ${verdienFwg}` : "de gevraagde functiegroep"} en de gevraagde trede het bedrag uit ELKE tabel, met de ingangsdatum erbij. "Hoogste trede" is de laatste trede van die functiegroep, "beginsalaris" de eerste.
+` : ""}
 Vraag: ${vraag.trim()}
 
 Fragmenten:
@@ -3945,7 +4054,9 @@ ${geverifieerdeFeiten}
 INSTRUCTIE: Gebruik de geverifieerde feiten hierboven LETTERLIJK voor concrete waardes (tijden, bedragen, nummers, aantallen, dagen). De kennisbronnen hieronder zijn voor context en toelichting. Als de geverifieerde feiten en de kennisbronnen conflicteren: gebruik de geverifieerde feiten.
 
 ${alleKennisbronnen}`;
-    } else if (feitenNietGevonden && !bronvraagContext && HEEFT_KENNISBANK_MATCH) {
+    } else if (feitenNietGevonden && !bronvraagContext && HEEFT_KENNISBANK_MATCH && salarisTabelStukken === 0) {
+      // Bij een verdienvraag met salaristabel in de context niet: de tabel staat
+      // erbij en de salarisinstructies regelen zelf het geval dat een bedrag ontbreekt.
       alleKennisbronnen = `=== GEVERIFIEERDE FEITEN: NIET GEVONDEN ===
 De specifieke feitelijke waarde die de vraag opvraagt (tijd, bedrag, nummer, aantal, datum) is NIET expliciet aanwezig in de documenten. Zeg dit eerlijk in je antwoord. Verzin GEEN waarde en geef GEEN algemene inschatting op basis van vergelijkbare situaties.
 === EINDE ===
@@ -4025,6 +4136,18 @@ Onder je antwoord toont het systeem deze trainingen uit het leerplatform van de 
 ${trainingenVooraf.map((t) => `- ${t.naam}${t.duur_minuten ? ` (${t.duur_minuten} min)` : ""}`).join("\n")}
 Spreek dit nooit tegen: zeg dus niet dat er geen training of cursus over dit onderwerp is. Herhaal de lijst niet in je tekst. Je mag er in één korte zin naar verwijzen, bijvoorbeeld: "Onder dit antwoord staan trainingen die hierbij passen."`
       : `TRAININGEN: onder dit antwoord staan GEEN trainingen. Verwijs dus niet naar trainingen of opleidingen "hieronder" of "onder dit antwoord". Vraagt de medewerker naar een training of cursus, zeg dan dat je in het leerplatform geen passende training hebt gevonden en dat de leidinggevende kan helpen met het opleidingsaanbod.`;
+
+    const vandaagNl = new Date().toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Amsterdam" });
+    const salarisBlok = isVerdienVraag ? `
+
+SALARISVRAAG — werk in deze volgorde:
+1. Functiegroep: ${verdienFwg
+      ? `deze vraag gaat over FWG ${verdienFwg}${verdienFwgBron === "functie" ? " (de functie in de vraag, opgezocht in de FWG-lijst bij de veelgestelde vragen)" : verdienFwgBron === "profiel" ? " (de profielfunctie van de medewerker)" : ""}.`
+      : "zoek eerst de FWG-functiegroep op. Staat die in de vraag, gebruik die. Noemt de vraag een functie, gebruik de FWG-lijst bij de veelgestelde vragen. Gaat de vraag over de medewerker zelf, gebruik de profielfunctie."}
+2. Bedrag: zoek het bedrag in de salaristabel van die functiegroep ("Salarisschaal functiegroep NN trede inpas. nr. €"). Elke rij is: trede, inpassingsnummer, bedrag. Neem het bedrag, nooit het inpassingsnummer.
+3. "Hoogste trede" of "maximum" is de laatste trede in de tabel van die functiegroep (bij FWG 35 is dat trede 12); "beginsalaris" is de eerste trede. Noem welke trede je bedoelt.
+4. Er zijn tabellen per ingangsdatum. Vraagt de medewerker naar een bepaalde datum, gebruik dan die tabel. Anders: vandaag is het ${vandaagNl}; gebruik de tabel met de laatste ingangsdatum die vandaag al geldt en noem die datum. Noem daarna de eerstvolgende wijziging (ingangsdatum en bedrag) als die in de tabellen staat.
+5. Staat het bedrag niet in de fragmenten, zeg dan dat je het in de aangeleverde stukken niet vindt; zeg niet dat het document het niet bevat.` : "";
 
     const systemPrompt = `${basisPrompt}${profielInfo}${geheugenContext}${weekContext}${sparringBlock}
 
@@ -4127,6 +4250,7 @@ Stel NOOIT verduidelijkingsvragen bij afkortingen die in bovenstaande lijst staa
 STUDYTUBE INTEGRATIE:
 Wegwijzer is gekoppeld aan de StudyTube trainingsbibliotheek van AHMN (app.studytube.nl). Dit is het officiële leerplatform waar medewerkers zich aanmelden voor trainingen, cursussen, e-learning en intervisie.
 Zeg NOOIT dat je geen toegang hebt tot StudyTube — je hebt die toegang WEL.
+${salarisBlok}
 
 STUDYTUBE IN JE ANTWOORD:
 Noem StudyTube of app.studytube.nl niet zelf en verwijs niet naar zoektermen op StudyTube. Welke trainingen onder je antwoord staan, staat hieronder.

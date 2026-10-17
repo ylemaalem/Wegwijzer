@@ -1,7 +1,7 @@
 {
  "versie": "2026-10-17",
  "tenant": "AHMN",
- "toelichting": "72 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
+ "toelichting": "82 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
  "aanname_kosten": {
   "model": "claude-haiku-4-5-20251001",
   "prijs_input_per_mln_usd": 1.0,
@@ -1415,6 +1415,236 @@
    "zeker": true,
    "actief": true,
    "let_op": "Profielregel: profiel = ambulant persoonlijk begeleider (FWG 40), vraag gaat over FWG 35; de bot mag een neutrale zin toevoegen maar de vraagsteller niet verbeteren (verboden). Na 1 november 2026 bijwerken: dan geldt 3.708 en staat er geen volgende wijziging meer in de tabellen."
+  },
+  {
+   "id": 74,
+   "categorie": "salaris",
+   "vraag": "Hoeveel verdient een ambulant persoonlijk begeleider maximaal?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.902",
+     "3902"
+    ],
+    [
+     "3.980",
+     "3980"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 40 trede 13: per 1 mei 2026 = 3.902; per 1 november 2026 = 3.980)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 75,
+   "categorie": "salaris",
+   "vraag": "Wat is het salaris in FWG 35 trede 5?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.052",
+     "3052"
+    ],
+    [
+     "3.113",
+     "3113"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 35 trede 5: per 1 mei 2026 = 3.052; per 1 november 2026 = 3.113)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 76,
+   "categorie": "salaris",
+   "vraag": "Wat is het loon van een woonbegeleider in de hoogste trede?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.635",
+     "3635"
+    ],
+    [
+     "3.708",
+     "3708"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 35 trede 12: per 1 mei 2026 = 3.635; per 1 november 2026 = 3.708)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 77,
+   "categorie": "salaris",
+   "vraag": "Wat is het beginsalaris van een ambulant begeleider in opleiding?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "2.373",
+     "2373"
+    ],
+    [
+     "2.420",
+     "2420"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 30 trede 0: per 1 mei 2026 = 2.373; per 1 november 2026 = 2.420)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 78,
+   "categorie": "salaris",
+   "vraag": "In welke schaal valt een ambulant begeleider SD en wat is het maximum?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.902",
+     "3902"
+    ],
+    [
+     "3.980",
+     "3980"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 40 trede 13: per 1 mei 2026 = 3.902; per 1 november 2026 = 3.980)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 79,
+   "categorie": "salaris",
+   "vraag": "Hoeveel krijg je in schaal 45 trede 10?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.902",
+     "3902"
+    ],
+    [
+     "3.980",
+     "3980"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 45 trede 10: per 1 mei 2026 = 3.902; per 1 november 2026 = 3.980)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 80,
+   "categorie": "salaris",
+   "vraag": "Wat verdient een ambulant persoonlijk begeleider SD in de laatste trede?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "4.262",
+     "4262"
+    ],
+    [
+     "4.347",
+     "4347"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 45 trede 14: per 1 mei 2026 = 4.262; per 1 november 2026 = 4.347)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 81,
+   "categorie": "salaris",
+   "vraag": "Wat is het maandsalaris bij functiegroep 40 trede 8?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.468",
+     "3468"
+    ],
+    [
+     "3.537",
+     "3537"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 40 trede 8: per 1 mei 2026 = 3.468; per 1 november 2026 = 3.537)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 82,
+   "categorie": "salaris",
+   "vraag": "Hoeveel gaat het salaris van FWG 35 trede 12 omhoog in november?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "3.635",
+     "3635"
+    ],
+    [
+     "3.708",
+     "3708"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 35 trede 12: per 1 mei 2026 = 3.635; per 1 november 2026 = 3.708)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken."
+  },
+  {
+   "id": 83,
+   "categorie": "salaris",
+   "vraag": "Wat verdien ik als ambulant begeleider in trede 1?",
+   "functiegroep": "ambulant_persoonlijk_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "2.597",
+     "2597"
+    ],
+    [
+     "2.649",
+     "2649"
+    ]
+   ],
+   "min_treffers": 2,
+   "bron": "CAO_H4_Salariering_FWG.pdf (FWG 35 trede 1: per 1 mei 2026 = 2.597; per 1 november 2026 = 2.649)",
+   "documenttype": "cao",
+   "zeker": true,
+   "actief": true,
+   "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken. Profiel wijkt af van de functie in de vraag (functie in de vraag gaat voor)."
   }
  ]
 }
