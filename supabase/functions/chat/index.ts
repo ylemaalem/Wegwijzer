@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
+import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -400,15 +401,36 @@ function berekenInwerkWeek(startdatum: string | null): number {
   return Math.min(7, Math.max(1, Math.ceil((dagen + 1) / 7)));
 }
 
+// Dashboardrol van een leidinggevende (zie _shared/dashboardrol.ts). Alle
+// leidinggevenden hebben profiles.role 'teamleider'; teamleider/manager/hr staat in
+// teamleiders.rol (op e-mail, net als in teamleider.js). Admin komt uit profiles.role.
+async function bepaalDashboardRol(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  profile: { tenant_id: string; role: string | null },
+  userEmail: string | null,
+): Promise<DashboardRol> {
+  if (profile.role === "admin" || !userEmail) return normaliseerDashboardRol(profile.role, null);
+  const { data: tlRow } = await supabaseAdmin
+    .from("teamleiders")
+    .select("rol, teams")
+    .eq("tenant_id", profile.tenant_id)
+    .eq("email", userEmail)
+    .maybeSingle();
+  return normaliseerDashboardRol(profile.role, tlRow as { rol: string | null; teams: string[] | null } | null);
+}
+
 // Bepaalt server-side welke medewerker-profiel-ids een teamleider/manager/hr/admin
 // mag monitoren. Teamleider: alleen medewerkers met team-overlap (teams uit de
-// teamleiders-tabel). Admin/manager/hr: alle medewerkers van de tenant.
+// teamleiders-tabel). Admin/manager/hr: alle medewerkers van de tenant. De rol komt
+// uit teamleiders.rol (bepaalDashboardRol): voorheen keek dit naar profiles.role,
+// dat ook voor HR en manager 'teamleider' is, waardoor zij niemand zagen.
 // Sluit altijd het eigen profiel uit. Dit vervangt de RLS-gebaseerde teamtoegang
 // tot conversations, zodat de anon-client geen directe rijtoegang meer nodig heeft.
 async function resolveMonitorProfileIds(
   supabaseAdmin: ReturnType<typeof createClient>,
   profile: { id: string; tenant_id: string; role: string | null },
   userEmail: string | null,
+  dashboardRol?: DashboardRol,
 ): Promise<string[]> {
   const { data: medewerkers } = await supabaseAdmin
     .from("profiles")
@@ -417,27 +439,8 @@ async function resolveMonitorProfileIds(
     .eq("role", "medewerker");
   const alle = (medewerkers || []) as Array<{ id: string; teams: string[] | null }>;
 
-  if (profile.role === "teamleider") {
-    // Teams van deze teamleider ophalen uit de teamleiders-tabel (op e-mail).
-    let tlTeams: string[] = [];
-    if (userEmail) {
-      const { data: tlRow } = await supabaseAdmin
-        .from("teamleiders")
-        .select("teams")
-        .eq("tenant_id", profile.tenant_id)
-        .eq("email", userEmail)
-        .maybeSingle();
-      tlTeams = (tlRow as { teams: string[] | null } | null)?.teams || [];
-    }
-    if (tlTeams.length === 0) return [];
-    return alle
-      .filter((m) => Array.isArray(m.teams) && m.teams.some((t) => tlTeams.indexOf(t) !== -1))
-      .map((m) => m.id)
-      .filter((id) => id !== profile.id);
-  }
-
-  // admin / manager / hr → hele tenant, minus eigen profiel.
-  return alle.map((m) => m.id).filter((id) => id !== profile.id);
+  const rol = dashboardRol ?? await bepaalDashboardRol(supabaseAdmin, profile, userEmail);
+  return kiesMonitorIds(rol, alle, profile.id);
 }
 
 async function bouwTeamContext(
@@ -2086,7 +2089,10 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       // van het RLS-lek kan (en mag) de frontend de vraagteksten niet meer lezen.
       // Zo verlaat de ruwe vraagtekst de database alleen richting de AI, nooit richting
       // de browser van de teamleider.
-      const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, isTest ? { ...profile, role: "admin" } : profile, user.email || null);
+      const trendProfiel = isTest ? { ...profile, role: "admin" } : profile;
+      const trendRol = await bepaalDashboardRol(supabaseAdmin, trendProfiel, user.email || null);
+      const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, trendProfiel, user.email || null, trendRol);
+      const trendBereik = bereikTekst(trendRol);
       let vragen: string[] = [];
       if (monitorIdsTrend.length > 0) {
         const sinds30 = new Date();
@@ -2105,8 +2111,9 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
 
       if (vragen.length === 0) {
+        // geen_vragen: de frontend toont dit als melding, niet als opslagfout.
         return new Response(
-          JSON.stringify({ trendanalyse: "Er zijn de afgelopen 30 dagen geen vragen gesteld binnen jouw team. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse." }),
+          JSON.stringify({ trendanalyse: `Er zijn de afgelopen 30 dagen geen vragen gesteld ${trendBereik}. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse.`, geen_vragen: true, rapport: null }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }

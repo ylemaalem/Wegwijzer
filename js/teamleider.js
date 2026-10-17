@@ -452,6 +452,13 @@
         return;
       }
 
+      // Geen vragen in de periode: de server meldt dat zelf; geen fout.
+      if (data.geen_vragen) {
+        setTrendStatus(data.trendanalyse || 'Er zijn in deze periode geen vragen gesteld.', false);
+        btn.textContent = originalLabel;
+        return;
+      }
+
       if (!data.rapport) {
         setTrendStatus('Analyse ontvangen maar kon niet worden opgeslagen. Probeer het opnieuw.', true);
         return;

@@ -84,9 +84,10 @@ function maakSupabase(tabellen) {
   };
 }
 
-// Laadt admin.js. opties.tabellen: nepdata; opties.confirm: antwoord op confirm();
-// opties.fetch: nep-fetch (bijv. voor Edge Function-aanroepen).
-function laadAdmin(opties) {
+// Laadt een pagina-script (standaard admin.js). opties.tabellen: nepdata;
+// opties.confirm: antwoord op confirm(); opties.fetch: nep-fetch (Edge Functions);
+// opties.bestanden: te laden scripts; opties.detail: profiel/gebruiker bij start().
+function laadPagina(opties) {
   opties = opties || {};
   const elementen = {};
   const docListeners = {};
@@ -140,7 +141,7 @@ function laadAdmin(opties) {
   const opVangen = (err) => fouten.push(err);
   process.on('unhandledRejection', opVangen);
 
-  for (const bestand of ['js/medewerker-opslaan.js', 'js/admin.js']) {
+  for (const bestand of opties.bestanden || ['js/medewerker-opslaan.js', 'js/admin.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, bestand), 'utf8'), ctx, { filename: bestand });
   }
 
@@ -150,9 +151,9 @@ function laadAdmin(opties) {
 
   return {
     ctx, elementen, body, meldingen, fouten, supabase, wacht,
-    // Start het beheerscherm zoals route-guard.js dat doet na het inloggen.
+    // Start de pagina zoals route-guard.js dat doet na het inloggen.
     async start() {
-      const evt = { detail: { profile: { tenant_id: 't1', role: 'admin', naam: 'Test Beheer' }, user: { id: 'u1', email: 'beheer@test' } } };
+      const evt = { detail: opties.detail || { profile: { tenant_id: 't1', role: 'admin', naam: 'Test Beheer' }, user: { id: 'u1', email: 'beheer@test' } } };
       for (const fn of docListeners['wegwijzer-auth-ready'] || []) fn(evt);
       await wacht();
     },
@@ -169,4 +170,15 @@ function laadAdmin(opties) {
   };
 }
 
-module.exports = { laadAdmin };
+function laadAdmin(opties) { return laadPagina(opties); }
+
+// Teamleider-dashboard (teamleider.js) als leidinggevende met de gegeven rol.
+function laadDashboard(opties) {
+  opties = opties || {};
+  return laadPagina(Object.assign({
+    bestanden: ['js/teamleider.js'],
+    detail: { profile: { id: 'p-tl', tenant_id: 't1', role: 'teamleider', naam: 'Test Leiding', teams: [] }, user: { id: 'u-tl', email: 'leiding@test' } },
+  }, opties));
+}
+
+module.exports = { laadAdmin, laadDashboard, laadPagina };
