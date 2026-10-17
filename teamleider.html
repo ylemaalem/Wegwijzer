@@ -108,8 +108,17 @@
         </div>
 
         <div style="margin-top:24px">
-          <button class="btn btn-primary" id="tl-trendanalyse-btn" style="max-width:320px">📊 Trendanalyse opvragen</button>
-          <p class="section-subtitle" id="tl-trendanalyse-sub" style="margin-top:6px;font-size:0.78rem">Analyse van anonieme vragen uit de afgelopen 30 dagen. Namen en antwoorden worden niet meegestuurd.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <label class="form-label" for="tl-trendanalyse-periode" style="margin:0">Periode</label>
+            <select class="form-input" id="tl-trendanalyse-periode" style="width:auto;padding:8px 10px">
+              <option value="30d" selected>Afgelopen 30 dagen</option>
+              <option value="3m">Afgelopen 3 maanden</option>
+              <option value="6m">Afgelopen 6 maanden</option>
+              <option value="alles">Alles</option>
+            </select>
+            <button class="btn btn-primary" id="tl-trendanalyse-btn" style="max-width:320px">📊 Trendanalyse opvragen</button>
+          </div>
+          <p class="section-subtitle" id="tl-trendanalyse-sub" style="margin-top:6px;font-size:0.78rem">Analyse van anonieme vragen uit de gekozen periode. Namen en antwoorden worden niet meegestuurd.</p>
           <div id="tl-trendanalyse-status" style="margin-top:12px;font-size:0.85rem;color:var(--text-muted);display:none"></div>
           <div id="tl-trendanalyse-lijst" style="margin-top:16px"></div>
         </div>
@@ -368,7 +377,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
-  <script src="js/teamleider.js?v=17"></script>
+  <script src="js/teamleider.js?v=18"></script>
 
 </body>
 </html>

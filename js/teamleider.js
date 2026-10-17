@@ -111,12 +111,12 @@
       if (statsTitle) statsTitle.textContent = 'Organisatieoverzicht';
       if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
       if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
-      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de afgelopen 30 dagen — hele organisatie.';
+      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de gekozen periode — hele organisatie.';
     } else if (tlRol === 'hr') {
       if (statsTitle) statsTitle.textContent = 'HR — Organisatieoverzicht';
       if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
       if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
-      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de afgelopen 30 dagen — hele organisatie.';
+      if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de gekozen periode — hele organisatie.';
     }
   }
 
@@ -378,7 +378,7 @@
 
     var result = await supabaseClient
       .from('trendanalyse_rapporten')
-      .select('id, tekst, aangemaakt_op')
+      .select('id, tekst, aangemaakt_op, periode')
       .eq('tenant_id', tenantId)
       .order('aangemaakt_op', { ascending: false });
 
@@ -403,9 +403,9 @@
       var ts = new Date(r.aangemaakt_op).toLocaleString('nl-NL', {
         day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
       });
-      var dertigDagenGeleden = new Date(new Date(r.aangemaakt_op).getTime() - 30 * 24 * 60 * 60 * 1000);
-      var startDatum = dertigDagenGeleden.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
       var eindDatum = new Date(r.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+      var start = periodeStart(r.periode || '30d', new Date(r.aangemaakt_op));
+      var startDatum = start ? start.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'het begin';
       var tekst = r.tekst || '';
       // Markdown-achtige bold rendering: **tekst** → <strong>tekst</strong>
       var geformatteerdeTekst = escapeHtml(tekst).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -420,11 +420,21 @@
     }).join('');
   }
 
+  // Begin van de gekozen periode (zelfde regels als _shared/trendperiode.ts); null = alles.
+  function periodeStart(periode, eind) {
+    var d = new Date(eind.getTime());
+    if (periode === '30d') { d.setDate(d.getDate() - 30); return d; }
+    if (periode === '3m') { d.setMonth(d.getMonth() - 3); return d; }
+    if (periode === '6m') { d.setMonth(d.getMonth() - 6); return d; }
+    return null;
+  }
+
   async function handleTrendanalyse() {
     var btn = document.getElementById('tl-trendanalyse-btn');
     if (!btn) return;
 
     var originalLabel = btn.textContent;
+    var periodeEl = document.getElementById('tl-trendanalyse-periode');
     btn.disabled = true;
     btn.textContent = 'Analyseren...';
     setTrendStatus('Vragen verzamelen en naar AI versturen...', false);
@@ -443,7 +453,7 @@
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + session.access_token
         },
-        body: JSON.stringify({ generate_trendanalyse: true })
+        body: JSON.stringify({ generate_trendanalyse: true, periode: periodeEl ? periodeEl.value : '30d' })
       });
 
       var data = await response.json();

@@ -15,6 +15,10 @@ function maakStub(label, extra) {
   return new Proxy(function () {}, {
     get(_, prop) {
       if (prop in opslag) return opslag[prop];
+      // escapeHtml-hulpjes zetten textContent en lezen innerHTML terug.
+      if (prop === 'innerHTML' && 'textContent' in opslag) {
+        return String(opslag.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
       if (prop === 'then') return undefined; // geen thenable: await stub geeft de stub
       if (prop === Symbol.toPrimitive) return (hint) => (hint === 'number' ? 0 : '');
       if (prop === Symbol.iterator) return function* () {};

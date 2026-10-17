@@ -7,6 +7,7 @@ import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, 
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
+import { leesPeriode, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -2093,18 +2094,20 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       const trendRol = await bepaalDashboardRol(supabaseAdmin, trendProfiel, user.email || null);
       const monitorIdsTrend = await resolveMonitorProfileIds(supabaseAdmin, trendProfiel, user.email || null, trendRol);
       const trendBereik = bereikTekst(trendRol);
+      // Periodekeuze in het dashboard: 30d (standaard), 3m, 6m of alles.
+      const trendPeriode = leesPeriode(body.periode);
+      const trendSinds = periodeSinds(trendPeriode, new Date());
       let vragen: string[] = [];
       if (monitorIdsTrend.length > 0) {
-        const sinds30 = new Date();
-        sinds30.setDate(sinds30.getDate() - 30);
-        const { data: trendConvs } = await supabaseAdmin
+        let trendQuery = supabaseAdmin
           .from("conversations")
           .select("vraag, created_at")
           .eq("tenant_id", profile.tenant_id)
-          .in("user_id", monitorIdsTrend)
-          .gte("created_at", sinds30.toISOString())
+          .in("user_id", monitorIdsTrend);
+        if (trendSinds) trendQuery = trendQuery.gte("created_at", trendSinds.toISOString());
+        const { data: trendConvs } = await trendQuery
           .order("created_at", { ascending: false })
-          .limit(500);
+          .limit(1000);
         vragen = ((trendConvs || []) as Array<{ vraag: string | null }>)
           .map((c) => c.vraag)
           .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
@@ -2113,12 +2116,13 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       if (vragen.length === 0) {
         // geen_vragen: de frontend toont dit als melding, niet als opslagfout.
         return new Response(
-          JSON.stringify({ trendanalyse: `Er zijn de afgelopen 30 dagen geen vragen gesteld ${trendBereik}. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse.`, geen_vragen: true, rapport: null }),
+          JSON.stringify({ trendanalyse: `Er zijn ${periodeTekst(trendPeriode)} geen vragen gesteld ${trendBereik}. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse.`, geen_vragen: true, rapport: null, periode: trendPeriode }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const gebruikteVragen = vragen.slice(0, 200);
+      // Maximaal 200 vragen, gelijkmatig verspreid over de gekozen periode.
+      const gebruikteVragen = spreidVragen(vragen, 200);
       const vraagLijst = gebruikteVragen.map((v, i) => `${i + 1}. ${v}`).join("\n");
 
       // Kennisnotities en items ophalen voor context
@@ -2164,6 +2168,8 @@ Regels:
 - Maximaal 200 woorden totaal
 - Alleen op basis van de aangeleverde anonieme vraagteksten
 
+Periode: ${periodeTekst(trendPeriode)}, ${trendBereik} (${vragen.length} vragen${gebruikteVragen.length < vragen.length ? `, waarvan ${gebruikteVragen.length} gelijkmatig verspreid hieronder` : ""}).
+
 Vragen (${gebruikteVragen.length}):
 ${vraagLijst}${trendGedekteContext}`;
 
@@ -2188,8 +2194,9 @@ ${vraagLijst}${trendGedekteContext}`;
               tenant_id: profile.tenant_id,
               teamleider_id: profile.id,
               tekst: tekst,
+              periode: trendPeriode,
             })
-            .select("id, tekst, aangemaakt_op")
+            .select("id, tekst, aangemaakt_op, periode")
             .single();
           if (insertErr) {
             console.error("[Trendanalyse] DB insert fout:", insertErr.message);
@@ -2199,7 +2206,7 @@ ${vraagLijst}${trendGedekteContext}`;
         }
 
         return new Response(
-          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length, ...testExtra() }),
+          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length, periode: trendPeriode, ...testExtra() }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {
