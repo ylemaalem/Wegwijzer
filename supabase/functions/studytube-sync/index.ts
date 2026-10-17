@@ -78,17 +78,22 @@ Deno.serve(async (req) => {
     // 1. Bestaande cursussen ophalen incl. beschrijving voor embedding input
     const { data: bestaandRows } = await supabaseAdmin
       .from("studytube_cursussen")
-      .select("studytube_course_id, embedding, beschrijving")
+      .select("studytube_course_id, embedding, beschrijving, verborgen")
       .eq("tenant_id", tenantId);
 
-    const bestaandMap = new Map<string, { heeftEmbedding: boolean; heeftBeschrijving: boolean; beschrijving: string }>();
+    // verborgen: in Beheer verborgen cursussen (migratie 092). De sync laat die
+    // instelling staan (de upsert hieronder schrijft de kolom niet) en maakt voor
+    // verborgen cursussen geen embedding of beschrijving.
+    const bestaandMap = new Map<string, { heeftEmbedding: boolean; heeftBeschrijving: boolean; beschrijving: string; verborgen: boolean }>();
     for (const r of bestaandRows ?? []) {
       bestaandMap.set(String(r.studytube_course_id), {
         heeftEmbedding: !!r.embedding,
         heeftBeschrijving: r.beschrijving !== null && r.beschrijving !== undefined && r.beschrijving !== "",
         beschrijving: r.beschrijving || "",
+        verborgen: r.verborgen === true,
       });
     }
+    const isVerborgen = (id: number) => bestaandMap.get(String(id))?.verborgen === true;
     console.log(`[Sync] ${bestaandMap.size} cursussen al in DB, ${[...bestaandMap.values()].filter(v => v.heeftEmbedding).length} met embedding, ${[...bestaandMap.values()].filter(v => v.heeftBeschrijving).length} met beschrijving`);
 
     // 2. OAuth token
@@ -127,14 +132,14 @@ Deno.serve(async (req) => {
     console.log(`[Sync] ${allCourses.length} cursussen opgehaald van StudyTube API`);
 
     // Delta bepalen — max 100 embeddings per sync
-    const alleZonderEmbedding = allCourses.filter((c) => !bestaandMap.get(String(c.id))?.heeftEmbedding);
+    const alleZonderEmbedding = allCourses.filter((c) => !isVerborgen(c.id) && !bestaandMap.get(String(c.id))?.heeftEmbedding);
     const teEmbeddenCursussen = alleZonderEmbedding.sort((a, b) => a.id - b.id).slice(0, isTest ? 0 : MAX_EMBEDDING_PER_SYNC);
 
     // Cursussen zonder beschrijving — max 100 per sync
     const zonderBeschrijving = isTest
       ? [...allCourses].sort((a, b) => a.id - b.id).slice(0, TEST_AANTAL_CURSUSSEN)
       : allCourses
-        .filter((c) => !bestaandMap.get(String(c.id))?.heeftBeschrijving)
+        .filter((c) => !isVerborgen(c.id) && !bestaandMap.get(String(c.id))?.heeftBeschrijving)
         .sort((a, b) => a.id - b.id)
         .slice(0, MAX_BESCHRIJVING_PER_SYNC);
 
@@ -226,7 +231,9 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 6. Basis upsert voor alle cursussen
+    // 6. Basis upsert voor alle cursussen. Bewust zonder "verborgen": bij een
+    // bestaande cursus blijft de instelling uit Beheer zo staan; nieuwe cursussen
+    // krijgen de standaardwaarde (zichtbaar).
     const UPSERT_BATCH = 200;
     const basisRows = allCourses.map((c) => ({
       tenant_id: tenantId,
@@ -271,10 +278,11 @@ Deno.serve(async (req) => {
 
     const nogZonderEmbedding = alleZonderEmbedding.length - embeddingSucces;
     const nogZonderBeschrijving = allCourses.filter((c) =>
-      !beschrijvingMap.has(c.id) && !bestaandMap.get(String(c.id))?.heeftBeschrijving
+      !isVerborgen(c.id) && !beschrijvingMap.has(c.id) && !bestaandMap.get(String(c.id))?.heeftBeschrijving
     ).length;
+    const aantalVerborgen = allCourses.filter((c) => isVerborgen(c.id)).length;
 
-    console.log(`[Sync] Klaar. Nog ${nogZonderEmbedding} zonder embedding, ${nogZonderBeschrijving} zonder beschrijving.`);
+    console.log(`[Sync] Klaar. Nog ${nogZonderEmbedding} zonder embedding, ${nogZonderBeschrijving} zonder beschrijving, ${aantalVerborgen} verborgen.`);
 
     return new Response(
       JSON.stringify({
@@ -283,6 +291,7 @@ Deno.serve(async (req) => {
         nog_zonder_embedding: nogZonderEmbedding,
         beschrijvingen_gegenereerd: beschrijvingSucces,
         nog_zonder_beschrijving: nogZonderBeschrijving,
+        verborgen: aantalVerborgen,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

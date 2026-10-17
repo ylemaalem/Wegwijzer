@@ -86,7 +86,7 @@
     try {
       var { data: cursussen, error } = await supabaseClient
         .from('studytube_cursussen')
-        .select('naam, duur_minuten, trefwoorden, laatst_gesynchroniseerd, beschrijving')
+        .select('id, naam, duur_minuten, trefwoorden, laatst_gesynchroniseerd, beschrijving, verborgen')
         .eq('tenant_id', tenantId)
         .order('naam');
       if (error || !cursussen || cursussen.length === 0) {
@@ -95,7 +95,9 @@
       }
       var laatst = cursussen[0].laatst_gesynchroniseerd;
       var datum = laatst ? new Date(laatst).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–';
-      header.textContent = cursussen.length + ' cursussen gesynchroniseerd — laatst bijgewerkt: ' + datum;
+      var aantalVerborgen = cursussen.filter(function (c) { return c.verborgen; }).length;
+      header.textContent = cursussen.length + ' cursussen gesynchroniseerd' +
+        (aantalVerborgen > 0 ? ' (' + aantalVerborgen + ' verborgen)' : '') + ' — laatst bijgewerkt: ' + datum;
 
       var metBeschrijving = cursussen.filter(function (c) { return c.beschrijving; }).length;
       updateBeschrijvingVoortgang(metBeschrijving, cursussen.length);
@@ -113,17 +115,67 @@
         if (rest > 0) {
           tagHtml += '<span style="display:inline-block;color:var(--text-secondary);font-size:0.75rem;margin:1px 2px">+' + rest + '</span>';
         }
+        tr.setAttribute('data-naam', (c.naam || '').toLowerCase());
+        if (c.verborgen) tr.style.opacity = '0.55';
         tr.innerHTML =
-          '<td style="padding:6px 10px">' + (c.naam || '') + '</td>' +
+          '<td style="padding:6px 10px">' + escapeHtml(c.naam || '') + (c.verborgen ? ' <em style="color:var(--text-secondary)">(verborgen)</em>' : '') + '</td>' +
           '<td style="padding:6px 10px;text-align:right">' + (c.duur_minuten != null ? c.duur_minuten : '–') + '</td>' +
           '<td style="padding:6px 10px">' + tagHtml + '</td>';
+        // Cursus verbergen: wordt dan nooit als training onder een antwoord getoond.
+        var knopTd = document.createElement('td');
+        knopTd.style.cssText = 'padding:6px 10px;text-align:right;white-space:nowrap';
+        var knop = document.createElement('button');
+        knop.type = 'button';
+        knop.className = 'btn btn-secondary';
+        knop.style.cssText = 'width:auto;padding:3px 10px;font-size:0.75rem';
+        knop.textContent = c.verborgen ? 'Tonen' : 'Verbergen';
+        knop.title = c.verborgen ? 'Weer als training onder antwoorden tonen' : 'Nooit als training onder antwoorden tonen';
+        knop.addEventListener('click', function () { zetCursusVerborgen(c, !c.verborgen, knop); });
+        knopTd.appendChild(knop);
+        tr.appendChild(knopTd);
         tbody.appendChild(tr);
       });
+      filterStudytubeCursussen();
       container.style.display = 'block';
     } catch (e) {
       console.warn('[StudyTube] Cursussen laden mislukt:', e);
     }
   }
+
+  async function zetCursusVerborgen(cursus, verborgen, knop) {
+    knop.disabled = true;
+    try {
+      var res = await supabaseClient.rpc('zet_studytube_cursus_verborgen', { p_cursus_id: cursus.id, p_verborgen: verborgen });
+      if (res.error) {
+        showToast('Opslaan mislukt: ' + res.error.message, 'error');
+        return;
+      }
+      logAudit(verborgen ? 'STUDYTUBE_CURSUS_VERBORGEN' : 'STUDYTUBE_CURSUS_ZICHTBAAR', 'studytube_cursus', cursus.id, { naam: cursus.naam });
+      showToast(verborgen
+        ? '"' + cursus.naam + '" wordt niet meer als training getoond.'
+        : '"' + cursus.naam + '" wordt weer als training getoond.', 'success');
+      await loadStudytubeCursussen();
+    } catch (e) {
+      showToast('Opslaan mislukt: ' + (e && e.message ? e.message : String(e)), 'error');
+    } finally {
+      knop.disabled = false;
+    }
+  }
+
+  // Zoekveld boven de cursuslijst: filtert de rijen op naam.
+  function filterStudytubeCursussen() {
+    var zoekEl = document.getElementById('studytube-cursus-zoek');
+    var tbody = document.getElementById('studytube-cursussen-body');
+    if (!zoekEl || !tbody) return;
+    var term = (zoekEl.value || '').trim().toLowerCase();
+    Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
+      tr.style.display = !term || (tr.getAttribute('data-naam') || '').indexOf(term) !== -1 ? '' : 'none';
+    });
+  }
+  (function initStudytubeZoek() {
+    var zoekEl = document.getElementById('studytube-cursus-zoek');
+    if (zoekEl) zoekEl.addEventListener('input', filterStudytubeCursussen);
+  })();
 
   // PDF.js worker instellen
   if (typeof pdfjsLib !== 'undefined') {

@@ -881,6 +881,7 @@
           <div id="studytube-sync-result" style="margin-top:8px;font-size:0.85rem;display:none"></div>
           <div id="studytube-cursussen-container" style="display:none;margin-top:16px">
             <div id="studytube-cursussen-header" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px"></div>
+            <input class="form-input" type="search" id="studytube-cursus-zoek" placeholder="Zoek cursus op naam" aria-label="Zoek cursus op naam" style="margin-bottom:8px;padding:6px 10px;font-size:0.82rem">
             <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
               <table id="studytube-cursussen-tabel" style="width:100%;border-collapse:collapse;font-size:0.82rem">
                 <thead>
@@ -888,6 +889,7 @@
                     <th style="text-align:left;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border)">Cursusnaam</th>
                     <th style="text-align:right;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">Duur (min)</th>
                     <th style="text-align:left;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border)">Trefwoorden</th>
+                    <th style="text-align:right;padding:8px 10px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap" title="Een verborgen cursus wordt nooit als training onder een antwoord getoond">Als training</th>
                   </tr>
                 </thead>
                 <tbody id="studytube-cursussen-body"></tbody>
@@ -1413,7 +1415,7 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js"></script>
   <script src="js/medewerker-opslaan.js?v=1"></script>
-  <script src="js/admin.js?v=110"></script>
+  <script src="js/admin.js?v=111"></script>
 
 </body>
 </html>

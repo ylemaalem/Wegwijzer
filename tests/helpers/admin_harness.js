@@ -50,8 +50,8 @@ function maakElement(id) {
 // tabellen: { tabelnaam: [rijen] } — elke select op die tabel geeft alle rijen terug.
 function maakSupabase(tabellen) {
   const log = [];
-  function query(tabel) {
-    const q = { tabel, acties: [] };
+  function query(tabel, args) {
+    const q = { tabel, acties: [], args };
     const builder = new Proxy({}, {
       get(_, prop) {
         if (prop === 'then') {
@@ -71,7 +71,7 @@ function maakSupabase(tabellen) {
   return {
     log,
     from: query,
-    rpc: (naam) => query('rpc:' + naam),
+    rpc: (naam, args) => query('rpc:' + naam, args),
     auth: {
       getSession: async () => ({ data: { session: { access_token: 'test' } } }),
       getUser: async () => ({ data: { user: { id: 'u1' } } }),
