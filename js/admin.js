@@ -5184,18 +5184,15 @@
             .update(data)
             .eq('id', tlId);
         } else {
-          // Insert nieuwe teamleider
-          result = await supabaseClient
-            .from('teamleiders')
-            .insert(data);
-
-          // Stuur automatisch uitnodigingsmail via Edge Function (service role)
-          if (!result.error && email) {
-            console.log('[Leidinggevende] Start uitnodigingsmail via Edge Function voor:', email, 'rol:', rol);
+          // Nieuwe leidinggevende met e-mail: eerst uitnodigen, pas daarna de rij
+          // opslaan. Weigert de server de uitnodiging (bijv. account al in gebruik of
+          // van een andere organisatie), dan wordt er niets opgeslagen.
+          var inviteData = null;
+          if (email) {
+            console.log('[Leidinggevende] Uitnodiging vóór opslaan voor:', email, 'rol:', rol);
             try {
               var session = await supabaseClient.auth.getSession();
               var token = session.data.session.access_token;
-
               var inviteResponse = await fetch(SUPABASE_URL + '/functions/v1/chat', {
                 method: 'POST',
                 headers: {
@@ -5210,33 +5207,45 @@
                   redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
                 })
               });
-
-              var inviteData = await inviteResponse.json();
+              inviteData = await inviteResponse.json();
               console.log('[Leidinggevende] Invite response:', JSON.stringify(inviteData));
-
-              if (inviteData.error) {
-                console.error('[Leidinggevende] Invite fout:', inviteData.error);
-                alert('Opgeslagen, maar uitnodigingsmail mislukt: ' + inviteData.error);
-              } else if (inviteData.invited) {
-                console.log('[Leidinggevende] Uitnodigingsmail verstuurd, user_id:', inviteData.user_id);
-                // Wacht op trigger die profiel aanmaakt
-                await new Promise(function (r) { setTimeout(r, 1500); });
-                // Update profiel met teams of afdelingen
-                if (inviteData.user_id) {
-                  var profileUpdate = { teamleider_naam: naam };
-                  if (rol === 'teamleider' && teams.length > 0) profileUpdate.teams = teams;
-                  if (rol === 'manager') profileUpdate.afdeling = afdelingen.length > 0 ? afdelingen[0] : null;
-                  await supabaseClient
-                    .from('profiles')
-                    .update(profileUpdate)
-                    .eq('user_id', inviteData.user_id);
-                }
-                var rolNaam = { teamleider: 'Leidinggevende', manager: 'Manager', hr: 'HR Medewerker' };
-                alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd.\nUitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
-              }
             } catch (err) {
               console.error('[Leidinggevende] Invite exception:', err);
-              alert('Opgeslagen, maar uitnodigingsmail kon niet verstuurd worden.');
+              inviteData = { error: 'De uitnodiging kon niet verstuurd worden (' + (err && err.message ? err.message : err) + ').' };
+            }
+            if (!inviteData || inviteData.error || !inviteData.invited) {
+              alert('Niet opgeslagen: ' + ((inviteData && inviteData.error) || 'de uitnodiging is niet verstuurd.'));
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Opslaan';
+              }
+              return;
+            }
+          }
+
+          result = await supabaseClient
+            .from('teamleiders')
+            .insert(data);
+
+          if (inviteData && inviteData.invited) {
+            if (result.error) {
+              alert('Uitnodigingsmail verstuurd naar ' + email + ', maar de leidinggevende kon niet worden opgeslagen: ' + result.error.message);
+            } else {
+              console.log('[Leidinggevende] Uitnodigingsmail verstuurd, user_id:', inviteData.user_id);
+              // Wacht op trigger die profiel aanmaakt
+              await new Promise(function (r) { setTimeout(r, 1500); });
+              // Update profiel met teams of afdelingen
+              if (inviteData.user_id) {
+                var profileUpdate = { teamleider_naam: naam };
+                if (rol === 'teamleider' && teams.length > 0) profileUpdate.teams = teams;
+                if (rol === 'manager') profileUpdate.afdeling = afdelingen.length > 0 ? afdelingen[0] : null;
+                await supabaseClient
+                  .from('profiles')
+                  .update(profileUpdate)
+                  .eq('user_id', inviteData.user_id);
+              }
+              var rolNaam = { teamleider: 'Leidinggevende', manager: 'Manager', hr: 'HR Medewerker' };
+              alert((rolNaam[rol] || 'Leidinggevende') + ' toegevoegd.\nUitnodigingsmail verstuurd naar ' + email + '.\nLet op: controleer ook de spamfolder.');
             }
           }
         }

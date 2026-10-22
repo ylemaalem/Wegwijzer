@@ -3018,6 +3018,17 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       try {
+        // Alleen accounts van de eigen organisatie (migratie 094).
+        const { data: weigering, error: controleFout } = await supabaseAdmin.rpc("controleer_accountverwijdering", {
+          p_beller: user.id, p_doel: body.delete_user_id, p_profiel: null,
+        });
+        if (controleFout) {
+          return new Response(JSON.stringify({ error: "Account kon niet worden gecontroleerd", deleted: false }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (weigering) {
+          console.warn("[DeleteUser] Geweigerd:", weigering, "doel:", body.delete_user_id);
+          return new Response(JSON.stringify({ error: weigering, deleted: false }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         const { error: delError } = await supabaseAdmin.auth.admin.deleteUser(body.delete_user_id);
         if (delError) {
           return new Response(JSON.stringify({ error: delError.message, deleted: false }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });

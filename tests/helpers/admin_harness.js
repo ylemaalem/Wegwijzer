@@ -126,7 +126,9 @@ function laadPagina(opties) {
     navigator: maakStub('navigator'),
     location: maakStub('location', { href: 'https://test/admin.html', search: '', hash: '' }),
     history: maakStub('history'),
-    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    // opties.timers: setTimeout voert de callback (asynchroon) direct uit i.p.v. nooit.
+    setTimeout: opties.timers ? (fn) => { Promise.resolve().then(fn); return 0; } : () => 0,
+    clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame: () => 0,
     fetch: opties.fetch || (async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' })),
     confirm: (tekst) => { meldingen.confirm.push(tekst); return !!opties.confirm; },

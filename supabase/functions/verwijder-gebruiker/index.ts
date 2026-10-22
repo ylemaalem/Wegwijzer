@@ -44,15 +44,27 @@ Deno.serve(async (req) => {
   const body = await req.json();
   const { user_id, profile_id } = body;
 
-  if (!user_id) {
-    return new Response(JSON.stringify({ error: "user_id is verplicht" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  // Alleen accounts van de eigen organisatie (migratie 094: één beslisregel in de
+  // database; NULL = toegestaan, anders de reden).
+  const { data: weigering, error: controleFout } = await supabaseAdmin.rpc("controleer_accountverwijdering", {
+    p_beller: user.id, p_doel: user_id || null, p_profiel: profile_id || null,
+  });
+  if (controleFout) {
+    console.error("[VerwijderGebruiker] Controle mislukt:", controleFout.message);
+    return new Response(JSON.stringify({ error: "Account kon niet worden gecontroleerd", deleted: false }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (weigering) {
+    console.warn("[VerwijderGebruiker] Geweigerd:", weigering, "doel:", user_id, "door:", user.id);
+    return new Response(JSON.stringify({ error: weigering, deleted: false }), {
+      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  // Verwijder profiel (cascade verwijdert conversations)
+  // Verwijder profiel (cascade verwijdert conversations); altijd gekoppeld aan dit account.
   if (profile_id) {
-    await supabaseAdmin.from("profiles").delete().eq("id", profile_id);
+    await supabaseAdmin.from("profiles").delete().eq("id", profile_id).eq("user_id", user_id);
   } else {
     await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
   }
