@@ -1,5 +1,5 @@
 {
- "versie": "2026-10-17",
+ "versie": "2026-10-22",
  "tenant": "AHMN",
  "toelichting": "82 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
  "aanname_kosten": {
@@ -1242,18 +1242,14 @@
     [
      "ondersteuning & stabiliteit",
      "ondersteuning en stabiliteit"
-    ],
-    [
-     "inzicht & overzicht",
-     "inzicht en overzicht"
     ]
    ],
-   "min_treffers": 3,
+   "min_treffers": 2,
    "bron": "20240508 Uitvoeringsafspraken Wmo-ondersteuning 2023 (2).pdf (inhoudsopgave stuk 1; I&O stuk 3, O&S stuk 4, O&O stuk 5-6)",
    "documenttype": "protocol",
    "zeker": true,
    "actief": true,
-   "let_op": "Alleen volledige namen tellen; afkortingen niet (de bot noemde O&O ten onrechte 'O&S'). Uren per traject staan in geen document vast (alleen voorbeeld 208 uur, stuk 8)."
+   "let_op": "AHMN is gecontracteerd voor O&S en optioneel O&O; I&O bestaat maar komt zelden voor en telt niet mee (besluit Younes 2026-10-22). Alleen volledige namen tellen; afkortingen niet. Uren per traject staan in geen document vast (alleen voorbeeld 208 uur, stuk 8)."
   },
   {
    "id": 63,
