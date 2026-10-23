@@ -8,6 +8,7 @@ import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag } from "../_shared/zorginhoud.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
+import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
 import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
 
 const corsHeaders = {
@@ -1161,9 +1162,11 @@ Deno.serve(async (req: Request) => {
           if (!resp.ok || !r.test_modus) {
             return { id: v.id, vraag: v.vraag, geslaagd: false, reden: `HTTP ${resp.status}: ${r.error || "onbekend"}` };
           }
-          const antwoordLower = (r.antwoord || "").toLowerCase();
+          // Genormaliseerd vergelijken (_shared/testvergelijking.ts): kleine letters,
+          // geen accenten, & = en, streepjes/schuine strepen = spatie.
+          const antwoordNorm = normaliseerTest(r.antwoord || "");
           const groepen = Array.isArray(v.kernfeit_groepen) ? v.kernfeit_groepen : [];
-          const gevonden = groepen.map((g) => g.some((k) => antwoordLower.includes(k.toLowerCase())));
+          const gevonden = groepen.map((g) => g.some((k) => bevatTest(antwoordNorm, k)));
           const nodig = v.min_treffers ?? groepen.length;
           const aantal = gevonden.filter(Boolean).length;
           let ok = groepen.length > 0 && aantal >= nodig;
@@ -1186,7 +1189,7 @@ Deno.serve(async (req: Request) => {
             trainingControle = { getoond, vooraf, geen_training_zinnen: geenZinnen, verwijst_naar_hieronder: verwijst, systeemzin, zinnen: r.trainingen_zinnen, tegenspraak };
           }
           // Verboden zinnen (bv. een correctie van de vraagsteller) maken de vraag fout.
-          const verbodenGevonden = (Array.isArray(v.verboden) ? v.verboden : []).filter((z) => antwoordLower.includes(String(z).toLowerCase()));
+          const verbodenGevonden = (Array.isArray(v.verboden) ? v.verboden : []).filter((z) => bevatTest(antwoordNorm, z));
           if (verbodenGevonden.length > 0) ok = false;
           return {
             id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
