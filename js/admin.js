@@ -5526,7 +5526,13 @@
 
   window.deleteMelding = async function (id) {
     if (!confirm('Melding verwijderen?')) return;
-    await supabaseClient.from('meldingen').delete().eq('id', id);
+    // select() geeft de verwijderde rij terug; leeg = geweigerd door de rechten.
+    var res = await supabaseClient.from('meldingen').delete().eq('id', id).select('id');
+    if (res.error || !res.data || res.data.length === 0) {
+      alert('Verwijderen mislukt' + (res.error ? ': ' + res.error.message : ' (geen rechten of melding niet gevonden).'));
+      return;
+    }
+    await logAudit('MELDING_VERWIJDERD', 'melding', id, null);
     loadMeldingen();
   };
 
