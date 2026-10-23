@@ -1834,6 +1834,15 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     }
 
     // ---- Admin: document chunks indexeren (vector embeddings) ----
+    // ---- Testdiagnose: embedding van een tekst (alleen testsleutel) ----
+    // Voor het meten van de rangorde van stukken in SQL (zoekdiagnose); geen opslag.
+    if (isTest && body.test_embedding === true && typeof body.tekst === "string" && body.tekst.trim()) {
+      const keyDiag = Deno.env.get("OPENAI_API_KEY");
+      const emb = keyDiag ? await generateEmbedding(body.tekst, keyDiag) : null;
+      return new Response(JSON.stringify({ embedding: emb }),
+        { status: emb ? 200 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // ---- Contextual Retrieval: context per stuk maken (punt 5, migratie 103) ----
     // Per stuk 1-2 zinnen die het stuk binnen het hele document situeren (Claude,
     // document in de prompt-cache), daarna een embedding van context + stuk in
