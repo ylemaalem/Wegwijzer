@@ -6661,7 +6661,7 @@
       btn.disabled = true;
       var origTekst = btn.textContent;
       btn.textContent = 'Bezig…';
-      if (statusEl) statusEl.textContent = 'De test draait, dit kan één tot twee minuten duren…';
+      if (statusEl) statusEl.textContent = 'De test draait in delen op de server; dit duurt een paar minuten…';
       if (resEl) resEl.innerHTML = '';
       try {
         var session = (await supabaseClient.auth.getSession()).data.session;
@@ -6674,8 +6674,14 @@
         if (!response.ok || !data.success) {
           if (statusEl) statusEl.textContent = 'Mislukt: ' + (data.error || ('HTTP ' + response.status));
         } else {
-          if (statusEl) statusEl.textContent = '';
-          if (resEl) resEl.innerHTML = renderRegressieResultaat(data);
+          // De run draait in delen op de server; wacht tot de rij klaar is.
+          var run = await wachtOpRegressieRun(data.run_id, statusEl);
+          if (!run) {
+            if (statusEl) statusEl.textContent = 'De test is na 20 minuten nog niet klaar. Bekijk de lijst hieronder later opnieuw.';
+          } else {
+            if (statusEl) statusEl.textContent = '';
+            if (resEl) resEl.innerHTML = renderRegressieResultaat(run);
+          }
           loadRegressieRuns();
         }
       } catch (e) {
@@ -6685,6 +6691,18 @@
         btn.textContent = origTekst;
       }
     });
+  }
+
+  // Leest de run elke 5 s tot klaar = true (max. 20 minuten); toont de voortgang.
+  async function wachtOpRegressieRun(runId, statusEl) {
+    for (var i = 0; i < 240; i++) {
+      await new Promise(function (ok) { setTimeout(ok, 5000); });
+      var res = await supabaseClient.from('regressie_runs').select('*').eq('id', runId).maybeSingle();
+      var run = res.data;
+      if (run && run.klaar) return run;
+      if (run && statusEl) statusEl.textContent = 'De test draait: ' + (run.details ? run.details.length : 0) + ' van ' + run.aantal_vragen + ' vragen klaar…';
+    }
+    return null;
   }
 
   function renderRegressieResultaat(data) {
@@ -6723,9 +6741,12 @@
       var pct = r.aantal_vragen > 0 ? Math.round((r.geslaagd / r.aantal_vragen) * 100) : 0;
       var kleur = pct >= 90 ? 'var(--success, #2e7d32)' : pct >= 70 ? 'var(--warning, #F57C00)' : 'var(--error, #c62828)';
       var trig = r.trigger === 'cron' ? '⏱ automatisch' : '👤 handmatig';
+      var uitslag = r.klaar === false
+        ? '<span style="color:var(--text-muted)">bezig of onvolledig: ' + (r.details ? r.details.length : 0) + '/' + r.aantal_vragen + ' vragen</span>'
+        : '<span style="color:' + kleur + ';font-weight:600">' + r.geslaagd + '/' + r.aantal_vragen + ' (' + pct + '%) · $' + (r.kosten_usd || 0) + '</span>';
       return '<div style="display:flex;justify-content:space-between;font-size:0.82rem;padding:6px 0;border-bottom:1px solid var(--border)">' +
         '<span>' + datum + ' · ' + trig + '</span>' +
-        '<span style="color:' + kleur + ';font-weight:600">' + r.geslaagd + '/' + r.aantal_vragen + ' (' + pct + '%) · $' + (r.kosten_usd || 0) + '</span>' +
+        uitslag +
         '</div>';
     }).join('');
   }

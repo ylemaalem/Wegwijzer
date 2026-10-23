@@ -1017,34 +1017,77 @@ Deno.serve(async (req: Request) => {
 
     // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
     // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
-    // Roept per vraag de eigen chat-functie in testmodus aan (geen persistentie),
-    // doet een stringcheck op de kernfeiten en slaat één run-samenvatting op.
-    if (body.regressie_run === true) {
-      if (!isTest && profile.role !== "admin") {
+    // Roept per vraag de eigen chat-functie in testmodus aan (geen persistentie)
+    // en doet een stringcheck op de kernfeiten.
+    // IN DELEN (2026-10-23): 107 vragen passen niet in één aanroep (de functie wordt
+    // na ~200-260 s afgesloten, de chat haalt ~0,65 vraag/s). regressie_run maakt de
+    // run aan (klaar = false) en start deel 1; elk deel (regressie_deel, alleen met de
+    // testsleutel) draait op de achtergrond tot DEEL_STARTGRENS_MS, schrijft zijn
+    // resultaten bij in dezelfde rij en start zelf het volgende deel. De laatste zet
+    // klaar = true. Wie op het resultaat wacht, leest regressie_runs tot klaar.
+    if (body.regressie_run === true || body.regressie_deel === true) {
+      if (body.regressie_deel === true ? !isTest : (!isTest && profile.role !== "admin")) {
         return new Response(JSON.stringify({ error: "Alleen admin" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const runTenant = isTest ? TEST_TENANT_ID : profile.tenant_id;
       // Met de testsleutel is het standaard de cron; een handmatige run via de
       // sleutel (bv. na een codewijziging) kan zich als "handmatig" melden.
       const trigger = isTest && body.trigger !== "handmatig" ? "cron" : "handmatig";
       const testSecret = Deno.env.get("WEGWIJZER_TEST_SECRET") || "";
       const eigenUrl = `${supabaseUrl}/functions/v1/chat`;
 
-      const { data: vragen } = await supabaseAdmin
+      const laadVragen = async (tenant: string) => (await supabaseAdmin
         .from("regressie_vragen")
         .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle, verboden")
-        .eq("tenant_id", runTenant)
+        .eq("tenant_id", tenant)
         .eq("actief", true)
-        .order("id");
+        .order("id")).data;
 
-      if (!vragen || vragen.length === 0) {
-        return new Response(JSON.stringify({ error: "Geen actieve testvragen" }),
+      // Start het volgende deel: dat antwoordt meteen (202) en werkt op de achtergrond.
+      const startDeel = async (runId: string) => {
+        const resp = await fetch(eigenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        await resp.body?.cancel();
+        if (resp.status !== 202) throw new Error(`deel niet gestart: HTTP ${resp.status}`);
+      };
+
+      if (body.regressie_run === true) {
+        const runTenant = isTest ? TEST_TENANT_ID : profile.tenant_id;
+        const alleVragen = await laadVragen(runTenant);
+        if (!alleVragen || alleVragen.length === 0) {
+          return new Response(JSON.stringify({ error: "Geen actieve testvragen" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const { data: runRow, error: runErr } = await supabaseAdmin.from("regressie_runs").insert({
+          tenant_id: runTenant, aantal_vragen: alleVragen.length, geslaagd: 0, gefaald: 0,
+          tokens_input: 0, tokens_output: 0, kosten_usd: 0, trigger, details: [], klaar: false, volgende_index: 0,
+        }).select("id, gestart_op").single();
+        if (runErr || !runRow) {
+          return new Response(JSON.stringify({ error: `Run niet aangemaakt: ${runErr?.message}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        await startDeel(runRow.id);
+        console.log(`[Regressie] run ${runRow.id} gestart (${trigger}, ${alleVragen.length} vragen)`);
+        return new Response(JSON.stringify({ success: true, run_id: runRow.id, gestart: true, klaar: false, aantal_vragen: alleVragen.length }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // ---- regressie_deel: één deel van een lopende run ----
+      const runId = String(body.run_id || "");
+      const { data: run } = await supabaseAdmin.from("regressie_runs")
+        .select("id, tenant_id, details, klaar, volgende_index, tokens_input, tokens_output, kosten_usd")
+        .eq("id", runId).maybeSingle();
+      if (!run || run.klaar) {
+        return new Response(JSON.stringify({ error: "Run niet gevonden of al klaar" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const vragen = await laadVragen(run.tenant_id);
       const details: Array<Record<string, unknown>> = [];
-      let geslaagd = 0, gefaald = 0, tinput = 0, toutput = 0, kostenTotaal = 0;
+      let tinput = 0, toutput = 0, kostenTotaal = 0;
       // kernfeit_groepen: elke groep = één feit met alleen schrijfvarianten van dat feit.
       // min_treffers: hoeveel groepen gevonden moeten worden (null = alle groepen).
       // controle "trainingen": fout als de tekst zegt dat er geen training is terwijl er
@@ -1057,12 +1100,13 @@ Deno.serve(async (req: Request) => {
       // wacht de opgegeven tijd en probeer opnieuw, anders faalt een vraag onterecht.
       // Elke aanroep krijgt een eigen tijdslimiet: één hangende vraag hield op
       // 2026-10-23 de hele run vast tot de functie werd afgesloten (run niet opgeslagen).
-      const VRAAG_TIMEOUT_MS = 60_000;
+      const VRAAG_TIMEOUT_MS = 55_000;
       const roepAanMetRetry = async (init: RequestInit): Promise<Response> => {
         for (let poging = 1; ; poging++) {
           try {
             const resp = await fetch(eigenUrl, { ...init, signal: AbortSignal.timeout(VRAAG_TIMEOUT_MS) });
-            if (resp.status !== 429 || poging >= 4) return resp;
+            // 429 (limiet per trace) en 503 (tijdelijk niet beschikbaar): opnieuw proberen.
+            if ((resp.status !== 429 && resp.status !== 503) || poging >= 4) return resp;
             await resp.body?.cancel();
             await new Promise((ok) => setTimeout(ok, 1500 * poging));
           } catch (e) {
@@ -1140,48 +1184,49 @@ Deno.serve(async (req: Request) => {
         }
       };
 
-      // Vaste werkers die steeds de volgende vraag pakken (niet wachten op de
-      // traagste van een groepje). Na RUN_STARTGRENS_MS starten er geen nieuwe
-      // vragen meer, zodat de run altijd binnen de functietijd wordt opgeslagen;
-      // een niet-gedraaide vraag telt als fout, met de reden erbij. (Met 82 vragen
-      // in groepjes van 4 werd de functie na ~200 s afgesloten voordat de run was opgeslagen.)
-      // 16 werkers sinds 2026-10-23: met 8 haalden 82 vragen de grens niet meer, en de
-      // set groeit naar 107. 429-limieten vangt roepAanMetRetry op.
+      // Vaste werkers die steeds de volgende vraag pakken (niet wachten op de traagste
+      // van een groepje). Na DEEL_STARTGRENS_MS starten er in dit deel geen nieuwe
+      // vragen meer; lopende vragen stoppen uiterlijk na VRAAG_TIMEOUT_MS. Zo eindigt
+      // elk deel ruim binnen de functietijd (gemeten: ~200 s gaat goed, langer niet).
+      // Meer dan ~16 werkers maakt het niet sneller (de chat haalt ~0,65 vraag/s).
       const CONCURRENCY = 16;
-      const RUN_STARTGRENS_MS = 170_000;
-      const runStart = Date.now();
-      const lijst = vragen as TV[];
-      let volgende = 0;
-      const werker = async () => {
-        while (volgende < lijst.length) {
-          const v = lijst[volgende++];
-          const d: Record<string, unknown> = Date.now() - runStart > RUN_STARTGRENS_MS
-            ? { id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: false, reden: "niet gedraaid: tijdslimiet van de testrun" }
-            : await draaiVraag(v);
-          tinput += (d._tin as number) || 0;
-          toutput += (d._tout as number) || 0;
-          kostenTotaal += (d._kosten as number) || 0;
-          delete d._tin; delete d._tout; delete d._kosten;
-          if (d.geslaagd) geslaagd++; else gefaald++;
-          details.push(d);
+      const DEEL_STARTGRENS_MS = 100_000;
+      const verwerkDeel = async () => {
+        const deelStart = Date.now();
+        const lijst = (vragen || []) as TV[];
+        let volgende = run.volgende_index || 0;
+        const begin = volgende;
+        const werker = async () => {
+          while (volgende < lijst.length && Date.now() - deelStart < DEEL_STARTGRENS_MS) {
+            const d = await draaiVraag(lijst[volgende++]);
+            tinput += (d._tin as number) || 0;
+            toutput += (d._tout as number) || 0;
+            kostenTotaal += (d._kosten as number) || 0;
+            delete d._tin; delete d._tout; delete d._kosten;
+            details.push(d);
+          }
+        };
+        await Promise.all(Array.from({ length: CONCURRENCY }, werker));
+        const klaar = volgende >= lijst.length;
+        const alle = [...((run.details || []) as Array<Record<string, unknown>>), ...details]
+          .sort((a, b) => (a.id as number) - (b.id as number));
+        const geslaagd = alle.filter((d) => d.geslaagd).length;
+        // Som van de kosten per vraag, berekend met de prijs van het gebruikte model.
+        const kosten = Math.round(((Number(run.kosten_usd) || 0) + kostenTotaal) * 1e4) / 1e4;
+        await supabaseAdmin.from("regressie_runs").update({
+          details: alle, geslaagd, gefaald: alle.length - geslaagd,
+          tokens_input: (run.tokens_input || 0) + tinput, tokens_output: (run.tokens_output || 0) + toutput,
+          kosten_usd: kosten, volgende_index: volgende, klaar,
+        }).eq("id", run.id);
+        console.log(`[Regressie] run ${run.id}: vragen ${begin + 1}-${volgende} van ${lijst.length} in ${Math.round((Date.now() - deelStart) / 1000)} s${klaar ? `; klaar: ${geslaagd}/${lijst.length} geslaagd, $${kosten}` : ""}`);
+        if (!klaar) {
+          try { await startDeel(run.id); } catch (e) { console.error("[Regressie] volgend deel niet gestart:", e); }
         }
       };
-      await Promise.all(Array.from({ length: CONCURRENCY }, werker));
-      console.log(`[Regressie] ${lijst.length} vragen in ${Math.round((Date.now() - runStart) / 1000)} s`);
-      details.sort((a, b) => (a.id as number) - (b.id as number));
-
-      // Som van de kosten per vraag, berekend met de prijs van het gebruikte model.
-      const kosten = Math.round(kostenTotaal * 1e4) / 1e4;
-      const { data: runRow } = await supabaseAdmin.from("regressie_runs").insert({
-        tenant_id: runTenant, aantal_vragen: vragen.length, geslaagd, gefaald,
-        tokens_input: tinput, tokens_output: toutput, kosten_usd: kosten, trigger, details,
-      }).select("id, gestart_op").single();
-
-      console.log(`[Regressie] run ${trigger}: ${geslaagd}/${vragen.length} geslaagd, $${kosten}`);
-      return new Response(JSON.stringify({
-        success: true, run_id: runRow?.id || null, aantal_vragen: vragen.length,
-        geslaagd, gefaald, tokens_input: tinput, tokens_output: toutput, kosten_usd: kosten, details,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // @ts-ignore EdgeRuntime bestaat in de Supabase Edge Runtime
+      EdgeRuntime.waitUntil(verwerkDeel().catch((e: unknown) => console.error("[Regressie] deel mislukt:", e)));
+      return new Response(JSON.stringify({ success: true, run_id: run.id, deel_gestart: true }),
+        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Tokentelling voor de kostenrapportage van een testrun (alle Haiku-calls samen).
