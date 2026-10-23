@@ -8,7 +8,7 @@ import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag } from "../_shared/zorginhoud.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
-import { leesPeriode, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
+import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -417,6 +417,17 @@ async function isLeidinggevende(supabaseAdmin: ReturnType<typeof createClient>, 
   const { data, error } = await supabaseAdmin.rpc("leidinggevende_rol_van", { p_user: userId });
   if (error) console.warn("[Rechten] leidinggevende_rol_van fout:", error.message);
   return !error && !!data;
+}
+
+// Startdatum live van de organisatie (settings.startdatum_live), of null.
+async function haalStartdatumLive(supabaseAdmin: ReturnType<typeof createClient>, tenantId: string): Promise<Date | null> {
+  const { data } = await supabaseAdmin
+    .from("settings")
+    .select("waarde")
+    .eq("tenant_id", tenantId)
+    .eq("sleutel", "startdatum_live")
+    .maybeSingle();
+  return leesStartdatumLive((data as { waarde: string | null } | null)?.waarde);
 }
 
 // Dashboardrol van een leidinggevende (zie _shared/dashboardrol.ts). Alle
@@ -2023,19 +2034,25 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         );
       }
 
+      // Startdatum live (instelling in Beheer): oudere gesprekken tellen niet mee.
+      const startLive = await haalStartdatumLive(supabaseAdmin, profile.tenant_id);
+      const startdatumLive = startLive ? startLive.toISOString() : null;
+
       const monitorIds = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null);
       if (monitorIds.length === 0) {
         return new Response(
-          JSON.stringify({ metadata: [] }),
+          JSON.stringify({ metadata: [], startdatum_live: startdatumLive }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const { data: convs, error: convErr } = await supabaseAdmin
+      let convQuery = supabaseAdmin
         .from("conversations")
         .select("user_id, feedback, created_at")
         .eq("tenant_id", profile.tenant_id)
-        .in("user_id", monitorIds)
+        .in("user_id", monitorIds);
+      if (startLive) convQuery = convQuery.gte("created_at", startLive.toISOString());
+      const { data: convs, error: convErr } = await convQuery
         .order("created_at", { ascending: false })
         .limit(2000);
 
@@ -2057,7 +2074,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       }
 
       return new Response(
-        JSON.stringify({ metadata }),
+        JSON.stringify({ metadata, startdatum_live: startdatumLive }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -2166,7 +2183,13 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       const trendBereik = bereikTekst(trendRol);
       // Periodekeuze in het dashboard: 30d (standaard), 3m, 6m of alles.
       const trendPeriode = leesPeriode(body.periode);
-      const trendSinds = periodeSinds(trendPeriode, new Date());
+      const periodeBegin = periodeSinds(trendPeriode, new Date());
+      // Startdatum live (instelling in Beheer) gaat voor als die later ligt.
+      const startLiveTrend = await haalStartdatumLive(supabaseAdmin, profile.tenant_id);
+      const trendSinds = laatsteBegin(periodeBegin, startLiveTrend);
+      const startGaatVoor = !!startLiveTrend && trendSinds === startLiveTrend;
+      const trendPeriodeTekst = startGaatVoor ? `sinds ${datumTekst(startLiveTrend!)}` : periodeTekst(trendPeriode);
+      const startdatumLiveTrend = startLiveTrend ? startLiveTrend.toISOString() : null;
       let vragen: string[] = [];
       if (monitorIdsTrend.length > 0) {
         let trendQuery = supabaseAdmin
@@ -2186,7 +2209,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       if (vragen.length === 0) {
         // geen_vragen: de frontend toont dit als melding, niet als opslagfout.
         return new Response(
-          JSON.stringify({ trendanalyse: `Er zijn ${periodeTekst(trendPeriode)} geen vragen gesteld ${trendBereik}. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse.`, geen_vragen: true, rapport: null, periode: trendPeriode }),
+          JSON.stringify({ trendanalyse: `Er zijn ${trendPeriodeTekst} geen vragen gesteld ${trendBereik}. Zodra medewerkers vragen stellen verschijnt hier een trendanalyse.`, geen_vragen: true, rapport: null, periode: trendPeriode, startdatum_live: startdatumLiveTrend }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -2238,7 +2261,7 @@ Regels:
 - Maximaal 200 woorden totaal
 - Alleen op basis van de aangeleverde anonieme vraagteksten
 
-Periode: ${periodeTekst(trendPeriode)}, ${trendBereik} (${vragen.length} vragen${gebruikteVragen.length < vragen.length ? `, waarvan ${gebruikteVragen.length} gelijkmatig verspreid hieronder` : ""}).
+Periode: ${trendPeriodeTekst}, ${trendBereik} (${vragen.length} vragen${gebruikteVragen.length < vragen.length ? `, waarvan ${gebruikteVragen.length} gelijkmatig verspreid hieronder` : ""}).
 
 Vragen (${gebruikteVragen.length}):
 ${vraagLijst}${trendGedekteContext}`;
@@ -2276,7 +2299,7 @@ ${vraagLijst}${trendGedekteContext}`;
         }
 
         return new Response(
-          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length, periode: trendPeriode, ...testExtra() }),
+          JSON.stringify({ trendanalyse: tekst, rapport: savedRapport, aantal_vragen: gebruikteVragen.length, periode: trendPeriode, startdatum_live: startdatumLiveTrend, ...testExtra() }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (err) {

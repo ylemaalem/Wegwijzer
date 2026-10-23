@@ -813,6 +813,14 @@
           </div>
 
           <div class="form-group">
+            <label class="form-label" for="setting-startdatum-live">Startdatum live</label>
+            <p class="section-subtitle" style="margin-bottom:6px">
+              Optioneel. Het dashboard (statistieken, gesprekkenoverzicht en trendanalyse) telt alleen gesprekken vanaf deze datum, zodat testgesprekken van vóór de start niet meetellen. Leeg = alles tonen. Er wordt niets verwijderd.
+            </p>
+            <input class="form-input" type="date" id="setting-startdatum-live" style="max-width:220px">
+          </div>
+
+          <div class="form-group">
             <label class="form-label" for="setting-logo-url">Logo URL (header)</label>
             <p class="section-subtitle" style="margin-bottom:6px">
               URL naar het organisatielogo. Verschijnt links in de header op alle pagina's.
@@ -1424,7 +1432,7 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=3"></script>
   <script src="js/medewerker-opslaan.js?v=1"></script>
-  <script src="js/admin.js?v=117"></script>
+  <script src="js/admin.js?v=118"></script>
 
 </body>
 </html>

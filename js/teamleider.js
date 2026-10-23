@@ -312,6 +312,7 @@
 
     var metadata = (metaResult && metaResult.metadata) || [];
     console.log('[TL] Metadata ontvangen:', metadata.length, 'gesprekken');
+    toonSindsLive(metaResult && metaResult.startdatum_live);
 
     if (metadata.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken van jouw team gevonden.</td></tr>';
@@ -502,6 +503,21 @@
   // =============================================
   // STATISTIEKEN
   // =============================================
+  // Startdatum live (instelling in Beheer): het dashboard telt pas vanaf die datum.
+  function toonSindsLive(iso) {
+    var tekst = '';
+    if (iso) {
+      var d = new Date(iso);
+      if (!isNaN(d.getTime())) {
+        tekst = 'Gesprekken sinds ' + d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' }) + ' (startdatum live).';
+      }
+    }
+    document.querySelectorAll('.tl-sinds-live').forEach(function (el) {
+      el.textContent = tekst;
+      el.style.display = tekst ? '' : 'none';
+    });
+  }
+
   async function loadTeamStatistieken() {
     // Privacy: zelfde geanonimiseerde metadata-route als loadTeamGesprekken. Server-side
     // scoping (team vs tenant) en anonimisering; geen directe conversations-tabeltoegang.
@@ -515,6 +531,7 @@
       });
       var metaResult = await response.json();
       data = (metaResult && metaResult.metadata) || [];
+      toonSindsLive(metaResult && metaResult.startdatum_live);
     } catch (err) {
       console.error('[TL Stats] Metadata ophalen mislukt:', err);
       return;

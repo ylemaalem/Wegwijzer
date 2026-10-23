@@ -5636,6 +5636,7 @@
     { sleutel: 'organisatienaam', elementId: 'setting-organisatienaam', fallback: '' },
     { sleutel: 'primaire_kleur', elementId: 'setting-kleur', fallback: '#E8720C' },
     { sleutel: 'website_url', elementId: 'setting-website', fallback: '' },
+    { sleutel: 'startdatum_live', elementId: 'setting-startdatum-live', fallback: '' },
     { sleutel: 'logo_url', elementId: 'setting-logo-url', fallback: '' },
     { sleutel: 'disclaimer', elementId: 'disclaimer-text', fallback: 'Deel geen persoonsgegevens of cliëntinformatie in deze chat.' }
   ];
@@ -5833,6 +5834,13 @@
       return;
     }
 
+    var startVal = document.getElementById('setting-startdatum-live').value.trim();
+    if (startVal && !/^\d{4}-\d{2}-\d{2}$/.test(startVal)) {
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = 'Ongeldige startdatum. Kies een datum of laat het veld leeg.';
+      return;
+    }
+
     var disclaimerVal = document.getElementById('disclaimer-text').value.trim();
     if (!disclaimerVal) {
       alertBox.className = 'alert alert-error show';
@@ -5862,7 +5870,7 @@
       alertMsg.textContent = 'Instellingen opgeslagen.';
       // Direct de nieuwe kleur toepassen — geen reload nodig
       if (kleurVal) applyOrgKleur(kleurVal);
-      await logAudit('INSTELLINGEN_OPGESLAGEN', 'settings', null, null);
+      await logAudit('INSTELLINGEN_OPGESLAGEN', 'settings', null, { startdatum_live: startVal || null });
       setTimeout(function () {
         alertBox.className = 'alert';
       }, 3000);
