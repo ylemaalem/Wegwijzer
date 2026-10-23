@@ -1,7 +1,7 @@
 {
- "versie": "2026-10-23",
+ "versie": "2026-10-23b",
  "tenant": "AHMN",
- "toelichting": "82 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
+ "toelichting": "107 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, 25 uit voorstel_testvragen.json van 2026-10-23, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
  "aanname_kosten": {
   "model": "claude-haiku-4-5-20251001",
   "prijs_input_per_mln_usd": 1.0,
@@ -1641,6 +1641,618 @@
    "zeker": true,
    "actief": true,
    "let_op": "Kernfeiten: het bedrag dat nu geldt (per 1 mei 2026) en de eerstvolgende wijziging (per 1 november 2026). Na 1 november 2026 bijwerken. Profiel wijkt af van de functie in de vraag (functie in de vraag gaat voor)."
+  },
+  {
+   "id": 84,
+   "categorie": "no-show",
+   "vraag": "Wat is een no-show en wanneer mag ik die declareren in Almere?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "niet aanwezig",
+     "komt niet opdagen",
+     "niet opdaagt",
+     "niet komt opdagen"
+    ],
+    [
+     "declar"
+    ],
+    [
+     "4 werkuren",
+     "vier werkuren",
+     "4 uur",
+     "vier uur",
+     "annulering"
+    ]
+   ],
+   "bron": "N1: Beleid no show 3.0 (Almere); Uitvoeringsafspraken Wmo-ondersteuning 2023, par. 5.11",
+   "verwacht_antwoord": "Begeleider is op de afgesproken plek en de cliënt komt niet opdagen: dit mag gedeclareerd worden. Annulering binnen 4 uur voor de afspraak telt ook als no-show. Let op: het beleid zegt 4 uur, de Wmo-afspraken zeggen 4 werkuren; kies welke je wilt.",
+   "status_bron": "bron gelezen, maar detail door Younes te controleren",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
+  },
+  {
+   "id": 85,
+   "categorie": "no-show",
+   "vraag": "Wat doe ik als een cliënt bij Thuis in de Wijk structureel niet opendoet?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "zorgweigering"
+    ],
+    [
+     "outreachend begeleider",
+     "opschal"
+    ]
+   ],
+   "bron": "N2: Procesbeschrijving Thuis in de Wijk 1.0",
+   "verwacht_antwoord": "Er is een procedure zorgweigering; bij structurele no-show wordt opgeschaald naar de outreachend begeleider.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 86,
+   "categorie": "plus- en minuren",
+   "vraag": "Wat gebeurt er met mijn minuren aan het eind van het jaar?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "kwijtgescholden",
+     "kwijtschelden",
+     "kwijtgescholden"
+    ],
+    [
+     "volgende kalenderjaar",
+     "daaropvolgende"
+    ]
+   ],
+   "bron": "N3: Regeling jaaruren",
+   "verwacht_antwoord": "Te weinig gewerkte uren worden kwijtgescholden als de werkgever je er niet de gelegenheid voor gaf; was je wel in staat gesteld, dan werk je ze het volgende jaar alsnog.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 1
+  },
+  {
+   "id": 87,
+   "categorie": "plus- en minuren",
+   "vraag": "Hoeveel plus- of minuren mag ik aan het eind van het jaar hebben?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "saldo van 0",
+     "0 plus",
+     "nul"
+    ],
+    [
+     "contracturen per week",
+     "contracturen"
+    ],
+    [
+     "eind februari",
+     "februari"
+    ]
+   ],
+   "bron": "N4: Regeling jaaruren",
+   "verwacht_antwoord": "Streven naar 0. Een saldo tot de omvang van je contracturen per week is normaal. Grotere afwijkingen uiterlijk eind februari corrigeren.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
+  },
+  {
+   "id": 88,
+   "categorie": "plus- en minuren",
+   "vraag": "Hoe worden mijn plusuren gecompenseerd?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "uitbetal"
+    ],
+    [
+     "vrije tijd"
+    ],
+    [
+     "ophoging",
+     "arbeidsovereenkomst"
+    ],
+    [
+     "25%"
+    ]
+   ],
+   "bron": "N5: Regeling jaaruren",
+   "verwacht_antwoord": "Uitbetaling (bij afwijking tot maximaal 25%), tijdelijke ophoging van de jaaruren, of compensatie in vrije tijd.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 3
+  },
+  {
+   "id": 89,
+   "categorie": "plus- en minuren",
+   "vraag": "Waar zie ik mijn saldo van de jaaruren en wie regelt dat?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "ons"
+    ],
+    [
+     "zelf verantwoordelijk",
+     "jij zelf",
+     "je zelf"
+    ]
+   ],
+   "bron": "N6: Regeling jaaruren",
+   "verwacht_antwoord": "Het saldo staat in ONS; je bent zelf verantwoordelijk voor het reguleren.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 90,
+   "categorie": "wlz",
+   "vraag": "Wat is het verschil tussen VPT en MPT?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "volledig pakket thuis",
+     "vpt"
+    ],
+    [
+     "modulair pakket thuis",
+     "mpt"
+    ],
+    [
+     "maaltijd",
+     "meerdere zorgaanbieders",
+     "mantelzorg",
+     "één zorgverlener",
+     "een zorgverlener"
+    ]
+   ],
+   "bron": "N7: de-weg-naar-zorg-wlz.pdf; WLZ toelichting.docx",
+   "verwacht_antwoord": "VPT: bijna alle zorg door één aanbieder. MPT: een deel daarvan, zonder maaltijden; geschikt bij mantelzorg of meerdere aanbieders.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 91,
+   "categorie": "wlz",
+   "vraag": "Voor welke Wlz-indicaties is AHMN gecontracteerd?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "vg 3",
+     "vg3"
+    ],
+    [
+     "ggz-w",
+     "ggz w"
+    ]
+   ],
+   "bron": "N8: WLZ toelichting.docx",
+   "verwacht_antwoord": "Wlz VG 3 t/m 6 en GGZ-W 1 t/m 4.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 92,
+   "categorie": "wlz",
+   "vraag": "Moet de Wlz van een cliënt die bij ons komt wonen VPT of MPT zijn?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "vpt",
+     "volledig pakket thuis"
+    ]
+   ],
+   "bron": "N9: WLZ toelichting.docx",
+   "verwacht_antwoord": "Wanneer iemand bij AHMN komt wonen moet de Wlz in VPT zijn.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 93,
+   "categorie": "wlz",
+   "vraag": "Wat doe ik als een Wlz-cliënt meer of minder zorg nodig heeft?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "niet toezeggen",
+     "niet starten",
+     "zonder deze stap"
+    ],
+    [
+     "aanmeld",
+     "contact"
+    ]
+   ],
+   "bron": "N10: WLZ toelichting.docx",
+   "verwacht_antwoord": "Bij alle wijzigingen eerst de afdeling aanmelden/contact opnemen; niet toezeggen of starten zonder die stap. (Welke afdeling precies: controleren.)",
+   "status_bron": "bron gelezen, maar detail door Younes te controleren",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 94,
+   "categorie": "wmo",
+   "vraag": "Wat is het verschil tussen ondersteuning & stabiliteit en ontwikkeling & ondersteuning?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "stabiliteit"
+    ],
+    [
+     "ontwikkeldoelen",
+     "ontwikkeling"
+    ],
+    [
+     "vijf jaar",
+     "5 jaar",
+     "langdurig"
+    ]
+   ],
+   "bron": "N11: Handleiding traject O&S 1.0; Handleiding traject O&O 1.0",
+   "verwacht_antwoord": "O&S: minimale verandercapaciteit, langdurig, beschikking tot 5 jaar, gericht op stabiliteit. O&O: verandercapaciteit, intensief werken aan ontwikkeldoelen.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 3
+  },
+  {
+   "id": 95,
+   "categorie": "wmo",
+   "vraag": "Hoe vaak moet ik evalueren in het traject ondersteuning & stabiliteit?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "een keer per jaar",
+     "jaarlijks",
+     "1 keer per jaar",
+     "eenmaal per jaar"
+    ],
+    [
+     "wiz"
+    ]
+   ],
+   "bron": "N12: Handleiding traject O&S 1.0",
+   "verwacht_antwoord": "Eén keer per jaar; het evaluatieverslag deel je via WIZ en de procesregisseur beoordeelt het.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 96,
+   "categorie": "wmo",
+   "vraag": "Wat gebeurt er in de eerste 6 weken van het traject ontwikkeling & ondersteuning?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "onderzoeksverslag"
+    ],
+    [
+     "startgesprek"
+    ],
+    [
+     "leren kennen",
+     "kennismaken",
+     "leer je de cliënt kennen"
+    ]
+   ],
+   "bron": "N13: Handleiding traject O&O 1.0",
+   "verwacht_antwoord": "Je leert de cliënt kennen, bespreekt het onderzoeksverslag en bereidt het startgesprek voor.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
+  },
+  {
+   "id": 97,
+   "categorie": "wmo",
+   "vraag": "Binnen welke termijn lever ik een begeleidingsplan aan bij ondersteuning & stabiliteit?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "een maand",
+     "1 maand",
+     "binnen een maand"
+    ],
+    [
+     "wiz",
+     "gemeente"
+    ]
+   ],
+   "bron": "N14: Handleiding traject O&S 1.0",
+   "verwacht_antwoord": "Binnen een maand na de start van de ondersteuning, bij de gemeente (vastgelegd in WIZ).",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 1
+  },
+  {
+   "id": 98,
+   "categorie": "afdelingen",
+   "vraag": "Wat doet de afdeling Zorgbemiddeling?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "intake"
+    ],
+    [
+     "matching"
+    ],
+    [
+     "wet- en regelgeving",
+     "wet en regelgeving",
+     "extern contact"
+    ]
+   ],
+   "bron": "N15: AHMN_Organisatiestructuur_v5",
+   "verwacht_antwoord": "Intake, matching en extern contact; adviseert over wet- en regelgeving.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
+  },
+  {
+   "id": 99,
+   "categorie": "afdelingen",
+   "vraag": "Bij wie kan ik terecht met een zorginhoudelijke vraag?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "kennis en expertise",
+     "kennis & expertise"
+    ],
+    [
+     "orthopedagoog"
+    ]
+   ],
+   "bron": "N16: AHMN_Organisatiestructuur_v5",
+   "verwacht_antwoord": "Afdeling Kennis en Expertise (met o.a. een orthopedagoog) ondersteunt en adviseert begeleiders over zorginhoudelijke vraagstukken.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 1
+  },
+  {
+   "id": 100,
+   "categorie": "afdelingen",
+   "vraag": "Welke afdelingen heeft AHMN?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "beleid"
+    ],
+    [
+     "zorg"
+    ],
+    [
+     "hr"
+    ],
+    [
+     "bedrijfsvoering"
+    ]
+   ],
+   "bron": "N17: AHMN_Organisatiestructuur_v5",
+   "verwacht_antwoord": "Beleid en Kwaliteit, Zorg, HR en Bedrijfsvoering.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 101,
+   "categorie": "afdelingen",
+   "vraag": "Wat doet de afdeling Bedrijfsvoering?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "facilitair",
+     "facilitaire"
+    ],
+    [
+     "administratief",
+     "administratieve"
+    ],
+    [
+     "ondersteunend",
+     "ondersteunende"
+    ]
+   ],
+   "bron": "N18: AHMN_Organisatiestructuur_v5",
+   "verwacht_antwoord": "Facilitaire, administratieve en ondersteunende diensten.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
+  },
+  {
+   "id": 102,
+   "categorie": "problematiek",
+   "vraag": "Hoe ga ik om met een cliënt met autisme die overprikkeld raakt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "studytube"
+    ],
+    [
+     "autis"
+    ]
+   ],
+   "bron": "N19: StudyTube: 21 cursussen over autisme",
+   "verwacht_antwoord": "Verwacht: het trainingsblok met autisme-cursussen, en de chat zegt dat dit in StudyTube staat. Geen zelfbedacht stappenplan als 'volgens AHMN'.",
+   "status_bron": "wacht op jouw beslissing",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 103,
+   "categorie": "problematiek",
+   "vraag": "Ik wil meer leren over verslaving bij cliënten. Waar kan ik dat vinden?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "studytube"
+    ],
+    [
+     "verslaving",
+     "middelengebruik"
+    ]
+   ],
+   "bron": "N20: StudyTube: 28 cursussen over verslaving",
+   "verwacht_antwoord": "Verwacht: trainingsblok met o.a. 'Middelengebruik en verslaving'.",
+   "status_bron": "wacht op jouw beslissing",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 104,
+   "categorie": "problematiek",
+   "vraag": "Waar leer ik meer over trauma bij cliënten?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "studytube"
+    ],
+    [
+     "trauma"
+    ]
+   ],
+   "bron": "N21: StudyTube: 13 cursussen over trauma",
+   "verwacht_antwoord": "Verwacht: trainingsblok 'Psychische stoornissen en trauma'.",
+   "status_bron": "wacht op jouw beslissing",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 105,
+   "categorie": "problematiek",
+   "vraag": "Hoe herken ik een psychose bij een cliënt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "staat niet",
+     "niet in de documenten",
+     "geen informatie"
+    ],
+    [
+     "kennis en expertise",
+     "teamleider",
+     "orthopedagoog"
+    ]
+   ],
+   "bron": "N22: Geen StudyTube-cursus gevonden over psychose",
+   "verwacht_antwoord": "Verwacht: eerlijk zeggen dat het niet in de documenten staat en doorverwijzen (bijv. Kennis en Expertise of de teamleider). Dit hangt af van wat jij wilt dat er gebeurt.",
+   "status_bron": "wacht op jouw beslissing",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 1
+  },
+  {
+   "id": 106,
+   "categorie": "no-show",
+   "vraag": "Hoe registreer ik een no-show in ONS?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "no show",
+     "no-show"
+    ],
+    [
+     "cliënt"
+    ],
+    [
+     "uursoort",
+     "zorgproduct"
+    ]
+   ],
+   "bron": "N23: Beleid no show 3.0",
+   "verwacht_antwoord": "Op de cliënt, met de uursoort 'no show'. In Almere (Wmo) en bij Wlz op het zorgproduct 'no-show declarabel'. Let op: de regio telt (Almere of Veluwe).",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true
+  },
+  {
+   "id": 107,
+   "categorie": "no-show",
+   "vraag": "Wat is het verschil tussen no-show in Almere en op de Veluwe?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "almere"
+    ],
+    [
+     "veluwe"
+    ],
+    [
+     "no-show declarabel",
+     "declarabel"
+    ],
+    [
+     "4 uur",
+     "vier uur",
+     "een uur"
+    ]
+   ],
+   "bron": "N24: Beleid no show 3.0",
+   "verwacht_antwoord": "Almere: no-show mag gedeclareerd worden, ook bij annulering binnen 4 uur. Veluwe: uursoort 'no show'; alleen Wlz VPT en BW mag declarabel, mits niet langer dan een uur van tevoren afgezegd.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 3
+  },
+  {
+   "id": 108,
+   "categorie": "no-show",
+   "vraag": "Wat doe ik als een cliënt vaak niet thuis is of afzegt?",
+   "functiegroep": "ambulant_begeleider",
+   "teams": [],
+   "kernfeiten": [
+    [
+     "kennis en expertise"
+    ],
+    [
+     "outreachend"
+    ],
+    [
+     "gemeente"
+    ]
+   ],
+   "bron": "N25: Beleid no show 3.0",
+   "verwacht_antwoord": "Bespreek het met Kennis en Expertise; eventueel aanmelden bij het outreachend team; stem het af met de gemeente.",
+   "status_bron": "gelezen in het document",
+   "goedgekeurd": "Younes 2026-10-23 (voorstel_testvragen.json)",
+   "actief": true,
+   "min_treffers": 2
   }
  ]
 }
