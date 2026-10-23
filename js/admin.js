@@ -5266,12 +5266,17 @@
         };
 
         var result;
+        var nieuwEmailBijBewerken = null;
         if (tlId) {
           // Update bestaande teamleider
+          var oudeRij = allTeamleiders.find(function (t) { return t.id === tlId; });
+          var oudEmail = oudeRij && oudeRij.email ? oudeRij.email.trim().toLowerCase() : '';
           result = await supabaseClient
             .from('teamleiders')
             .update(data)
             .eq('id', tlId);
+          // Nieuw e-mailadres: niet automatisch uitnodigen, wel de vraag tonen.
+          if (!result.error && email && email.toLowerCase() !== oudEmail) nieuwEmailBijBewerken = email;
         } else {
           // Nieuwe leidinggevende met e-mail: eerst uitnodigen, pas daarna de rij
           // opslaan. Weigert de server de uitnodiging (bijv. account al in gebruik of
@@ -5347,6 +5352,7 @@
         } else {
           modal.classList.remove('show');
           loadTeamleiders();
+          if (nieuwEmailBijBewerken) toonUitnodigingsVraag(nieuwEmailBijBewerken, naam);
         }
 
         if (submitBtn) {
@@ -5356,6 +5362,38 @@
       });
     }
   }
+
+  // Na bewerken met een nieuw e-mailadres: vraag of de uitnodiging nu verstuurd moet
+  // worden. Niets automatisch; pas op de knop gaat de uitnodiging (📧-pad) de deur uit.
+  function toonUitnodigingsVraag(email, naam) {
+    var el = document.getElementById('tl-uitnodiging-vraag');
+    if (!el) return;
+    el.textContent = '';
+    var tekst = document.createElement('span');
+    tekst.textContent = 'Uitnodiging nu versturen? ' + naam + ' (' + email + ') heeft een nieuw e-mailadres. ';
+    var knop = document.createElement('button');
+    knop.className = 'btn btn-primary';
+    knop.style.width = 'auto';
+    knop.style.padding = '8px 14px';
+    knop.textContent = '📧 Uitnodiging versturen';
+    knop.addEventListener('click', async function () {
+      knop.disabled = true;
+      await window.resendInvite(email, naam, true);
+      el.style.display = 'none';
+    });
+    var later = document.createElement('button');
+    later.className = 'btn btn-secondary';
+    later.style.width = 'auto';
+    later.style.padding = '8px 14px';
+    later.style.marginLeft = '8px';
+    later.textContent = 'Later';
+    later.addEventListener('click', function () { el.style.display = 'none'; });
+    el.appendChild(tekst);
+    el.appendChild(knop);
+    el.appendChild(later);
+    el.style.display = '';
+  }
+  window.toonUitnodigingsVraag = toonUitnodigingsVraag;
 
   window.editTeamleider = function (id) {
     var tl = allTeamleiders.find(function (t) { return t.id === id; });
@@ -5398,8 +5436,9 @@
     modal.classList.add('show');
   };
 
-  window.resendInvite = async function (email, naam) {
-    if (!confirm('Uitnodigingsmail opnieuw sturen naar ' + email + '?')) return;
+  // zonderBevestiging: de beheerder heeft al op de knop "Uitnodiging versturen" geklikt.
+  window.resendInvite = async function (email, naam, zonderBevestiging) {
+    if (!zonderBevestiging && !confirm('Uitnodigingsmail opnieuw sturen naar ' + email + '?')) return;
 
     console.log('[Invite] Heruitnodiging starten voor:', email);
     try {
