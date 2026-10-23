@@ -33,6 +33,7 @@
       <button class="tab-btn" data-tab="statistieken" data-tl-roles="teamleider,manager,hr">Statistieken</button>
       <button class="tab-btn" data-tab="aanvragen" data-tl-roles="teamleider,hr">Aanvragen</button>
       <button class="tab-btn" data-tab="onboarding" data-tl-roles="hr">📋 Onboarding</button>
+      <button class="tab-btn" data-tab="kennisbank" data-tl-roles="hr">📚 Kennisbank</button>
       <button class="tab-btn" data-tab="tl-vertrouwen" data-tl-roles="teamleider">Vertrouwen</button>
       <button class="tab-btn" data-tab="meldingen" data-tl-roles="teamleider">Meldingen</button>
     </nav>
@@ -251,6 +252,53 @@
         </div>
       </section>
 
+      <!-- TAB: KENNISBANK (HR) — alleen lezen + reageren (migratie 102) -->
+      <section class="tab-content" id="tab-kennisbank">
+        <h2 class="section-title">Kennisbank</h2>
+        <p class="section-subtitle">Hier zie je wat er in de kennisbank staat. Wijzigen kan hier niet, reageren wel: klopt iets niet meer of mist er iets, laat het de beheerder weten met 💬 Reageer.</p>
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+          <button type="button" class="btn btn-primary" id="kb-hr-indienen-btn" style="width:auto">📝 Indienen ter beoordeling</button>
+          <button type="button" class="btn btn-secondary" id="kb-hr-ontbreekt-btn" style="width:auto">📄 Er ontbreekt een document</button>
+        </div>
+
+        <div id="kb-hr-alert" class="alert" role="alert"><span id="kb-hr-alert-message"></span></div>
+
+        <input class="form-input" type="search" id="kb-hr-zoek" placeholder="Zoek in titels, vragen en notities…" style="max-width:420px;margin-bottom:12px" aria-label="Zoek in de kennisbank">
+        <p class="section-subtitle" id="kb-hr-status">Laden…</p>
+
+        <h3 class="section-title" style="font-size:1rem;margin-top:16px">📄 Documenten</h3>
+        <p class="section-subtitle" style="margin-top:-6px">De officiële versies, per map. Je ziet de titel en de datums, niet de inhoud.</p>
+        <div id="kb-hr-documenten"></div>
+
+        <h3 class="section-title" style="font-size:1rem;margin-top:20px">❓ Kennisbank-items</h3>
+        <p class="section-subtitle" style="margin-top:-6px">Vaste vragen met een vast antwoord.</p>
+        <div id="kb-hr-items"></div>
+
+        <h3 class="section-title" style="font-size:1rem;margin-top:20px">📌 Kennisnotities</h3>
+        <p class="section-subtitle" style="margin-top:-6px">Korte aanvullingen over dingen die nergens op papier staan.</p>
+        <div id="kb-hr-notities"></div>
+
+        <h3 class="section-title" style="font-size:1rem;margin-top:24px">Mijn reacties en voorstellen</h3>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Soort</th>
+                <th>Waarover</th>
+                <th>Jouw tekst</th>
+                <th>Status</th>
+                <th>Antwoord beheerder</th>
+              </tr>
+            </thead>
+            <tbody id="kb-hr-mijn-body">
+              <tr><td colspan="6" class="no-data">Nog niets ingediend.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </main>
 
     <!-- MODAL: MEDEWERKER AANVRAGEN -->
@@ -375,6 +423,86 @@
       </div>
     </div>
 
+    <!-- MODAL: KENNISBANK REAGEREN / INDIENEN (HR) -->
+    <div class="modal-overlay" id="modal-kb-hr">
+      <div class="modal">
+        <h3 class="modal-title" id="kb-hr-modal-titel">Reageren</h3>
+        <div id="kb-hr-modal-alert" class="alert" role="alert"><span id="kb-hr-modal-alert-message"></span></div>
+        <p class="section-subtitle" id="kb-hr-modal-over" style="font-weight:600"></p>
+
+        <div id="kb-hr-blok-reactie">
+          <div class="form-group">
+            <label class="form-label" for="kb-hr-soort">Wat is er aan de hand?</label>
+            <select class="form-input" id="kb-hr-soort">
+              <option value="verouderd">Verouderd</option>
+              <option value="moet_bijgewerkt">Moet bijgewerkt worden</option>
+              <option value="er_mist_iets">Er mist iets</option>
+              <option value="overig">Overig</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="kb-hr-toelichting">Toelichting <span class="required-star">*</span></label>
+            <textarea class="form-input" id="kb-hr-toelichting" rows="4" maxlength="2000" placeholder="Wat klopt er niet, of wat mist er? Hoe concreter, hoe sneller de beheerder het kan oppakken."></textarea>
+          </div>
+        </div>
+
+        <div id="kb-hr-blok-ontbreekt">
+          <div class="form-group">
+            <label class="form-label" for="kb-hr-ontbreekt-tekst">Welk document ontbreekt? <span class="required-star">*</span></label>
+            <textarea class="form-input" id="kb-hr-ontbreekt-tekst" rows="4" maxlength="2000" placeholder="Bijvoorbeeld: het nieuwe verzuimprotocol. Waar is het te vinden of wie heeft het?"></textarea>
+          </div>
+        </div>
+
+        <div id="kb-hr-blok-voorstel">
+          <p class="form-label" style="margin-bottom:8px">Wat wil je indienen?</p>
+          <label class="kb-hr-keuze" style="display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="kb-hr-keuze" value="kennisbank_item" style="margin-top:4px">
+            <span><strong>Kennisbank-item</strong> — een vaste vraag met een vast antwoord. Medewerkers krijgen dan altijd precies dit antwoord.<br>
+              <span style="color:var(--text-muted);font-size:0.82rem">Voorbeeld: vraag "Bij wie meld ik me ziek?", antwoord "Bel vóór 8.00 uur je teamleider."</span></span>
+          </label>
+          <label class="kb-hr-keuze" style="display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="kb-hr-keuze" value="kennisnotitie" style="margin-top:4px">
+            <span><strong>Kennisnotitie</strong> — een korte aanvulling over iets dat nergens op papier staat.<br>
+              <span style="color:var(--text-muted);font-size:0.82rem">Voorbeeld: "De sleutelkast op kantoor zit sinds oktober naast de keuken."</span></span>
+          </label>
+          <label class="kb-hr-keuze" style="display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;cursor:pointer">
+            <input type="radio" name="kb-hr-keuze" value="document" style="margin-top:4px">
+            <span><strong>Document</strong> — de officiële versie, zoals een protocol, regeling of formulier. Staat het in een document, dan is dat altijd de beste bron.<br>
+              <span style="color:var(--text-muted);font-size:0.82rem">Voorbeeld: "Verzuimprotocol (PDF)". Een document upload je bij het tabblad Aanvragen.</span></span>
+          </label>
+
+          <div id="kb-hr-velden-item" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="kb-hr-item-vraag">Vraag <span class="required-star">*</span></label>
+              <input class="form-input" type="text" id="kb-hr-item-vraag" maxlength="200" placeholder="De vraag zoals een medewerker hem stelt">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="kb-hr-item-antwoord">Antwoord <span class="required-star">*</span></label>
+              <textarea class="form-input" id="kb-hr-item-antwoord" rows="4" maxlength="2000"></textarea>
+            </div>
+          </div>
+          <div id="kb-hr-velden-notitie" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="kb-hr-notitie-onderwerp">Onderwerp <span class="required-star">*</span></label>
+              <input class="form-input" type="text" id="kb-hr-notitie-onderwerp" maxlength="100">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="kb-hr-notitie-tekst">Tekst <span class="required-star">*</span></label>
+              <textarea class="form-input" id="kb-hr-notitie-tekst" rows="4" maxlength="1000"></textarea>
+            </div>
+          </div>
+          <div id="kb-hr-velden-document" style="display:none">
+            <p class="section-subtitle">Je gaat naar het tabblad Aanvragen, waar je het bestand met een toelichting uploadt.</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="kb-hr-modal-annuleer">Annuleren</button>
+          <button type="button" class="btn btn-primary" id="kb-hr-modal-verstuur">Versturen</button>
+        </div>
+      </div>
+    </div>
+
     <footer class="powered-by">Mogelijk gemaakt door Wegwijzer</footer>
   </div>
 
@@ -382,7 +510,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=3"></script>
-  <script src="js/teamleider.js?v=20"></script>
+  <script src="js/teamleider.js?v=21"></script>
 
 </body>
 </html>

@@ -67,6 +67,7 @@
 
     if (tlRol === 'hr') {
       loadOnboardingChecklist();
+      initKennisbankHr();
     }
   });
 
@@ -1406,6 +1407,286 @@
   // =============================================
   // HULPFUNCTIES
   // =============================================
+  // =============================================
+  // KENNISBANK (HR) — alleen lezen + reageren (migratie 102)
+  // Het overzicht komt uit de databasefunctie kennisbank_overzicht(): titels,
+  // mappen en datums van documenten, geen inhoud en geen persoonlijke documenten.
+  // Reacties en voorstellen gaan naar kennisbank_reacties (HR: alleen invoegen
+  // en eigen rijen lezen); de beheerder handelt ze af in "Ter beoordeling".
+  // =============================================
+  var kbHr = { data: null, modus: null, verwijzing: null };
+  var KB_SOORT_LABEL = {
+    verouderd: 'Verouderd', moet_bijgewerkt: 'Moet bijgewerkt', er_mist_iets: 'Er mist iets', overig: 'Overig',
+    ontbrekend_document: 'Ontbrekend document', voorstel_kennisnotitie: 'Voorstel kennisnotitie',
+    voorstel_kennisbank_item: 'Voorstel kennisbank-item'
+  };
+  var KB_STATUS_BADGE = {
+    nieuw: '<span class="badge badge-open">Nieuw</span>',
+    overgenomen: '<span class="badge badge-goed">Overgenomen</span>',
+    afgehandeld: '<span class="badge badge-goed">Afgehandeld</span>',
+    afgewezen: '<span class="badge badge-niet-goed">Afgewezen</span>'
+  };
+
+  function kbDatum(d) {
+    if (!d) return '';
+    var dt = new Date(d);
+    if (isNaN(dt.getTime())) return '';
+    return dt.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function kbHrAlert(type, msg) {
+    var box = document.getElementById('kb-hr-alert');
+    var tekst = document.getElementById('kb-hr-alert-message');
+    if (!box) return;
+    box.className = msg ? 'alert alert-' + type + ' show' : 'alert';
+    if (tekst) tekst.textContent = msg || '';
+  }
+
+  function initKennisbankHr() {
+    var zoek = document.getElementById('kb-hr-zoek');
+    if (!zoek) return;
+    zoek.addEventListener('input', renderKennisbankHr);
+    document.getElementById('kb-hr-indienen-btn').addEventListener('click', function () { openKbHrModal('voorstel', null); });
+    document.getElementById('kb-hr-ontbreekt-btn').addEventListener('click', function () { openKbHrModal('ontbreekt', null); });
+
+    // 💬 Reageer per regel (event delegation; naam komt uit de geladen lijst)
+    ['kb-hr-documenten', 'kb-hr-items', 'kb-hr-notities'].forEach(function (id) {
+      document.getElementById(id).addEventListener('click', function (e) {
+        var knop = e.target && e.target.closest ? e.target.closest('[data-kb-reageer]') : null;
+        if (!knop) return;
+        var type = knop.getAttribute('data-kb-type');
+        var rid = knop.getAttribute('data-kb-id');
+        openKbHrModal('reactie', { type: type, id: rid, naam: kbNaamVan(type, rid) });
+      });
+    });
+
+    var modal = document.getElementById('modal-kb-hr');
+    document.getElementById('kb-hr-modal-annuleer').addEventListener('click', function () { modal.classList.remove('show'); });
+    modal.addEventListener('click', function (e) {
+      if (e.target !== modal) return;
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
+      modal.classList.remove('show');
+    });
+    document.querySelectorAll('input[name="kb-hr-keuze"]').forEach(function (r) {
+      r.addEventListener('change', toonKbHrVelden);
+    });
+    document.getElementById('kb-hr-modal-verstuur').addEventListener('click', verstuurKbHr);
+
+    loadKennisbankHr();
+    loadMijnKbReacties();
+  }
+
+  async function loadKennisbankHr() {
+    var status = document.getElementById('kb-hr-status');
+    var res = await supabaseClient.rpc('kennisbank_overzicht');
+    if (res.error) {
+      console.error('[KB HR] overzicht mislukt:', res.error.message);
+      if (status) status.textContent = 'Kon de kennisbank niet laden: ' + res.error.message;
+      return;
+    }
+    kbHr.data = res.data || { documenten: [], kennisbank_items: [], kennisnotities: [] };
+    renderKennisbankHr();
+  }
+
+  function kbNaamVan(type, id) {
+    var d = kbHr.data || {};
+    var lijst = type === 'document' ? d.documenten : type === 'kennisbank_item' ? d.kennisbank_items : d.kennisnotities;
+    var rij = (lijst || []).filter(function (x) { return x.id === id; })[0];
+    if (!rij) return '';
+    return type === 'document' ? rij.naam : type === 'kennisbank_item' ? rij.vraag : rij.onderwerp;
+  }
+
+  function kbReageerKnop(type, id) {
+    return '<button type="button" class="btn btn-secondary" data-kb-reageer="1" data-kb-type="' + type + '" data-kb-id="' + escapeHtml(id) +
+      '" style="width:auto;padding:4px 10px;font-size:0.75rem;flex-shrink:0">💬 Reageer</button>';
+  }
+
+  function renderKennisbankHr() {
+    var d = kbHr.data;
+    if (!d) return;
+    var term = ((document.getElementById('kb-hr-zoek') || {}).value || '').trim().toLowerCase();
+    var past = function () {
+      if (!term) return true;
+      for (var i = 0; i < arguments.length; i++) {
+        if (String(arguments[i] || '').toLowerCase().indexOf(term) !== -1) return true;
+      }
+      return false;
+    };
+    var vandaag = new Date().toISOString().slice(0, 10);
+    var rij = 'display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)';
+
+    // Documenten per map
+    var docs = (d.documenten || []).filter(function (x) { return past(x.naam, x.map); });
+    var mappen = {};
+    docs.forEach(function (x) { var m = x.map || 'Zonder map'; (mappen[m] = mappen[m] || []).push(x); });
+    var docHtml = Object.keys(mappen).sort().map(function (m) {
+      return '<details class="kb-hr-map"' + (term ? ' open' : '') + ' style="margin-bottom:6px">' +
+        '<summary style="cursor:pointer;font-weight:600;padding:6px 0">' + escapeHtml(m) + ' (' + mappen[m].length + ')</summary>' +
+        mappen[m].map(function (x) {
+          var revisie = x.revisiedatum
+            ? 'Revisie ' + kbDatum(x.revisiedatum) + (x.revisiedatum < vandaag ? ' <span style="color:var(--danger)">(verlopen)</span>' : '')
+            : 'Geen revisiedatum';
+          var uit = x.uitgesloten_van_zoeken ? ' · <span style="color:var(--text-muted)">niet gebruikt door de chat</span>' : '';
+          return '<div style="' + rij + '"><div><div>' + escapeHtml(x.naam) + '</div>' +
+            '<div style="font-size:0.78rem;color:var(--text-muted)">Toegevoegd ' + kbDatum(x.aangemaakt_op) + ' · ' + revisie + uit + '</div></div>' +
+            kbReageerKnop('document', x.id) + '</div>';
+        }).join('') + '</details>';
+    }).join('');
+    document.getElementById('kb-hr-documenten').innerHTML = docHtml || '<p class="no-data">Geen documenten gevonden.</p>';
+
+    var items = (d.kennisbank_items || []).filter(function (x) { return past(x.vraag, x.antwoord); });
+    document.getElementById('kb-hr-items').innerHTML = items.map(function (x) {
+      return '<div style="' + rij + '"><div><div style="font-weight:600">' + escapeHtml(x.vraag) + '</div>' +
+        '<details><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-muted)">Antwoord tonen</summary>' +
+        '<div style="white-space:pre-wrap;font-size:0.85rem;margin-top:4px">' + escapeHtml(x.antwoord) + '</div></details>' +
+        '<div style="font-size:0.78rem;color:var(--text-muted)">Bijgewerkt ' + kbDatum(x.bijgewerkt_op || x.aangemaakt_op) + '</div></div>' +
+        kbReageerKnop('kennisbank_item', x.id) + '</div>';
+    }).join('') || '<p class="no-data">Geen kennisbank-items gevonden.</p>';
+
+    var notities = (d.kennisnotities || []).filter(function (x) { return past(x.onderwerp, x.notitie); });
+    document.getElementById('kb-hr-notities').innerHTML = notities.map(function (x) {
+      return '<div style="' + rij + '"><div><div style="font-weight:600">' + escapeHtml(x.onderwerp) + '</div>' +
+        '<div style="white-space:pre-wrap;font-size:0.85rem">' + escapeHtml(x.notitie) + '</div>' +
+        '<div style="font-size:0.78rem;color:var(--text-muted)">Toegevoegd ' + kbDatum(x.aangemaakt_op) + '</div></div>' +
+        kbReageerKnop('kennisnotitie', x.id) + '</div>';
+    }).join('') || '<p class="no-data">Geen kennisnotities gevonden.</p>';
+
+    var status = document.getElementById('kb-hr-status');
+    if (status) {
+      status.textContent = (d.documenten || []).length + ' documenten, ' + (d.kennisbank_items || []).length +
+        ' kennisbank-items en ' + (d.kennisnotities || []).length + ' kennisnotities' +
+        (term ? ' · ' + (docs.length + items.length + notities.length) + ' gevonden' : '') + '.';
+    }
+  }
+
+  function openKbHrModal(modus, verwijzing) {
+    kbHr.modus = modus;
+    kbHr.verwijzing = verwijzing;
+    var titels = { reactie: '💬 Reageren', ontbreekt: '📄 Er ontbreekt een document', voorstel: '📝 Indienen ter beoordeling' };
+    var typeLabel = { document: 'Document', kennisbank_item: 'Kennisbank-item', kennisnotitie: 'Kennisnotitie' };
+    document.getElementById('kb-hr-modal-titel').textContent = titels[modus];
+    document.getElementById('kb-hr-modal-over').textContent = verwijzing ? typeLabel[verwijzing.type] + ': ' + verwijzing.naam : '';
+    document.getElementById('kb-hr-blok-reactie').style.display = modus === 'reactie' ? '' : 'none';
+    document.getElementById('kb-hr-blok-ontbreekt').style.display = modus === 'ontbreekt' ? '' : 'none';
+    document.getElementById('kb-hr-blok-voorstel').style.display = modus === 'voorstel' ? '' : 'none';
+    ['kb-hr-toelichting', 'kb-hr-ontbreekt-tekst', 'kb-hr-item-vraag', 'kb-hr-item-antwoord', 'kb-hr-notitie-onderwerp', 'kb-hr-notitie-tekst']
+      .forEach(function (id) { document.getElementById(id).value = ''; });
+    document.getElementById('kb-hr-soort').value = 'verouderd';
+    document.querySelectorAll('input[name="kb-hr-keuze"]').forEach(function (r) { r.checked = false; });
+    toonKbHrVelden();
+    document.getElementById('kb-hr-modal-alert').className = 'alert';
+    document.getElementById('modal-kb-hr').classList.add('show');
+  }
+
+  function kbHrKeuze() {
+    var gekozen = document.querySelector('input[name="kb-hr-keuze"]:checked');
+    return gekozen ? gekozen.value : '';
+  }
+
+  function toonKbHrVelden() {
+    var k = kbHrKeuze();
+    document.getElementById('kb-hr-velden-item').style.display = k === 'kennisbank_item' ? '' : 'none';
+    document.getElementById('kb-hr-velden-notitie').style.display = k === 'kennisnotitie' ? '' : 'none';
+    document.getElementById('kb-hr-velden-document').style.display = k === 'document' ? '' : 'none';
+    document.getElementById('kb-hr-modal-verstuur').textContent = k === 'document' ? 'Naar document uploaden' : 'Versturen';
+  }
+
+  // Zet de invoer om in een rij voor kennisbank_reacties; null + melding bij een fout.
+  function kbHrRij() {
+    var v = function (id) { return (document.getElementById(id).value || '').trim(); };
+    var rij = { tenant_id: tenantId, ingediend_door: profile.id };
+    if (kbHr.modus === 'reactie') {
+      if (!v('kb-hr-toelichting')) return { fout: 'Schrijf een korte toelichting.' };
+      rij.soort = document.getElementById('kb-hr-soort').value;
+      rij.tekst = v('kb-hr-toelichting');
+      rij.verwijzing_type = kbHr.verwijzing.type;
+      rij.verwijzing_id = kbHr.verwijzing.id;
+      rij.verwijzing_naam = (kbHr.verwijzing.naam || '').substring(0, 300);
+    } else if (kbHr.modus === 'ontbreekt') {
+      if (!v('kb-hr-ontbreekt-tekst')) return { fout: 'Beschrijf welk document ontbreekt.' };
+      rij.soort = 'ontbrekend_document';
+      rij.tekst = v('kb-hr-ontbreekt-tekst');
+    } else {
+      var k = kbHrKeuze();
+      if (!k) return { fout: 'Kies wat je wilt indienen.' };
+      if (k === 'document') return { document: true };
+      if (k === 'kennisbank_item') {
+        if (!v('kb-hr-item-vraag') || !v('kb-hr-item-antwoord')) return { fout: 'Vul de vraag en het antwoord in.' };
+        rij.soort = 'voorstel_kennisbank_item';
+        rij.onderwerp = v('kb-hr-item-vraag');
+        rij.tekst = v('kb-hr-item-antwoord');
+      } else {
+        if (!v('kb-hr-notitie-onderwerp') || !v('kb-hr-notitie-tekst')) return { fout: 'Vul het onderwerp en de tekst in.' };
+        rij.soort = 'voorstel_kennisnotitie';
+        rij.onderwerp = v('kb-hr-notitie-onderwerp');
+        rij.tekst = v('kb-hr-notitie-tekst');
+      }
+    }
+    return { rij: rij };
+  }
+
+  async function verstuurKbHr() {
+    var modal = document.getElementById('modal-kb-hr');
+    var alertBox = document.getElementById('kb-hr-modal-alert');
+    var alertMsg = document.getElementById('kb-hr-modal-alert-message');
+    var uitkomst = kbHrRij();
+    if (uitkomst.fout) {
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = uitkomst.fout;
+      return;
+    }
+    if (uitkomst.document) {
+      // Document: bestaande uploadroute in het tabblad Aanvragen.
+      modal.classList.remove('show');
+      var tab = document.querySelector('.tab-btn[data-tab="aanvragen"]');
+      if (tab) tab.click();
+      var form = document.getElementById('tl-doc-indienen-form');
+      if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    var knop = document.getElementById('kb-hr-modal-verstuur');
+    knop.disabled = true;
+    var res = await supabaseClient.from('kennisbank_reacties').insert(uitkomst.rij);
+    knop.disabled = false;
+    if (res.error) {
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = 'Versturen mislukt: ' + res.error.message;
+      return;
+    }
+    modal.classList.remove('show');
+    kbHrAlert('success', 'Verstuurd. De beheerder bekijkt het; de status zie je hieronder bij "Mijn reacties en voorstellen".');
+    loadMijnKbReacties();
+  }
+
+  async function loadMijnKbReacties() {
+    var tbody = document.getElementById('kb-hr-mijn-body');
+    if (!tbody) return;
+    var res = await supabaseClient
+      .from('kennisbank_reacties')
+      .select('id, soort, verwijzing_type, verwijzing_naam, onderwerp, tekst, status, antwoord_beheerder, aangemaakt_op')
+      .order('aangemaakt_op', { ascending: false });
+    if (res.error) {
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon je reacties niet laden.</td></tr>';
+      return;
+    }
+    var rows = res.data || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Nog niets ingediend.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (r) {
+      var over = r.verwijzing_naam || r.onderwerp || '—';
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + kbDatum(r.aangemaakt_op) + '</td>' +
+        '<td>' + escapeHtml(KB_SOORT_LABEL[r.soort] || r.soort) + '</td>' +
+        '<td>' + escapeHtml(over) + '</td>' +
+        '<td><div style="white-space:pre-wrap;font-size:0.85rem">' + escapeHtml(r.tekst) + '</div></td>' +
+        '<td>' + (KB_STATUS_BADGE[r.status] || escapeHtml(r.status)) + '</td>' +
+        '<td><div style="white-space:pre-wrap;font-size:0.85rem">' + escapeHtml(r.antwoord_beheerder || '') + '</div></td>' +
+        '</tr>';
+    }).join('');
+  }
+
   function escapeHtml(text) {
     if (!text) return '';
     var div = document.createElement('div');
