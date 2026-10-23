@@ -139,7 +139,8 @@
             <div class="stat-value" id="tl-stat-week">0</div>
             <div class="stat-label">Deze week</div>
           </div>
-          <div class="stat-card">
+          <!-- Beoordelingen: alleen HR (teamleider en manager niet, besluit 2026-10-23) -->
+          <div class="stat-card" data-tl-show="hr">
             <div class="stat-value" id="tl-stat-positief">0%</div>
             <div class="stat-label">Positief</div>
           </div>
@@ -510,7 +511,7 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=3"></script>
-  <script src="js/teamleider.js?v=22"></script>
+  <script src="js/teamleider.js?v=23"></script>
 
 </body>
 </html>

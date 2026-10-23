@@ -562,7 +562,8 @@
     var metFeedback = data.filter(function (c) { return c.feedback !== null; });
     var positief = metFeedback.filter(function (c) { return c.feedback === 'goed'; });
     var pct = metFeedback.length > 0 ? Math.round((positief.length / metFeedback.length) * 100) : 0;
-    toonPositief(document.getElementById('tl-stat-positief'), pct, metFeedback.length);
+    // Beoordelingstegel alleen voor HR; bij teamleider en manager blijft hij leeg en verborgen.
+    if (tlRol === 'hr') toonPositief(document.getElementById('tl-stat-positief'), pct, metFeedback.length);
   }
 
   // =============================================

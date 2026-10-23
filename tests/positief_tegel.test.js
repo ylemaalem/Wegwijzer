@@ -34,3 +34,22 @@ test('nog geen beoordelingen: streepje', async () => {
     assert.equal(a.elementen['tl-stat-positief'].innerHTML, '—');
   } finally { a.stop(); }
 });
+
+test('teamleider en manager: tegel wordt niet gevuld', async () => {
+  for (const rol of ['teamleider', 'manager']) {
+    const a = laadDashboard({
+      tabellen: { teamleiders: [{ rol, teams: rol === 'teamleider' ? ['A'] : [] }] },
+      fetch: async (url, init) => {
+        const body = JSON.parse(init.body || '{}');
+        const data = body.get_team_gesprek_metadata ? { metadata: [{ anon_key: 'k', feedback: 'goed', created_at: '2026-10-20T10:00:00Z' }] } : {};
+        return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+      },
+    });
+    try {
+      await a.start();
+      const el = a.elementen['tl-stat-positief'];
+      // Niet gevuld: title en innerHTML zijn nooit als tekst gezet (de harness geeft dan een stub).
+      assert.ok(!el || (typeof el.title !== 'string' && typeof el.innerHTML !== 'string'), rol);
+    } finally { a.stop(); }
+  }
+});
