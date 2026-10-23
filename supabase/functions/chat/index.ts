@@ -1055,14 +1055,20 @@ Deno.serve(async (req: Request) => {
       // Supabase begrenst aanroepen van functies binnen één trace ("Rate limit
       // exceeded for trace … Retry after Nms"). Dat is geen fout van de bot:
       // wacht de opgegeven tijd en probeer opnieuw, anders faalt een vraag onterecht.
+      // Elke aanroep krijgt een eigen tijdslimiet: één hangende vraag hield op
+      // 2026-10-23 de hele run vast tot de functie werd afgesloten (run niet opgeslagen).
+      const VRAAG_TIMEOUT_MS = 60_000;
       const roepAanMetRetry = async (init: RequestInit): Promise<Response> => {
         for (let poging = 1; ; poging++) {
           try {
-            const resp = await fetch(eigenUrl, init);
+            const resp = await fetch(eigenUrl, { ...init, signal: AbortSignal.timeout(VRAAG_TIMEOUT_MS) });
             if (resp.status !== 429 || poging >= 4) return resp;
             await resp.body?.cancel();
             await new Promise((ok) => setTimeout(ok, 1500 * poging));
           } catch (e) {
+            if (e instanceof DOMException && e.name === "TimeoutError") {
+              throw new Error(`geen antwoord binnen ${VRAAG_TIMEOUT_MS / 1000} s (tijdslimiet per vraag)`);
+            }
             const msg = e instanceof Error ? e.message : String(e);
             const m = msg.match(/Rate limit exceeded.*?Retry after (\d+)\s*ms/i);
             if (!m || poging >= 4) throw e;
@@ -1139,9 +1145,9 @@ Deno.serve(async (req: Request) => {
       // vragen meer, zodat de run altijd binnen de functietijd wordt opgeslagen;
       // een niet-gedraaide vraag telt als fout, met de reden erbij. (Met 82 vragen
       // in groepjes van 4 werd de functie na ~200 s afgesloten voordat de run was opgeslagen.)
-      // 12 werkers sinds 2026-10-24: met 8 haalden 82 vragen de grens niet meer, en de
+      // 16 werkers sinds 2026-10-23: met 8 haalden 82 vragen de grens niet meer, en de
       // set groeit naar 107. 429-limieten vangt roepAanMetRetry op.
-      const CONCURRENCY = 12;
+      const CONCURRENCY = 16;
       const RUN_STARTGRENS_MS = 170_000;
       const runStart = Date.now();
       const lijst = vragen as TV[];
