@@ -1605,7 +1605,8 @@
         })
       });
       var rwData = await rwResp.json();
-      inhoud.innerHTML = '<p style="margin-bottom:8px"><strong>Verschillen met je vorige rol:</strong></p>' + (rwData.vergelijking || '').replace(/\n/g, '<br>');
+      // formatAntwoord: HTML onschadelijk, **vet** wordt echt vet, lijsten worden lijsten.
+      inhoud.innerHTML = '<p style="margin-bottom:8px"><strong>Verschillen met je vorige rol:</strong></p>' + formatAntwoord(rwData.vergelijking || '');
     } catch (e) {
       inhoud.textContent = 'Kon vergelijking niet laden.';
     }
