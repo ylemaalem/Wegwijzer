@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
+import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag } from "../_shared/zorginhoud.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { leesPeriode, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
@@ -3267,6 +3268,9 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       && body.sparring_context.length === 3;
     const TRAINING_CACHE_TRIGGERS = ["training", "cursus", "studytube", "e-learning", "nascholing", "scholing"];
     const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
+    // Zorginhoudelijk (problematiek, ziektebeelden): geen eigen kennis, wel StudyTube
+    // of een verwijzing (besluit 2026-10-23, _shared/zorginhoud.ts).
+    const isZorginhoudelijk = isZorginhoudelijkeVraag(vraag);
     const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
     // Fact-Grounding: detecteer feitvragen. Bij true wordt reranking + extractie-call actief.
     // Bij twijfel true — false negative laat hallucinatie bestaan, false positive kost alleen één extra Haiku-call.
@@ -4312,10 +4316,10 @@ INSTRUCTIE:
   hieronder staat (afdelingen, procedures, beleid, systemen, documenten):
   antwoord dan: "Ik vind dit niet terug in de AHMN-documenten. Vraag het na bij
   je leidinggevende of vraag de admin om dit toe te voegen aan de kennisbank."
-- Als de vraag over ALGEMENE vakkennis gaat (theorie, begrippen,
+${isZorginhoudelijk ? ZORGINHOUDELIJK_GEEN_DOC : `- Als de vraag over ALGEMENE vakkennis gaat (theorie, begrippen,
   begeleidingsmethodieken, doelgroepinformatie zoals rouw, autisme, GGZ,
   hechting): geef een behulpzaam antwoord op basis van algemene vakkennis en
-  sluit af met: "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"`;
+  sluit af met: "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"`}`;
 
       alleKennisbronnen = bronnen.length > 0
         ? `${GEEN_DOC_INSTRUCTIE}
@@ -4350,8 +4354,9 @@ GEEF NU EEN CONCREET, PRAKTISCH ADVIES op basis van deze 3 antwoorden en de KENN
     }
 
     // Trainingen voor het antwoord: zoals voorheen alleen bij een kennisbankmatch,
-    // behalve als de vraag zelf over een training gaat (dan is het leerplatform de bron).
-    const trainingenVooraf: Training[] = (HEEFT_KENNISBANK_MATCH || isTrainingVraag) ? await trainingenPromise : [];
+    // behalve als de vraag zelf over een training gaat (dan is het leerplatform de bron)
+    // of zorginhoudelijk is (dan is StudyTube de bron voor de inhoud).
+    const trainingenVooraf: Training[] = (HEEFT_KENNISBANK_MATCH || isTrainingVraag || isZorginhoudelijk) ? await trainingenPromise : [];
     // Twee bronnen voor trainingen: de documenten (kennisbronnen) en StudyTube
     // (deze lijst). Het model noemt bij elke uitspraak over trainingen de bron; de
     // zin dat er trainingen onder het antwoord staan zet het systeem er zelf bij
@@ -4451,13 +4456,13 @@ ALGEMEEN:
 - Bij getallen, bedragen, tijden en hoeveelheden: herhaal ALTIJD de exacte waarde uit het document. Maak NOOIT zelf rekenvoorbeelden of vertalingen van getallen. Als het document '30 minuten' zegt, zeg dan '30 minuten' — niet 'een half uur' of andere omschrijvingen.
 - De regio van de medewerker staat vermeld in de persoonlijke gegevens. Houd je STRIKT aan die regio. Gebruik NOOIT WMO-trajecten, procedures of afspraken die gelden voor een andere regio dan de regio van deze medewerker.
 
-EIGEN KENNIS GEBRUIKEN (DEZE REGEL HEEFT VOORRANG):
+${isZorginhoudelijk ? ZORGINHOUDELIJK_BLOK + "\n" : `EIGEN KENNIS GEBRUIKEN (DEZE REGEL HEEFT VOORRANG):
 Bij bekende zorginhoudelijke begrippen, diagnoses, doelgroepen, behandelmethoden en afkortingen gebruik je ALTIJD je eigen professionele kennis als de kennisbank geen antwoord heeft.
 Bekende begrippen waarbij je NOOIT verduidelijking vraagt of zegt dat je het niet kent:
 NAH, LVB, MVB, GGZ, autisme, ADHD, dementie, epilepsie, diabetes, Wlz, Wmo, BW, ZZP, PGB, indicatie, herindicatie, zorgplan, crisisdienst, HAP, huisartsenpost, suïcidaliteit, agressie, MDO, AVG, BIG-register, schizofrenie, PTSS, bipolaire stoornis, depressie, angststoornis, persoonlijkheidsstoornis, verstandelijke beperking, lichamelijke beperking, palliatieve zorg, revalidatie, ergotherapie, logopedie, fysiotherapie.
 Bij deze begrippen: geef DIRECT een inhoudelijk antwoord. Sluit af met: "ℹ️ Algemene vakkennis — niet specifiek AHMN-beleid"
 Stel NOOIT verduidelijkingsvragen bij herkenbare zorgbegrippen, diagnoses of afkortingen.
-
+`}
 ZORGAFKORTINGEN — ALTIJD ZORGINHOUDELIJK INTERPRETEREN:
 NAH = Niet-Aangeboren Hersenletsel (doelgroep gehandicaptenzorg)
 LVB = Licht Verstandelijke Beperking
