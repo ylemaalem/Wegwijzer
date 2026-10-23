@@ -8,3 +8,6 @@ supabase/.keys/
 .DS_Store
 Thumbs.db
 *.log
+
+# Lokale Claude Code-instellingen (kunnen tokens in toestemmingsregels bevatten)
+.claude/settings.local.json
