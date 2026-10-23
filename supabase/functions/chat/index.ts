@@ -159,7 +159,9 @@ const TREFWOORD_AANVULLING = 2;
 // overige stukken van dat document ook mee (bv. een lijst criteria die over
 // vijf stukken verspreid staat). 0 = uit. Simulatie 2026-10-22: +1 testvraag (57),
 // geen verlies.
-const KLEIN_DOCUMENT_MAX = 3000;
+// 2026-10-23: 3000 → 6000 (3 volledige runs elk: 3000 = 104/103/102, 6000 = 105/105/105,
+// geen vraag slechter; 10000 liet vraag 52 omvallen).
+const KLEIN_DOCUMENT_MAX = 6000;
 
 // Contextual Retrieval (punt 5, migratie 103): zoeken op context + stuk
 // (match_document_chunks_ctx / zoek_chunks_trefwoord_ctx) in plaats van alleen het stuk.
