@@ -8,6 +8,7 @@
   // ---- State ----
   var tenantId = null;
   var currentUserId = null;
+  var currentProfileId = null;
   var currentUserEmail = null;
   var currentUserNaam = null;
   var allConversations = [];
@@ -203,6 +204,7 @@
     eigenTenantId = profile.tenant_id;
     tenantId = eigenTenantId;
     currentUserId = e.detail.user ? e.detail.user.id : null;
+    currentProfileId = profile.id || null;
     currentUserEmail = e.detail.user ? e.detail.user.email : null;
     currentUserNaam = profile.naam || null;
 
@@ -260,6 +262,8 @@
     initFunctiegroepFormToggle();
     loadDocumentAanvragen();
     loadTerBeoordeling();
+    initKbReacties();
+    loadKbReacties();
     loadVertrouwensData();
     loadTerugblikLog();
     initRegressieTest();
@@ -7070,6 +7074,203 @@
   };
 
   // =============================================
+  // TER BEOORDELING — reacties en voorstellen van HR (migratie 102)
+  // =============================================
+  // Teller op het tabblad = documenten in afwachting + nieuwe reacties/voorstellen.
+  var terBeoordelingTellers = { documenten: 0, reacties: 0 };
+  var kbReactiesCache = [];
+  var kbOvernemenId = null;
+  var KB_REACTIE_SOORT = {
+    verouderd: 'Verouderd', moet_bijgewerkt: 'Moet bijgewerkt', er_mist_iets: 'Er mist iets', overig: 'Overig',
+    ontbrekend_document: 'Ontbrekend document', voorstel_kennisnotitie: 'Voorstel kennisnotitie',
+    voorstel_kennisbank_item: 'Voorstel kennisbank-item'
+  };
+  var KB_REACTIE_STATUS = {
+    nieuw: '<span class="badge badge-open">Nieuw</span>',
+    overgenomen: '<span class="badge badge-goed">Overgenomen</span>',
+    afgehandeld: '<span class="badge badge-goed">Afgehandeld</span>',
+    afgewezen: '<span class="badge badge-niet-goed">Afgewezen</span>'
+  };
+  var KB_VERWIJZING = { document: 'Document', kennisbank_item: 'Kennisbank-item', kennisnotitie: 'Kennisnotitie' };
+
+  function initKbReacties() {
+    ['kb-reacties-filter-status', 'kb-reacties-filter-soort'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', renderKbReacties);
+    });
+    var type = document.getElementById('kb-overnemen-type');
+    if (type) type.addEventListener('change', zetKbOvernemenLabels);
+    var annuleer = document.getElementById('kb-overnemen-annuleer');
+    if (annuleer) annuleer.addEventListener('click', function () { document.getElementById('modal-kb-overnemen').classList.remove('show'); });
+    var opslaan = document.getElementById('kb-overnemen-opslaan');
+    if (opslaan) opslaan.addEventListener('click', slaKbOvernemenOp);
+  }
+
+  async function loadKbReacties() {
+    var tbody = document.getElementById('kb-reacties-body');
+    if (!tbody) return;
+    var res = await supabaseClient
+      .from('kennisbank_reacties')
+      .select('id, soort, verwijzing_type, verwijzing_id, verwijzing_naam, onderwerp, tekst, status, antwoord_beheerder, aangemaakt_op, ingediend_door')
+      .eq('tenant_id', tenantId)
+      .order('aangemaakt_op', { ascending: false });
+    if (res.error) {
+      console.error('[KbReacties] ophalen mislukt:', res.error.message);
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Kon reacties niet laden.</td></tr>';
+      return;
+    }
+    kbReactiesCache = res.data || [];
+    var ids = kbReactiesCache.map(function (r) { return r.ingediend_door; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    var namen = {};
+    if (ids.length > 0) {
+      var p = await supabaseClient.from('profiles').select('id, naam, email').in('id', ids);
+      (p.data || []).forEach(function (x) { namen[x.id] = x.naam || x.email || '(onbekend)'; });
+    }
+    kbReactiesCache.forEach(function (r) { r._naam = namen[r.ingediend_door] || '-'; });
+    renderKbReacties();
+  }
+
+  function renderKbReacties() {
+    var tbody = document.getElementById('kb-reacties-body');
+    if (!tbody) return;
+    var nieuw = kbReactiesCache.filter(function (r) { return r.status === 'nieuw'; }).length;
+    var teller = document.getElementById('kb-reacties-teller');
+    if (teller) { teller.textContent = nieuw + ' nieuw'; teller.style.display = nieuw > 0 ? '' : 'none'; }
+    terBeoordelingTellers.reacties = nieuw;
+    updateTabBadge('ter-beoordeling', terBeoordelingTellers.documenten + terBeoordelingTellers.reacties);
+
+    var fStatus = (document.getElementById('kb-reacties-filter-status') || {}).value || '';
+    var fSoort = (document.getElementById('kb-reacties-filter-soort') || {}).value || '';
+    var reactieSoorten = ['verouderd', 'moet_bijgewerkt', 'er_mist_iets', 'overig'];
+    var rows = kbReactiesCache.filter(function (r) {
+      if (fStatus && r.status !== fStatus) return false;
+      if (fSoort === 'reactie') return reactieSoorten.indexOf(r.soort) !== -1;
+      if (fSoort && r.soort !== fSoort) return false;
+      return true;
+    });
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">Geen reacties of voorstellen' + (fStatus || fSoort ? ' met dit filter' : '') + '.</td></tr>';
+      return;
+    }
+    var knop = 'padding:4px 8px;font-size:0.7rem;width:auto;margin-bottom:4px';
+    tbody.innerHTML = rows.map(function (r) {
+      var datum = new Date(r.aangemaakt_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+      var over = r.verwijzing_type ? KB_VERWIJZING[r.verwijzing_type] + ': ' + (r.verwijzing_naam || '') : (r.onderwerp || '—');
+      var acties = '';
+      if (r.status === 'nieuw') {
+        acties = '<button class="btn btn-primary" style="' + knop + '" onclick="window.kbReactieOvernemen(\'' + r.id + '\')" title="Maakt een kennisnotitie of kennisbank-item aan; eerst bewerkbaar">📥 Overnemen</button>' +
+          '<button class="btn btn-secondary" style="' + knop + '" onclick="window.kbReactieAfhandelen(\'' + r.id + '\')">✅ Afgehandeld</button>' +
+          '<button class="btn btn-secondary" style="' + knop + '" onclick="window.kbReactieAfwijzen(\'' + r.id + '\')">❌ Afwijzen</button>';
+      } else if (r.antwoord_beheerder) {
+        acties = '<div style="font-size:0.78rem;color:var(--text-muted);white-space:pre-wrap">' + escapeHtml(r.antwoord_beheerder) + '</div>';
+      }
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + datum + '</td>' +
+        '<td>' + escapeHtml(KB_REACTIE_SOORT[r.soort] || r.soort) + '</td>' +
+        '<td>' + escapeHtml(over) + '</td>' +
+        '<td><div style="white-space:pre-wrap;font-size:0.85rem">' + escapeHtml(r.tekst) + '</div></td>' +
+        '<td>' + escapeHtml(r._naam) + '</td>' +
+        '<td>' + (KB_REACTIE_STATUS[r.status] || escapeHtml(r.status)) + '</td>' +
+        '<td><div style="display:flex;flex-direction:column;gap:2px">' + acties + '</div></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function zetKbOvernemenLabels() {
+    var item = document.getElementById('kb-overnemen-type').value === 'kennisbank_item';
+    document.getElementById('kb-overnemen-titel-label').textContent = item ? 'Vraag' : 'Onderwerp';
+    document.getElementById('kb-overnemen-tekst-label').textContent = item ? 'Antwoord' : 'Tekst';
+    document.getElementById('kb-overnemen-titel').maxLength = item ? 200 : 100;
+    document.getElementById('kb-overnemen-tekst').maxLength = item ? 2000 : 1000;
+  }
+
+  function kbReactieVan(id) {
+    return kbReactiesCache.filter(function (r) { return r.id === id; })[0] || null;
+  }
+
+  // Overnemen: vooraf ingevuld, eerst bewerkbaar; pas bij "Aanmaken en afronden" opgeslagen.
+  window.kbReactieOvernemen = function (id) {
+    var r = kbReactieVan(id);
+    if (!r) return;
+    kbOvernemenId = id;
+    var item = r.soort === 'voorstel_kennisbank_item';
+    document.getElementById('kb-overnemen-type').value = item ? 'kennisbank_item' : 'kennisnotitie';
+    zetKbOvernemenLabels();
+    document.getElementById('kb-overnemen-titel').value = r.onderwerp || r.verwijzing_naam || '';
+    document.getElementById('kb-overnemen-tekst').value = r.tekst || '';
+    document.getElementById('kb-overnemen-antwoord').value = '';
+    document.getElementById('kb-overnemen-alert').className = 'alert';
+    document.getElementById('modal-kb-overnemen').classList.add('show');
+  };
+
+  async function slaKbOvernemenOp() {
+    var r = kbReactieVan(kbOvernemenId);
+    if (!r) return;
+    var alertBox = document.getElementById('kb-overnemen-alert');
+    var alertMsg = document.getElementById('kb-overnemen-alert-message');
+    var type = document.getElementById('kb-overnemen-type').value;
+    var titel = document.getElementById('kb-overnemen-titel').value.trim();
+    var tekst = document.getElementById('kb-overnemen-tekst').value.trim();
+    var antwoord = document.getElementById('kb-overnemen-antwoord').value.trim();
+    if (!titel || !tekst) {
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = 'Vul beide velden in.';
+      return;
+    }
+    var knop = document.getElementById('kb-overnemen-opslaan');
+    knop.disabled = true;
+    var maak = type === 'kennisbank_item'
+      ? await supabaseClient.from('kennisbank_items').insert({ tenant_id: tenantId, vraag: titel.substring(0, 200), antwoord: tekst.substring(0, 2000) }).select('id').single()
+      : await supabaseClient.from('kennisnotities').insert({ tenant_id: tenantId, originele_vraag: titel.substring(0, 100), notitie: tekst.substring(0, 1000), aangemaakt_door: currentUserId }).select('id').single();
+    if (maak.error) {
+      knop.disabled = false;
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = 'Aanmaken mislukt: ' + maak.error.message;
+      return;
+    }
+    var upd = await zetKbReactieStatus(r.id, 'overgenomen',
+      antwoord || (type === 'kennisbank_item' ? 'Overgenomen als kennisbank-item.' : 'Overgenomen als kennisnotitie.'));
+    knop.disabled = false;
+    if (upd.error) {
+      alertBox.className = 'alert alert-error show';
+      alertMsg.textContent = 'Aangemaakt, maar status bijwerken mislukt: ' + upd.error.message;
+      return;
+    }
+    await logAudit('KENNISBANK_REACTIE_OVERGENOMEN', 'kennisbank_reactie', r.id, { als: type, nieuw_id: maak.data && maak.data.id });
+    document.getElementById('modal-kb-overnemen').classList.remove('show');
+    if (type === 'kennisbank_item') loadVerbeterpunten(); else loadKennisnotities();
+    loadKbReacties();
+  }
+
+  function zetKbReactieStatus(id, status, antwoord) {
+    return supabaseClient.from('kennisbank_reacties').update({
+      status: status,
+      antwoord_beheerder: antwoord || null,
+      afgehandeld_op: new Date().toISOString(),
+      afgehandeld_door: currentProfileId
+    }).eq('id', id);
+  }
+
+  window.kbReactieAfhandelen = async function (id) {
+    var antwoord = prompt('Afgehandeld. Antwoord aan HR (optioneel):', '');
+    if (antwoord === null) return;
+    var upd = await zetKbReactieStatus(id, 'afgehandeld', antwoord.trim());
+    if (upd.error) { alert('Bijwerken mislukt: ' + upd.error.message); return; }
+    await logAudit('KENNISBANK_REACTIE_AFGEHANDELD', 'kennisbank_reactie', id, null);
+    loadKbReacties();
+  };
+
+  window.kbReactieAfwijzen = async function (id) {
+    var reden = prompt('Reden van afwijzen (HR ziet deze reden):', '');
+    if (reden === null) return;
+    if (!reden.trim()) { alert('Een reden is verplicht bij afwijzen.'); return; }
+    var upd = await zetKbReactieStatus(id, 'afgewezen', reden.trim());
+    if (upd.error) { alert('Afwijzen mislukt: ' + upd.error.message); return; }
+    await logAudit('KENNISBANK_REACTIE_AFGEWEZEN', 'kennisbank_reactie', id, { reden: reden.trim() });
+    loadKbReacties();
+  };
+
+  // =============================================
   // TER BEOORDELING — documenten ingediend door teamleider/hr
   // =============================================
   async function loadTerBeoordeling() {
@@ -7089,7 +7290,8 @@
 
     var rows = result.data || [];
     var inAfwachting = rows.filter(function (r) { return r.status === 'in_afwachting'; }).length;
-    updateTabBadge('ter-beoordeling', inAfwachting);
+    terBeoordelingTellers.documenten = inAfwachting;
+    updateTabBadge('ter-beoordeling', terBeoordelingTellers.documenten + terBeoordelingTellers.reacties);
 
     if (rows.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="no-data">Geen documenten ter beoordeling.</td></tr>';

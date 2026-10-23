@@ -205,7 +205,76 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Reacties en voorstellen van HR (tabblad Kennisbank, migratie 102) -->
+        <h3 class="section-title" style="font-size:1rem;margin-top:28px">💬 Reacties en voorstellen <span class="badge badge-open" id="kb-reacties-teller" style="display:none"></span></h3>
+        <p class="section-subtitle">Van HR uit het tabblad Kennisbank: reacties op documenten, kennisbank-items en kennisnotities, ontbrekende documenten en voorstellen. HR ziet de status en jouw antwoord.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <select class="form-input" id="kb-reacties-filter-status" style="width:auto;padding:8px 10px" aria-label="Filter op status">
+            <option value="nieuw" selected>Nieuw</option>
+            <option value="">Alle statussen</option>
+            <option value="overgenomen">Overgenomen</option>
+            <option value="afgehandeld">Afgehandeld</option>
+            <option value="afgewezen">Afgewezen</option>
+          </select>
+          <select class="form-input" id="kb-reacties-filter-soort" style="width:auto;padding:8px 10px" aria-label="Filter op soort">
+            <option value="" selected>Alle soorten</option>
+            <option value="reactie">Reacties (verouderd, bijwerken, mist iets, overig)</option>
+            <option value="ontbrekend_document">Ontbrekend document</option>
+            <option value="voorstel_kennisnotitie">Voorstel kennisnotitie</option>
+            <option value="voorstel_kennisbank_item">Voorstel kennisbank-item</option>
+          </select>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Soort</th>
+                <th>Waarover</th>
+                <th>Tekst</th>
+                <th>Ingediend door</th>
+                <th>Status</th>
+                <th style="width:200px">Acties</th>
+              </tr>
+            </thead>
+            <tbody id="kb-reacties-body">
+              <tr><td colspan="7" class="no-data">Laden...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
+
+      <!-- MODAL: reactie/voorstel overnemen (eerst bewerkbaar) -->
+      <div class="modal-overlay" id="modal-kb-overnemen">
+        <div class="modal">
+          <h3 class="modal-title">Overnemen in de kennisbank</h3>
+          <div id="kb-overnemen-alert" class="alert" role="alert"><span id="kb-overnemen-alert-message"></span></div>
+          <div class="form-group">
+            <label class="form-label" for="kb-overnemen-type">Aanmaken als</label>
+            <select class="form-input" id="kb-overnemen-type">
+              <option value="kennisnotitie">Kennisnotitie (korte aanvulling)</option>
+              <option value="kennisbank_item">Kennisbank-item (vaste vraag met vast antwoord)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="kb-overnemen-titel" id="kb-overnemen-titel-label">Onderwerp</label>
+            <input class="form-input" type="text" id="kb-overnemen-titel" maxlength="200">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="kb-overnemen-tekst" id="kb-overnemen-tekst-label">Tekst</label>
+            <textarea class="form-input" id="kb-overnemen-tekst" rows="6" maxlength="2000"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="kb-overnemen-antwoord">Antwoord aan HR (optioneel)</label>
+            <input class="form-input" type="text" id="kb-overnemen-antwoord" maxlength="2000">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="kb-overnemen-annuleer">Annuleren</button>
+            <button type="button" class="btn btn-primary" id="kb-overnemen-opslaan">Aanmaken en afronden</button>
+          </div>
+        </div>
+      </div>
 
       <!-- ========== TAB: MEDEWERKERS ========== -->
       <section class="tab-content" id="tab-medewerkers">
@@ -1432,7 +1501,7 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=3"></script>
   <script src="js/medewerker-opslaan.js?v=1"></script>
-  <script src="js/admin.js?v=118"></script>
+  <script src="js/admin.js?v=119"></script>
 
 </body>
 </html>
