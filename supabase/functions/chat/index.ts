@@ -160,6 +160,14 @@ const TREFWOORD_AANVULLING = 2;
 // geen verlies.
 const KLEIN_DOCUMENT_MAX = 3000;
 
+// Contextual Retrieval (punt 5, migratie 103): zoeken op context + stuk
+// (match_document_chunks_ctx / zoek_chunks_trefwoord_ctx) in plaats van alleen het stuk.
+// Live pas aan als de salarisvragen bij de proef niet slechter worden. Met de
+// testsleutel kiest body.test_retrieval = { ctx, stukken } per aanroep.
+const RETRIEVAL_CONTEXT = false;
+// Aantal stukken uit vector-zoeken bij gewone (geen feit-)vragen.
+const RETRIEVAL_STUKKEN = 8;
+
 // Retrieval punt 3: de vraag herschrijven voor het trefwoord-zoeken. Het model
 // voegt de woorden toe die officiële documenten voor hetzelfde onderwerp
 // gebruiken (bv. "cliënt" waar het document "inwoner" zegt). De oorspronkelijke
@@ -982,6 +990,13 @@ Deno.serve(async (req: Request) => {
     const proefModel: string | null = isTest && TEST_MODELLEN.includes(body.test_model) ? body.test_model : null;
     const proefEffort: string | null = proefModel && ["low", "medium", "high"].includes(body.test_effort) ? body.test_effort : null;
     const actiefModel: string = proefModel || CLAUDE_MODEL;
+    // Proef Contextual Retrieval: alleen met de testsleutel; zonder is het altijd null.
+    const tr = isTest && body.test_retrieval && typeof body.test_retrieval === "object" ? body.test_retrieval : null;
+    const proefRetrieval: { ctx: boolean; stukken: number } | null = tr
+      ? { ctx: tr.ctx === true, stukken: [8, 12].includes(tr.stukken) ? tr.stukken : RETRIEVAL_STUKKEN }
+      : null;
+    const zoekMetContext = proefRetrieval ? proefRetrieval.ctx : RETRIEVAL_CONTEXT;
+    const zoekStukken = proefRetrieval ? proefRetrieval.stukken : RETRIEVAL_STUKKEN;
     const proefStops: Array<Record<string, unknown>> = [];
     // Alleen in testmodus: houdt per aanroep stopreden, denkblokken, tokens en
     // duur bij voor de testrapportage. Verandert het verzoek niet.
@@ -1023,7 +1038,7 @@ Deno.serve(async (req: Request) => {
     // Alleen in testmodus: extra velden voor de antwoorden van losse onderdelen
     // (kennisscan, weekbrief, quiz enz.). Voor gewone gebruikers een leeg object.
     const testExtra = (): Record<string, unknown> => isTest
-      ? { test_modus: true, model: actiefModel, proef_aanroepen: proefStops,
+      ? { test_modus: true, model: actiefModel, retrieval: { ctx: zoekMetContext, stukken: zoekStukken }, proef_aanroepen: proefStops,
           kosten_usd: Math.round(proefStops.reduce((t, a) => t + ((a.kosten_usd as number) || 0), 0) * 1e6) / 1e6 }
       : {};
 
@@ -1060,7 +1075,7 @@ Deno.serve(async (req: Request) => {
         const resp = await fetch(eigenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined }),
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined }),
           signal: AbortSignal.timeout(20_000),
         });
         await resp.body?.cancel();
@@ -1138,7 +1153,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined }),
+            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -1810,6 +1825,89 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     }
 
     // ---- Admin: document chunks indexeren (vector embeddings) ----
+    // ---- Contextual Retrieval: context per stuk maken (punt 5, migratie 103) ----
+    // Per stuk 1-2 zinnen die het stuk binnen het hele document situeren (Claude,
+    // document in de prompt-cache), daarna een embedding van context + stuk in
+    // embedding_ctx. chunk_text en embedding blijven ongewijzigd.
+    // In porties: vanaf/max (standaard 40 stukken), zodat grote documenten binnen de
+    // tijdslimiet blijven; het antwoord geeft "volgende" voor de volgende portie.
+    if (body.contextualiseer_stukken === true && body.document_id) {
+      if (!isTest && profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Alleen admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const openaiKeyCtx = Deno.env.get("OPENAI_API_KEY");
+      if (!openaiKeyCtx) {
+        return new Response(JSON.stringify({ error: "OPENAI_API_KEY niet geconfigureerd" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: ctxDoc } = await supabaseAdmin
+        .from("documents")
+        .select("id, naam, map, content, user_id")
+        .eq("id", body.document_id)
+        .eq("tenant_id", profile.tenant_id)
+        .maybeSingle();
+      if (!ctxDoc || (ctxDoc as { user_id: string | null }).user_id) {
+        return new Response(JSON.stringify({ error: "Document niet gevonden" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const d = ctxDoc as { id: string; naam: string; map: string | null; content: string | null };
+      const vanaf = Math.max(0, Number(body.vanaf) || 0);
+      const max = Math.min(80, Math.max(1, Number(body.max) || 40));
+      const { data: ctxStukken, count: totaal } = await supabaseAdmin
+        .from("document_chunks")
+        .select("id, chunk_index, chunk_text", { count: "exact" })
+        .eq("document_id", d.id)
+        .order("chunk_index")
+        .range(vanaf, vanaf + max - 1);
+      const stukken = (ctxStukken || []) as Array<{ id: string; chunk_index: number; chunk_text: string }>;
+      const documentBlok = `<document naam="${d.naam.replace(/"/g, "'")}"${d.map ? ` map="${d.map.replace(/"/g, "'")}"` : ""}>\n${(d.content || stukken.map((x) => x.chunk_text).join("\n\n")).substring(0, 300_000)}\n</document>`;
+      let kosten = 0, fouten = 0, verwerkt = 0;
+      const maakContext = async (stuk: { id: string; chunk_text: string }) => {
+        try {
+          const resp = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "hulp",
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: actiefModel,
+              max_tokens: 150,
+              system: [
+                { type: "text", text: "Je helpt het zoeken in de documenten van een zorgorganisatie te verbeteren." },
+                { type: "text", text: documentBlok, cache_control: { type: "ephemeral" } },
+              ],
+              messages: [{ role: "user", content: `Hier is een stuk uit dit document:\n<stuk>\n${stuk.chunk_text}\n</stuk>\nSchrijf in het Nederlands één of twee korte zinnen die dit stuk situeren binnen het document, zodat het stuk beter gevonden wordt: noem het document en het onderwerp, en waar het van toepassing is de regio, doelgroep, regeling of functie waar het over gaat. Geef alleen die zinnen, zonder inleiding.` }],
+            }),
+          });
+          const json = await resp.json();
+          const u = json.usage || {};
+          // Haiku 5.5: invoer $0,10, cache schrijven x1,25, cache lezen x0,1, uitvoer $0,50 per miljoen.
+          kosten += ((u.input_tokens || 0) * 0.10 + (u.cache_creation_input_tokens || 0) * 0.125
+            + (u.cache_read_input_tokens || 0) * 0.01 + (u.output_tokens || 0) * 0.50) / 1_000_000;
+          const context = claudeTekst(json).trim().substring(0, 1000);
+          if (!resp.ok || !context) { fouten++; return; }
+          const emb = await generateEmbedding(`${context}\n\n${stuk.chunk_text}`, openaiKeyCtx);
+          if (!emb) { fouten++; return; }
+          const { error: updErr } = await supabaseAdmin.from("document_chunks")
+            .update({ context, embedding_ctx: JSON.stringify(emb) })
+            .eq("id", stuk.id);
+          if (updErr) { fouten++; console.error("[Context] opslaan:", updErr.message); return; }
+          verwerkt++;
+        } catch (e) {
+          fouten++;
+          console.error("[Context] fout:", e);
+        }
+      };
+      // Eerst één stuk (schrijft de cache), daarna 8 tegelijk (lezen uit de cache).
+      if (stukken.length > 0) await maakContext(stukken[0]);
+      for (let i = 1; i < stukken.length; i += 8) {
+        await Promise.all(stukken.slice(i, i + 8).map(maakContext));
+      }
+      const volgende = vanaf + stukken.length < (totaal || 0) ? vanaf + stukken.length : null;
+      return new Response(
+        JSON.stringify({ document: d.naam, verwerkt, fouten, totaal, volgende, kosten_usd: Math.round(kosten * 1e6) / 1e6 }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (body.index_document_chunks && body.document_id) {
       if (profile.role !== "admin") {
         return new Response(
@@ -3694,7 +3792,9 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           // Recall-first bij feitvragen: haal bredere pool op zodat concurrerende
           // varianten (bijv. VAN/FAN/FAN MN) niet elkaar uit de top-k drukken.
           // Rerank + extractie versmallen daarna weer aan de onderkant.
-          const matchCountGebruikt = isFeitVraag ? 25 : 8;
+          const matchCountGebruikt = isFeitVraag ? 25 : zoekStukken;
+          const vectorFn = zoekMetContext ? "match_document_chunks_ctx" : "match_document_chunks";
+          const trefwoordFn = zoekMetContext ? "zoek_chunks_trefwoord_ctx" : "zoek_chunks_trefwoord";
           fglMatchCount = matchCountGebruikt;
           // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken; het
           // zoeken met de herschreven vraag (punt 3) start zodra die klaar is.
@@ -3703,7 +3803,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           type TrefwoordRes = { data: unknown; error: { message: string } | null };
           // Verdienvragen: de salaristabel van de functiegroep gericht ophalen.
           const salarisPromise: Promise<TrefwoordRes> = verdienFwg
-            ? Promise.resolve(supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+            ? Promise.resolve(supabaseAdmin.rpc(trefwoordFn, {
               zoekvraag: `salarisschaal functiegroep ${verdienFwg} trede`,
               query_embedding: JSON.stringify(queryEmbedding),
               match_org_id: profile.tenant_id,
@@ -3713,14 +3813,14 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           let basisKlaar = 0, herschrijfKlaar = 0;
           const [[vectorRes, trefwoordRes], herschrijfRes] = await Promise.all([
             Promise.all([
-              supabaseAdmin.rpc("match_document_chunks", {
+              supabaseAdmin.rpc(vectorFn, {
                 query_embedding: JSON.stringify(queryEmbedding),
                 match_org_id: profile.tenant_id,
                 match_count: matchCountGebruikt,
                 match_threshold: 0.5,
               }),
               TREFWOORD_AANVULLING > 0
-                ? supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+                ? supabaseAdmin.rpc(trefwoordFn, {
                   zoekvraag: vraag,
                   query_embedding: JSON.stringify(queryEmbedding),
                   match_org_id: profile.tenant_id,
@@ -3729,7 +3829,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 : Promise.resolve({ data: null, error: null }),
             ]).then((r) => { basisKlaar = Date.now(); return r; }),
             herschrijfPromise.then((extra): PromiseLike<TrefwoordRes> | TrefwoordRes => extra
-              ? supabaseAdmin.rpc("zoek_chunks_trefwoord", {
+              ? supabaseAdmin.rpc(trefwoordFn, {
                 zoekvraag: `${vraag}\n${extra}`,
                 query_embedding: JSON.stringify(queryEmbedding),
                 match_org_id: profile.tenant_id,
