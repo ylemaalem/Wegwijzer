@@ -997,6 +997,8 @@ Deno.serve(async (req: Request) => {
       : null;
     const zoekMetContext = proefRetrieval ? proefRetrieval.ctx : RETRIEVAL_CONTEXT;
     const zoekStukken = proefRetrieval ? proefRetrieval.stukken : RETRIEVAL_STUKKEN;
+    // Alleen voor het testantwoord: welke zoekfuncties en documenten vector-zoeken gaf.
+    let testRetrieval: Record<string, unknown> = {};
     const proefStops: Array<Record<string, unknown>> = [];
     // Alleen in testmodus: houdt per aanroep stopreden, denkblokken, tokens en
     // duur bij voor de testrapportage. Verandert het verzoek niet.
@@ -3840,6 +3842,10 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           ]);
           herschrijfWachtMs = Math.max(0, herschrijfKlaar - basisKlaar);
           const { data: vectorMatches, error: chunkErr } = vectorRes;
+          testRetrieval = {
+            vector_functie: vectorFn, trefwoord_functie: trefwoordFn, stukken: matchCountGebruikt,
+            vector_documenten: [...new Set(((vectorMatches || []) as Array<{ document_id: string }>).map((c) => c.document_id))],
+          };
           if (trefwoordRes.error) console.warn("[Chat] Trefwoord-zoeken fout:", trefwoordRes.error.message);
           if (herschrijfRes.error) console.warn("[Chat] Trefwoord-zoeken (herschreven) fout:", herschrijfRes.error.message);
           const trefwoordMatches = (trefwoordRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
@@ -4754,6 +4760,7 @@ ${alleKennisbronnen}`;
           trainingen,
           trainingen_vooraf: trainingenVooraf,
           trainingen_zinnen: trainingenZinnen,
+          retrieval: { ctx: zoekMetContext, stukken: zoekStukken, ...testRetrieval },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
