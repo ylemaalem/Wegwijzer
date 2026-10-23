@@ -1139,7 +1139,9 @@ Deno.serve(async (req: Request) => {
       // vragen meer, zodat de run altijd binnen de functietijd wordt opgeslagen;
       // een niet-gedraaide vraag telt als fout, met de reden erbij. (Met 82 vragen
       // in groepjes van 4 werd de functie na ~200 s afgesloten voordat de run was opgeslagen.)
-      const CONCURRENCY = 8;
+      // 12 werkers sinds 2026-10-24: met 8 haalden 82 vragen de grens niet meer, en de
+      // set groeit naar 107. 429-limieten vangt roepAanMetRetry op.
+      const CONCURRENCY = 12;
       const RUN_STARTGRENS_MS = 170_000;
       const runStart = Date.now();
       const lijst = vragen as TV[];
