@@ -636,7 +636,7 @@
       typingIndicator.classList.add('hidden');
 
       if (data.soft_limit) {
-        toonRateLimitPopup(token);
+        toonRateLimitPopup(token, data);
       } else if (data.hard_limit || response.status === 429 || data.rate_limited) {
         renderBotBericht(data.error || 'Je hebt het dagelijkse maximum bereikt.', null, null, null);
       } else if (!response.ok || data.error) {
@@ -737,7 +737,7 @@
 
       if (data.soft_limit) {
         // Zachte limiet: toon popup modal
-        toonRateLimitPopup(token);
+        toonRateLimitPopup(token, data);
       } else if (data.hard_limit) {
         renderBotBericht(
           data.error || 'Je hebt het maximale aantal vragen voor vandaag bereikt. Morgen kun je weer vragen stellen.',
@@ -1654,7 +1654,10 @@
 
   // RATE LIMIT POPUP
   // =============================================
-  function toonRateLimitPopup(token) {
+  // info: antwoord van de server (basis_limiet, extra_vragen); de getallen komen daarvandaan.
+  function toonRateLimitPopup(token, info) {
+    var basis = info && info.basis_limiet ? info.basis_limiet : 30;
+    var extra = info && info.extra_vragen ? info.extra_vragen : 20;
     // Verwijder bestaande popup als die er is
     var bestaand = document.getElementById('rate-limit-modal');
     if (bestaand) bestaand.remove();
@@ -1667,7 +1670,7 @@
     modal.style.cssText = 'background:white;border-radius:12px;padding:24px;max-width:360px;width:100%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.2)';
     modal.innerHTML =
       '<h3 style="font-size:1.1rem;font-weight:700;margin-bottom:12px;color:var(--text)">Dagelijkse limiet bereikt</h3>' +
-      '<p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;line-height:1.5">Je hebt je dagelijkse 30 vragen gebruikt. Wil je vandaag nog 20 extra vragen gebruiken?</p>' +
+      '<p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;line-height:1.5">Je hebt je dagelijkse ' + basis + ' vragen gebruikt. Wil je vandaag nog ' + extra + ' extra vragen gebruiken?</p>' +
       '<div style="display:flex;gap:8px">' +
         '<button id="rate-limit-nee" style="flex:1;padding:12px;border:2px solid var(--primary);background:white;color:var(--primary);border-radius:8px;font-weight:600;cursor:pointer;font-family:var(--font)">Nee, later</button>' +
         '<button id="rate-limit-ja" style="flex:1;padding:12px;border:none;background:var(--primary);color:white;border-radius:8px;font-weight:600;cursor:pointer;font-family:var(--font)">Ja, uitbreiden</button>' +
@@ -1677,17 +1680,26 @@
     document.body.appendChild(overlay);
 
     document.getElementById('rate-limit-ja').addEventListener('click', async function () {
-      // Activeer uitbreiding via edge function
-      await fetch(SUPABASE_URL + '/functions/v1/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ extend_limit: true })
-      });
+      // Activeer uitbreiding via edge function; pas "geactiveerd" melden als de server extended: true geeft.
+      var uitkomst = null;
+      try {
+        var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({ extend_limit: true })
+        });
+        uitkomst = await resp.json();
+      } catch (e) { uitkomst = null; }
       overlay.remove();
-      renderBotBericht('Je hebt 20 extra vragen geactiveerd voor vandaag. Stel gerust je volgende vraag!', null, null, null);
+      if (uitkomst && uitkomst.extended === true) {
+        var aantal = uitkomst.extra_vragen || extra;
+        renderBotBericht('Je hebt ' + aantal + ' extra vragen geactiveerd voor vandaag. Stel gerust je volgende vraag!', null, null, null);
+      } else {
+        renderBotBericht((uitkomst && uitkomst.error) || 'Extra vragen activeren is niet gelukt. Probeer het later opnieuw.', null, null, null);
+      }
     });
 
     document.getElementById('rate-limit-nee').addEventListener('click', function () {

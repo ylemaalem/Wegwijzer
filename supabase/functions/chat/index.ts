@@ -425,6 +425,21 @@ async function leidinggevendeRijVoor(
   return zoekLeidinggevendeRij((data ?? []) as LeidinggevendeRij[], email);
 }
 
+// Daglimiet chatvragen (geldt voor alle rollen behalve de beheerder): basis + extra
+// na uitbreiden. Waarden uit het profiel, anders 30 en 20.
+function vraagLimieten(profiel: Record<string, unknown>): { basisLimiet: number; extraVragen: number; hardLimiet: number } {
+  const basisLimiet = (profiel.vraag_limiet as number) || 30;
+  const extraVragen = (profiel.extra_vragen as number) || 20;
+  return { basisLimiet, extraVragen, hardLimiet: basisLimiet + extraVragen };
+}
+
+// Begin van "vandaag" voor de telling en de uitbreiding (zelfde dag op beide plekken).
+function vandaagVoorLimiet(): { todayStart: Date; todayStr: string } {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  return { todayStart, todayStr: todayStart.toISOString().split("T")[0] };
+}
+
 function berekenInwerkWeek(startdatum: string | null): number {
   if (!startdatum) return 1;
   const start = new Date(startdatum);
@@ -2492,12 +2507,8 @@ ${vraagLijst}${trendGedekteContext}`;
 
     // ---- 5. Rate limiting per rol ----
     if (!isTest) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStr = todayStart.toISOString().split("T")[0];
-    const basisLimiet = (profile as Record<string, unknown>).vraag_limiet as number || 30;
-    const extraVragen = (profile as Record<string, unknown>).extra_vragen as number || 20;
-    const hardLimiet = basisLimiet + extraVragen;
+    const { todayStart, todayStr } = vandaagVoorLimiet();
+    const { basisLimiet, extraVragen, hardLimiet } = vraagLimieten(profile as Record<string, unknown>);
 
     if (profile.role !== "admin") {
       const { count: todayCount } = await supabaseAdmin
@@ -2524,7 +2535,7 @@ ${vraagLijst}${trendGedekteContext}`;
         );
       } else if (count >= basisLimiet && !hasExtension && extraVragen > 0) {
         return new Response(
-          JSON.stringify({ error: `Je hebt je dagelijkse ${basisLimiet} vragen gebruikt. Wil je vandaag nog ${extraVragen} extra vragen gebruiken?`, rate_limited: true, soft_limit: true }),
+          JSON.stringify({ error: `Je hebt je dagelijkse ${basisLimiet} vragen gebruikt. Wil je vandaag nog ${extraVragen} extra vragen gebruiken?`, rate_limited: true, soft_limit: true, basis_limiet: basisLimiet, extra_vragen: extraVragen }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -3326,10 +3337,24 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       return new Response(JSON.stringify({ embedding_updated: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Rate limit uitbreiden
-    if (extend_limit && profile.role === "medewerker") {
-      await supabaseAdmin.from("rate_extensions").upsert({ profile_id: profile.id, datum: todayStr }, { onConflict: "profile_id,datum" });
-      return new Response(JSON.stringify({ extended: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Rate limit uitbreiden: voor iedereen voor wie de limiet geldt (alle rollen behalve
+    // de beheerder). Voorheen alleen 'medewerker', en todayStr bestond hier niet
+    // (alleen in het limietblok), waardoor het voor niemand werkte.
+    if (extend_limit) {
+      const jsonUitbreiding = (inhoud: Record<string, unknown>) => new Response(JSON.stringify(inhoud),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (profile.role === "admin") {
+        return jsonUitbreiding({ extended: false, error: "Voor beheerders geldt geen daglimiet." });
+      }
+      const { todayStr: uitbreidDatum } = vandaagVoorLimiet();
+      const { basisLimiet, extraVragen } = vraagLimieten(profile as Record<string, unknown>);
+      const { error: uitbreidFout } = await supabaseAdmin.from("rate_extensions")
+        .upsert({ profile_id: profile.id, datum: uitbreidDatum }, { onConflict: "profile_id,datum" });
+      if (uitbreidFout) {
+        console.error("[Limiet] Uitbreiden mislukt:", uitbreidFout.message);
+        return jsonUitbreiding({ extended: false, error: "Extra vragen activeren is niet gelukt. Probeer het later opnieuw." });
+      }
+      return jsonUitbreiding({ extended: true, basis_limiet: basisLimiet, extra_vragen: extraVragen });
     }
 
     // ---- PDF extractie via Claude ----

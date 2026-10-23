@@ -49,10 +49,11 @@ export function bouwMail(n: Notificatie): { subject: string; html: string } | nu
         <p>Ga naar het ${LINK} om de aanvraag te beoordelen.</p>`,
     };
   }
+  // Type heet 'eerste_login', maar de chatfunctie stuurt hem bij de eerste vraag.
   if (n.type === "eerste_login") {
     return {
-      subject: `Medewerker ${onderwerpTekst(n.medewerker_naam)} heeft Wegwijzer voor het eerst gebruikt`,
-      html: `<p>Medewerker <strong>${e(n.medewerker_naam)}</strong> heeft Wegwijzer voor het eerst gebruikt op <strong>${e(n.datum)}</strong>.</p>`,
+      subject: `${onderwerpTekst(n.medewerker_naam) || "Een medewerker"} heeft de eerste vraag aan Wegwijzer gesteld`,
+      html: `<p><strong>${e(n.medewerker_naam)}</strong> heeft op <strong>${e(n.datum)}</strong> de eerste vraag aan Wegwijzer gesteld.</p>`,
     };
   }
   return null;
