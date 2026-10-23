@@ -883,7 +883,7 @@
    "bron": "CAO_H4_Salariering_FWG.pdf (per 1 juli 2025: FWG 35 trede 12, inpas. nr. 23 = 3.564)",
    "documenttype": "tabel",
    "zeker": false,
-   "let_op": "De salaristabel staat door het inlezen van de PDF door elkaar in de kennisbank; faalt naar verwachting tot de tabel leesbaar is ingevoerd.",
+   "let_op": "Bron is CAO_H4 (functiegroepen per schaal leesbaar). Het document 'Salaristabellen CAO Gehandicaptenzorg' bevat dezelfde tabellen, maar door elkaar; het is sinds 2026-10-23 uitgesloten van zoeken (migratie 097).",
    "actief": true
   },
   {
