@@ -173,6 +173,34 @@ body {
   }
 }
 
+/* Smalle schermen: de kop slaat om. Knoppen die niet meer naast de titel passen
+   (o.a. Uitloggen) gaan naar een volgende rij in plaats van buiten beeld te vallen;
+   html/body hebben overflow-x: hidden, dus een te brede kop is onbereikbaar.
+   De titel mag krimpen en lange woorden breken. (Bug 2026-10-23, iPhone portret.) */
+@media (max-width: 600px) {
+  .app-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .app-header > h1 {
+    flex: 1 1 150px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* Chat: de titel kort zich in (…); de kop slaat pas om als de knoppen zelf niet passen. */
+  .app-header .header-title-group {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .app-header .status-dot {
+    flex-shrink: 0;
+  }
+  .app-header .header-spacer {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
 /* ---- Kaarten ---- */
 .card {
   background: var(--bg-white);
