@@ -92,7 +92,7 @@
         // Login gelukt — haal profiel op om rol te bepalen
         const { data: profile, error: profileError } = await supabaseClient
           .from('profiles')
-          .select('role, functiegroep, dashboard_toegang')
+          .select('role')
           .eq('user_id', data.user.id)
           .single();
 
@@ -103,11 +103,9 @@
           return;
         }
 
-        // Doorsturen op basis van rol of functiegroep
-        var isTeamleider = profile.role === 'teamleider' ||
-          (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
-          (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
-          profile.dashboard_toegang === true;
+        // Doorsturen op basis van rol. Dashboard alleen met een rij in de
+        // leidinggevenden-lijst; een functie geeft nooit rechten.
+        var isTeamleider = await heeftDashboardToegang(profile);
 
         if (profile.role === 'admin') {
           window.location.href = appUrl('admin.html');
@@ -158,6 +156,14 @@
     });
   }
 
+  // Dashboardtoegang: role 'teamleider' én een rij in teamleiders in de eigen
+  // organisatie (databasefunctie mijn_leidinggevende_rol, migratie 096).
+  async function heeftDashboardToegang(profile) {
+    if (!profile || profile.role !== 'teamleider') return false;
+    var res = await supabaseClient.rpc('mijn_leidinggevende_rol');
+    return !res.error && !!res.data;
+  }
+
   // ---- Controleer of gebruiker al ingelogd is ----
   async function checkExistingSession() {
     try {
@@ -166,15 +172,12 @@
       if (session) {
         const { data: profile } = await supabaseClient
           .from('profiles')
-          .select('role, functiegroep, dashboard_toegang')
+          .select('role')
           .eq('user_id', session.user.id)
           .single();
 
         if (profile) {
-          var isTeamleider = profile.role === 'teamleider' ||
-            (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
-            (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
-            profile.dashboard_toegang === true;
+          var isTeamleider = await heeftDashboardToegang(profile);
 
           if (profile.role === 'admin') {
             window.location.href = appUrl('admin.html');

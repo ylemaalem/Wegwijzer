@@ -5040,6 +5040,7 @@
     }
 
     allTeamleiders = result.data;
+    toonRolZonderRij(result.data);
 
     // Update teamleider dropdowns in invite en edit modals
     populateTeamleiderDropdown('invite-teamleider', '', 'teamleider');
@@ -5081,6 +5082,35 @@
         '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  // Controle: profielen met role 'teamleider' zonder rij in de leidinggevenden-lijst.
+  // Zij hebben geen dashboard en geen leidinggevende-rechten (migratie 096), maar
+  // de rol hoort dan teruggezet te worden.
+  async function toonRolZonderRij(leidinggevenden) {
+    var el = document.getElementById('tl-zonder-rij-waarschuwing');
+    if (!el) return;
+    var res = await supabaseClient
+      .from('profiles')
+      .select('id, naam, email')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'teamleider');
+    if (res.error || !res.data) { el.style.display = 'none'; return; }
+    var adressen = {};
+    (leidinggevenden || []).forEach(function (tl) {
+      if (tl.email) adressen[tl.email.trim().toLowerCase()] = true;
+    });
+    var zonderRij = res.data.filter(function (p) {
+      return !adressen[(p.email || '').trim().toLowerCase()];
+    });
+    if (zonderRij.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.innerHTML = '<strong>Let op:</strong> ' + (zonderRij.length === 1 ? 'dit account heeft' : 'deze accounts hebben') +
+      ' de rol leidinggevende, maar staat niet in de lijst hieronder. Zonder rij in de lijst is er geen dashboard en geen extra rechten. ' +
+      'Voeg de persoon toe als leidinggevende, of laat de rol terugzetten naar medewerker.<ul style="margin:8px 0 0 18px">' +
+      zonderRij.map(function (p) {
+        return '<li>' + escapeHtml(p.naam || '-') + ' (' + escapeHtml(p.email || 'geen e-mail') + ')</li>';
+      }).join('') + '</ul>';
+    el.style.display = '';
   }
 
   function initTeamleiderModal() {
@@ -5345,14 +5375,20 @@
     }
   };
 
+  // Na het verwijderen zet de database het profiel met dat e-mailadres terug naar
+  // 'medewerker' (nooit een admin) en schrijft dat in het auditlog (migratie 096).
   window.deleteTeamleider = async function (id) {
-    if (!confirm('Weet je zeker dat je deze leidinggevende wilt verwijderen?')) return;
+    if (!confirm('Weet je zeker dat je deze leidinggevende wilt verwijderen?\nHeeft deze persoon een account, dan wordt dat weer een gewoon medewerkersaccount zonder dashboard.')) return;
 
-    await supabaseClient
+    var res = await supabaseClient
       .from('teamleiders')
       .delete()
       .eq('id', id);
 
+    if (res.error) {
+      alert('Verwijderen mislukt: ' + res.error.message);
+      return;
+    }
     loadTeamleiders();
   };
 

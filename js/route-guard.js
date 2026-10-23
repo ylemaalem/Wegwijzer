@@ -37,18 +37,21 @@
 
       var profile = profileResult.data;
 
-      // Bepaal of deze gebruiker teamleider-rechten heeft
-      var isTeamleider = profile.role === 'teamleider' ||
-        (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('teamleider') !== -1) ||
-        (profile.functiegroep && profile.functiegroep.toLowerCase().indexOf('leidinggevende') !== -1) ||
-        profile.dashboard_toegang === true;
+      // Dashboardrechten alleen met role 'teamleider' én een rij in de
+      // leidinggevenden-lijst van de eigen organisatie (migratie 096). Een functie
+      // (functiegroep) geeft nooit rechten.
+      var isTeamleider = false;
+      if (profile.role === 'teamleider') {
+        var tlRes = await supabaseClient.rpc('mijn_leidinggevende_rol');
+        isTeamleider = !tlRes.error && !!tlRes.data;
+      }
 
       // Check rol als die vereist is
       if (requiredRole) {
         var allowed = false;
         if (requiredRole === 'admin' && profile.role === 'admin') allowed = true;
         if (requiredRole === 'medewerker' && (profile.role === 'medewerker' || profile.role === 'teamleider' || isTeamleider)) allowed = true;
-        if (requiredRole === 'teamleider' && (profile.role === 'teamleider' || isTeamleider)) allowed = true;
+        if (requiredRole === 'teamleider' && isTeamleider) allowed = true;
 
         if (!allowed) {
           if (profile.role === 'admin') {

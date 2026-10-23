@@ -60,8 +60,9 @@ function maakElement(id) {
 }
 
 // tabellen: { tabelnaam: [rijen] } — elke select op die tabel geeft alle rijen terug.
+// Een rpc met een enkele waarde (geen lijst) geeft die waarde als data terug.
 // dbFouten: { 'tabel:actie': { message } } — die actie geeft een fout terug (zoals een trigger).
-function maakSupabase(tabellen, dbFouten = {}) {
+function maakSupabase(tabellen, dbFouten = {}, gebruiker = { id: 'u1', email: 'beheer@test' }) {
   const log = [];
   function query(tabel, args) {
     const q = { tabel, acties: [], args };
@@ -70,12 +71,14 @@ function maakSupabase(tabellen, dbFouten = {}) {
         if (prop === 'then') {
           return (resolve, reject) => {
             log.push(q);
-            const rijen = tabellen[tabel] || [];
+            const rijen = tabel in tabellen && tabellen[tabel] !== undefined ? tabellen[tabel] : [];
             const single = q.acties.includes('single') || q.acties.includes('maybeSingle');
             const fout = q.acties.map((a) => dbFouten[tabel + ':' + a]).find(Boolean);
             const res = fout
               ? { data: null, error: fout, count: null, status: 400 }
-              : { data: single ? (rijen[0] || null) : rijen.slice(), error: null, count: rijen.length, status: 200 };
+              : !Array.isArray(rijen)
+                ? { data: rijen, error: null, count: null, status: 200 }
+                : { data: single ? (rijen[0] || null) : rijen.slice(), error: null, count: rijen.length, status: 200 };
             return Promise.resolve(res).then(resolve, reject);
           };
         }
@@ -89,8 +92,9 @@ function maakSupabase(tabellen, dbFouten = {}) {
     from: query,
     rpc: (naam, args) => query('rpc:' + naam, args),
     auth: {
-      getSession: async () => ({ data: { session: { access_token: 'test' } } }),
-      getUser: async () => ({ data: { user: { id: 'u1' } } }),
+      getSession: async () => ({ data: { session: { access_token: 'test', user: gebruiker } } }),
+      refreshSession: async () => ({ data: {} }),
+      getUser: async () => ({ data: { user: gebruiker } }),
       signOut: async () => ({}),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     },
@@ -104,6 +108,7 @@ function maakSupabase(tabellen, dbFouten = {}) {
 // opties.confirm: antwoord op confirm(); opties.fetch: nep-fetch (Edge Functions);
 // opties.bestanden: te laden scripts; opties.detail: profiel/gebruiker bij start().
 // opties.dbFouten: { 'tabel:actie': { message } } — die database-actie mislukt.
+// opties.paginaRol: data-required-role van de pagina (voor route-guard.js).
 function laadPagina(opties) {
   opties = opties || {};
   const elementen = {};
@@ -119,9 +124,11 @@ function laadPagina(opties) {
     querySelectorAll() { return []; },
     createElement(tag) { return maakElement('<' + tag + '>'); },
     addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
+    dispatchEvent(evt) { (docListeners[evt.type] || []).forEach((fn) => fn(evt)); return true; },
+    documentElement: { dataset: { requiredRole: opties.paginaRol || undefined } },
     body,
   });
-  const supabase = maakSupabase(opties.tabellen || {}, opties.dbFouten || {});
+  const supabase = maakSupabase(opties.tabellen || {}, opties.dbFouten || {}, opties.detail && opties.detail.user);
 
   const ctx = {
     document,

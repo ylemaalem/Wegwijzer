@@ -72,13 +72,20 @@
     // Inwerktraject alleen als expliciet aangevinkt (inwerktraject_actief === true)
     var heeftInwerktraject = profile.inwerktraject_actief === true && !profile.inwerken_afgerond;
     weekNummer = heeftInwerktraject ? berekenWeekNummer(profile.startdatum) : 99;
-    // Toon dashboard knop voor teamleiders en admins
+    // Toon dashboard knop voor admins en voor leidinggevenden met een rij in de
+    // leidinggevenden-lijst (migratie 096); zonder rij weigert de route-guard toch.
     if (profile.role === 'teamleider' || profile.role === 'admin') {
-      var dashBtn = document.getElementById('dashboard-btn');
-      if (dashBtn) {
-        dashBtn.classList.remove('hidden');
-        dashBtn.href = profile.role === 'admin' ? appUrl('admin.html') : appUrl('teamleider.html');
-      }
+      (async function () {
+        if (profile.role === 'teamleider') {
+          var tlRes = await supabaseClient.rpc('mijn_leidinggevende_rol');
+          if (tlRes.error || !tlRes.data) return;
+        }
+        var dashBtn = document.getElementById('dashboard-btn');
+        if (dashBtn) {
+          dashBtn.classList.remove('hidden');
+          dashBtn.href = profile.role === 'admin' ? appUrl('admin.html') : appUrl('teamleider.html');
+        }
+      })();
     }
     initWelkom();
     initChatInput();

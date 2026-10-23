@@ -409,6 +409,15 @@ function berekenInwerkWeek(startdatum: string | null): number {
   return Math.min(7, Math.max(1, Math.ceil((dagen + 1) / 7)));
 }
 
+// Leidinggevende = profiles.role 'teamleider' ÉN een rij in teamleiders in de eigen
+// organisatie (databasefunctie leidinggevende_rol_van, migratie 096). De rol alleen
+// geeft geen rechten meer (lek 2026-10-23).
+async function isLeidinggevende(supabaseAdmin: ReturnType<typeof createClient>, userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.rpc("leidinggevende_rol_van", { p_user: userId });
+  if (error) console.warn("[Rechten] leidinggevende_rol_van fout:", error.message);
+  return !error && !!data;
+}
+
 // Dashboardrol van een leidinggevende (zie _shared/dashboardrol.ts). Alle
 // leidinggevenden hebben profiles.role 'teamleider'; teamleider/manager/hr staat in
 // teamleiders.rol (op e-mail, net als in teamleider.js). Admin komt uit profiles.role.
@@ -1919,7 +1928,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
     // ---- Teamleider: team medewerkers ophalen (via service role, omzeilt RLS) ----
     if (body.get_team_medewerkers) {
-      if (profile.role !== "teamleider" && profile.role !== "admin") {
+      if (profile.role !== "admin" && !(profile.role === "teamleider" && await isLeidinggevende(supabaseAdmin, user.id))) {
         return new Response(
           JSON.stringify({ error: "Geen toegang" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1953,7 +1962,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     // persoon (md5 van user_id) — NOOIT vraag/antwoord-tekst, nooit ruwe user_id of naam.
     // Scoping (team vs tenant) gebeurt server-side via resolveMonitorProfileIds.
     if (body.get_team_gesprek_metadata === true) {
-      if (profile.role !== "teamleider" && profile.role !== "admin" && profile.role !== "manager" && profile.role !== "hr") {
+      if (profile.role !== "admin" && !(profile.role === "teamleider" && await isLeidinggevende(supabaseAdmin, user.id))) {
         return new Response(
           JSON.stringify({ error: "Geen toegang" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -2003,7 +2012,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
     // Verifieert: aanvrager is teamleider, melding hoort bij eigen team,
     // medewerker zit in team van de teamleider. Logt elke ontsluiting.
     if (body.ontsluit_naam && body.melding_id) {
-      if (profile.role !== "teamleider") {
+      if (profile.role !== "teamleider" || !(await isLeidinggevende(supabaseAdmin, user.id))) {
         return new Response(
           JSON.stringify({ error: "Alleen teamleiders kunnen namen ontsluiten" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -2086,7 +2095,7 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
 
     // ---- Teamleider: trendanalyse op anonieme vraaglijst ----
     if (body.generate_trendanalyse === true) {
-      if (profile.role !== "teamleider" && profile.role !== "admin" && !isTest) {
+      if (!isTest && profile.role !== "admin" && !(profile.role === "teamleider" && await isLeidinggevende(supabaseAdmin, user.id))) {
         return new Response(
           JSON.stringify({ error: "Alleen teamleiders" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
