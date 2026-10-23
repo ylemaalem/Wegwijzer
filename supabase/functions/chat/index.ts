@@ -152,6 +152,13 @@ const EXTERNE_MAPPEN = ["cao"];
 // testvragen de kernfeiten in de context, zonder verlies bij de andere vragen.
 const TREFWOORD_AANVULLING = 2;
 
+// Kleine documenten heel meegeven: wordt een stuk gevonden van een document
+// waarvan alle stukken samen hoogstens zoveel tekens tellen, dan gaan de
+// overige stukken van dat document ook mee (bv. een lijst criteria die over
+// vijf stukken verspreid staat). 0 = uit. Simulatie 2026-10-22: +1 testvraag (57),
+// geen verlies.
+const KLEIN_DOCUMENT_MAX = 3000;
+
 // Retrieval punt 3: de vraag herschrijven voor het trefwoord-zoeken. Het model
 // voegt de woorden toe die officiële documenten voor hetzelfde onderwerp
 // gebruiken (bv. "cliënt" waar het document "inwoner" zegt). De oorspronkelijke
@@ -3355,6 +3362,8 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     let fglChunksNaRerank: number | null = null;
     // Optie D: welke trefwoordstukken zijn toegevoegd (voor log en testmodus).
     let trefwoordAanvulling: Array<{ document_id: string; similarity: number; herschreven: boolean }> = [];
+    // Aantal stukken dat erbij kwam doordat hun document klein is (KLEIN_DOCUMENT_MAX).
+    let kleineDocumentStukken = 0;
     // Verdienvragen: aantal salaristabelstukken in de context (0 = geen).
     let salarisTabelStukken = 0;
     // Herkomst: documenten die daadwerkelijk als context naar het model gaan, in
@@ -3764,6 +3773,37 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 gebruikteDocIds = [...new Set([...gebruikteDocIds, ...extraChunks.map((c) => c.document_id)])];
                 trefwoordAanvulling = extraChunks.map((c, i) => ({ document_id: c.document_id, similarity: c.similarity, herschreven: i >= aantalVraag }));
                 console.log(`[Chat] Trefwoord-aanvulling: +${aantalVraag} (vraag) +${extraChunks.length - aantalVraag} (herschreven) uit ${extraChunks.map((c) => `"${(metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || c.document_id}"`).join(", ")}`);
+              }
+
+              // ---- Kleine documenten heel meegeven ----
+              // Alleen documenten waar al een stuk van gevonden is; de overige
+              // stukken komen achteraan, per document in volgorde.
+              if (KLEIN_DOCUMENT_MAX > 0) {
+                const gevondenDocIds = [...new Set(werkChunks.map((c) => c.document_id))];
+                const { data: alleStukken, error: kleinErr } = await supabaseAdmin
+                  .from("document_chunks")
+                  .select("id, document_id, chunk_index, chunk_text")
+                  .in("document_id", gevondenDocIds)
+                  .order("chunk_index");
+                if (kleinErr) console.warn("[Chat] Kleine documenten ophalen fout:", kleinErr.message);
+                const perDoc = new Map<string, Array<{ id: string; document_id: string; chunk_text: string }>>();
+                for (const s of (alleStukken || []) as Array<{ id: string; document_id: string; chunk_text: string }>) {
+                  if (!perDoc.has(s.document_id)) perDoc.set(s.document_id, []);
+                  perDoc.get(s.document_id)!.push(s);
+                }
+                const aanwezigNu = new Set(werkChunks.map((c) => (c as { id?: string }).id));
+                const kleinErbij: Array<{ id: string; document_id: string; chunk_text: string; similarity: number }> = [];
+                for (const docId of gevondenDocIds) {
+                  const stukken = perDoc.get(docId) || [];
+                  const lengte = stukken.reduce((n, s) => n + (s.chunk_text || "").length, 0);
+                  if (stukken.length < 2 || lengte > KLEIN_DOCUMENT_MAX) continue;
+                  for (const s of stukken) if (!aanwezigNu.has(s.id)) kleinErbij.push({ ...s, similarity: 0 });
+                }
+                if (kleinErbij.length > 0) {
+                  werkChunks = [...werkChunks, ...kleinErbij];
+                  kleineDocumentStukken = kleinErbij.length;
+                  console.log(`[Chat] Kleine documenten heel: +${kleinErbij.length} stukken uit ${[...new Set(kleinErbij.map((c) => `"${(metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || c.document_id}"`))].join(", ")}`);
+                }
               }
 
               const chunkTexts: string[] = [];
@@ -4516,6 +4556,7 @@ ${alleKennisbronnen}`;
           weigering: weigering || undefined,
           proef_aanroepen: proefStops,
           trefwoord_aanvulling: trefwoordAanvulling,
+          kleine_document_stukken: kleineDocumentStukken,
           zoek_extra_termen: zoekExtraTermen,
           herschrijf_ms: herschrijfMs,
           herschrijf_wacht_ms: herschrijfWachtMs,
