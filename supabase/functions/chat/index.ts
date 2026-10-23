@@ -7,6 +7,7 @@ import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, 
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag } from "../_shared/zorginhoud.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
+import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
 import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
@@ -62,9 +63,6 @@ const PERSOONLIJKE_WOORDEN = [
   "mijn ", "mij ", "ik ",
   "mijn team", "mijn leidinggevende", "mijn dienst", "mijn uren",
 ];
-
-// Gelijk aan profiles_role_check en de CHECK op uitnodigingen.role (migratie 083).
-const TOEGESTANE_UITNODIGINGSROLLEN = ["medewerker", "teamleider", "admin"];
 
 // Tenant waarvoor de regressie-testset draait (AHMN). Alleen gebruikt in testmodus.
 const TEST_TENANT_ID = "a74e9800-eafd-4fc8-bcb6-fb651db10a8e";
@@ -409,6 +407,22 @@ async function bepaalAccountBesluit(
     aantalGesprekken = count ?? 0;
   }
   return { authGebruiker, besluit: beoordeelBestaandAccount(authGebruiker, lijst, aantalGesprekken, tenantId) };
+}
+
+// Rij in teamleiders (eigen organisatie) bij dit e-mailadres, of null. Bron van de
+// rol bij (opnieuw) uitnodigen, zie _shared/uitnodigingsrol.ts.
+async function leidinggevendeRijVoor(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  email: string,
+  tenantId: string,
+): Promise<LeidinggevendeRij | null> {
+  const { data, error } = await supabaseAdmin
+    .from("teamleiders")
+    .select("id, email, rol")
+    .eq("tenant_id", tenantId)
+    .not("email", "is", null);
+  if (error) throw new Error("Leidinggevenden konden niet worden gecontroleerd: " + error.message);
+  return zoekLeidinggevendeRij((data ?? []) as LeidinggevendeRij[], email);
 }
 
 function berekenInwerkWeek(startdatum: string | null): number {
@@ -2529,12 +2543,22 @@ ${vraagLijst}${trendGedekteContext}`;
 
       const inviteEmail = body.invite_email;
       const inviteNaam = body.invite_naam || "";
-      const inviteRole = body.invite_role || "teamleider";
+      const gevraagdeRol = body.invite_role || "teamleider";
       const inviteFunctiegroep = body.invite_functiegroep || null;
       const inviteAfdeling = body.invite_afdeling || null;
       const redirectUrl = body.redirect_url || "https://app.mijnwegwijzer.com/wachtwoord-instellen.html";
 
       try {
+        if (!TOEGESTANE_UITNODIGINGSROLLEN.includes(gevraagdeRol)) {
+          return new Response(
+            JSON.stringify({ error: "Ongeldige rol voor uitnodiging", invited: false }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        // Staat het adres al in teamleiders, dan wordt het 'teamleider' (de rij is de bron).
+        const inviteRij = await leidinggevendeRijVoor(supabaseAdmin, inviteEmail, profile.tenant_id);
+        const inviteRole = bepaalUitnodigingsrol({ heeftLeidinggevendeRij: !!inviteRij, gevraagdeRol });
+
         const userData: Record<string, unknown> = {
           role: inviteRole,
           naam: inviteNaam,
@@ -2542,13 +2566,6 @@ ${vraagLijst}${trendGedekteContext}`;
         };
         if (inviteFunctiegroep) userData.functiegroep = inviteFunctiegroep;
         if (inviteAfdeling) userData.afdeling = inviteAfdeling;
-
-        if (!TOEGESTANE_UITNODIGINGSROLLEN.includes(inviteRole)) {
-          return new Response(
-            JSON.stringify({ error: "Ongeldige rol voor uitnodiging", invited: false }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
 
         // Bestaand account? Alleen verwijderen als het nooit gebruikt is (nooit
         // ingelogd, geen profiel, geen gesprekken); anders niets verwijderen en de
@@ -2654,8 +2671,39 @@ ${vraagLijst}${trendGedekteContext}`;
           console.warn("[Resend] Niets verwijderd (andere organisatie):", resendEmail);
           return jsonAntwoord({ error: meldingVoorBeheerder(resendBesluit, "opnieuw"), account_status: resendBesluit.actie });
         }
+
+        // De rol komt uit teamleiders: staat het adres daar, dan is het 'teamleider'.
+        // Een bestaand profiel van de eigen organisatie met role 'medewerker' wordt
+        // hier rechtgezet (nooit een beheerder), met een regel in het auditlog.
+        const resendRij = await leidinggevendeRijVoor(supabaseAdmin, resendEmail, profile.tenant_id);
+        let rolHersteld = false;
+        const bestaandProfielId = (resendBesluit.actie === "opnieuw_sturen" || resendBesluit.actie === "in_gebruik")
+          ? resendBesluit.profiel?.id ?? null : null;
+        if (resendRij && bestaandProfielId) {
+          const { data: bestaandProfiel, error: bestaandFout } = await supabaseAdmin
+            .from("profiles").select("id, role, email, naam").eq("id", bestaandProfielId).maybeSingle();
+          if (bestaandFout) return jsonAntwoord({ error: "Profiel kon niet worden gecontroleerd: " + bestaandFout.message + ". Er is niets gewijzigd." });
+          if (bestaandProfiel && moetRolHerstellen(bestaandProfiel.role, true)) {
+            const { error: herstelFout } = await supabaseAdmin
+              .from("profiles").update({ role: "teamleider" }).eq("id", bestaandProfiel.id).eq("role", "medewerker");
+            if (herstelFout) return jsonAntwoord({ error: "Rol herstellen mislukt: " + herstelFout.message + ". Er is niets verstuurd." });
+            rolHersteld = true;
+            await logAuditEvent(
+              supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+              "LEIDINGGEVENDE_ROL_HERSTELD", "medewerker", bestaandProfiel.id,
+              { email: bestaandProfiel.email, naam: bestaandProfiel.naam, oude_rol: bestaandProfiel.role, nieuwe_rol: "teamleider",
+                teamleider_rij: resendRij.id, leidinggevende_rol: resendRij.rol || "teamleider", reden: "rij in teamleiders" },
+            );
+          }
+        }
+        const hersteldTekst = rolHersteld ? " De rol is hersteld naar leidinggevende; na opnieuw inloggen is het dashboard zichtbaar." : "";
+
         if (resendBesluit.actie === "in_gebruik") {
           if (body.reset_wachtwoord !== true) {
+            if (rolHersteld) {
+              return jsonAntwoord({ success: true, rol_hersteld: true,
+                message: "Dit account is al in gebruik, dus er is geen uitnodiging verstuurd." + hersteldTekst });
+            }
             console.warn("[Resend] Niets verwijderd (account in gebruik):", resendEmail);
             return jsonAntwoord({ error: meldingVoorBeheerder(resendBesluit, "opnieuw"), account_status: resendBesluit.actie });
           }
@@ -2665,7 +2713,8 @@ ${vraagLijst}${trendGedekteContext}`;
             supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
             "WACHTWOORD_RESET_VERSTUURD", "medewerker", resendBesluit.profiel?.id || null, { email: resendEmail },
           );
-          return jsonAntwoord({ success: true, message: "Resetmail verstuurd. Het account is niet gewijzigd." });
+          return jsonAntwoord({ success: true, rol_hersteld: rolHersteld,
+            message: rolHersteld ? "Resetmail verstuurd." + hersteldTekst : "Resetmail verstuurd. Het account is niet gewijzigd." });
         }
         if (resendBesluit.actie === "opnieuw_sturen") {
           // Nog niet ingelogd: Supabase Auth stuurt een nieuwe uitnodiging naar een
@@ -2674,17 +2723,18 @@ ${vraagLijst}${trendGedekteContext}`;
             redirectTo: resendRedirect || undefined,
           });
           if (opnieuwFout) return jsonAntwoord({ error: "Uitnodiging opnieuw sturen mislukt: " + opnieuwFout.message + ". Er is niets verwijderd." });
-          return jsonAntwoord({ success: true, message: "Uitnodiging opnieuw verstuurd" });
+          return jsonAntwoord({ success: true, rol_hersteld: rolHersteld, message: "Uitnodiging opnieuw verstuurd." + hersteldTekst });
         }
 
-        // Haal bestaande profiel rol op voor re-invite metadata
+        // Nieuw account (of een nooit gebruikt account zonder profiel): de rol komt uit
+        // teamleiders; anders uit een eventueel bestaand profiel, anders 'medewerker'.
         const { data: resendProfile } = await supabaseAdmin
           .from("profiles")
           .select("role")
           .eq("tenant_id", profile.tenant_id)
           .ilike("email", resendEmail)
           .maybeSingle();
-        const resendRole = resendProfile?.role || "medewerker";
+        const resendRole = bepaalUitnodigingsrol({ heeftLeidinggevendeRij: !!resendRij, profielRol: resendProfile?.role });
 
         if (resendBesluit.actie === "verwijderen" && existingUser) {
           // Nooit ingelogd, geen profiel, geen gesprekken: veilig opruimen.
@@ -2704,7 +2754,7 @@ ${vraagLijst}${trendGedekteContext}`;
           tenant_id: profile.tenant_id,
           email: String(resendEmail).trim().toLowerCase(),
           naam: resendNaam,
-          role: TOEGESTANE_UITNODIGINGSROLLEN.includes(resendRole) ? resendRole : "medewerker",
+          role: resendRole,
           aangemaakt_door: profile.id,
         });
         if (resendRegisterError) {

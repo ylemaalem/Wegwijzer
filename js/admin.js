@@ -5425,6 +5425,10 @@
 
       if (data.error) {
         alert('Uitnodiging mislukt: ' + data.error);
+      } else if (data.rol_hersteld) {
+        // De server zet de rol recht uit de rij in teamleiders; de melding zegt of er een mail is verstuurd.
+        alert(email + ': ' + (data.message || 'De rol is hersteld naar leidinggevende.'));
+        loadTeamleiders();
       } else {
         alert('Uitnodigingsmail verstuurd naar ' + email + '.\nControleer ook de spamfolder.');
       }
