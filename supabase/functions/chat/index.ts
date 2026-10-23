@@ -2675,11 +2675,14 @@ ${vraagLijst}${trendGedekteContext}`;
         // De rol komt uit teamleiders: staat het adres daar, dan is het 'teamleider'.
         // Een bestaand profiel van de eigen organisatie met role 'medewerker' wordt
         // hier rechtgezet (nooit een beheerder), met een regel in het auditlog.
+        // Alleen via 📧 bij Leidinggevenden (rol_herstellen); 🔑 Reset en 📨 in de
+        // medewerkerslijst wijzigen nooit een rol (besluit Younes, 2026-10-23).
         const resendRij = await leidinggevendeRijVoor(supabaseAdmin, resendEmail, profile.tenant_id);
         let rolHersteld = false;
+        const magRolHerstellen = body.rol_herstellen === true && body.reset_wachtwoord !== true;
         const bestaandProfielId = (resendBesluit.actie === "opnieuw_sturen" || resendBesluit.actie === "in_gebruik")
           ? resendBesluit.profiel?.id ?? null : null;
-        if (resendRij && bestaandProfielId) {
+        if (magRolHerstellen && resendRij && bestaandProfielId) {
           const { data: bestaandProfiel, error: bestaandFout } = await supabaseAdmin
             .from("profiles").select("id, role, email, naam").eq("id", bestaandProfielId).maybeSingle();
           if (bestaandFout) return jsonAntwoord({ error: "Profiel kon niet worden gecontroleerd: " + bestaandFout.message + ". Er is niets gewijzigd." });
@@ -2713,8 +2716,7 @@ ${vraagLijst}${trendGedekteContext}`;
             supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
             "WACHTWOORD_RESET_VERSTUURD", "medewerker", resendBesluit.profiel?.id || null, { email: resendEmail },
           );
-          return jsonAntwoord({ success: true, rol_hersteld: rolHersteld,
-            message: rolHersteld ? "Resetmail verstuurd." + hersteldTekst : "Resetmail verstuurd. Het account is niet gewijzigd." });
+          return jsonAntwoord({ success: true, message: "Resetmail verstuurd. Het account is niet gewijzigd." });
         }
         if (resendBesluit.actie === "opnieuw_sturen") {
           // Nog niet ingelogd: Supabase Auth stuurt een nieuwe uitnodiging naar een

@@ -5414,6 +5414,8 @@
         },
         body: JSON.stringify({
           resend_invite: true,
+          // Alleen 📧 bij Leidinggevenden mag een rol rechtzetten (uit de rij in teamleiders).
+          rol_herstellen: true,
           invite_email: email,
           invite_naam: naam,
           redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')

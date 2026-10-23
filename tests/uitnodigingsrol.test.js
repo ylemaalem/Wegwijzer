@@ -69,6 +69,22 @@ test('chat/index.ts: beide uitnodigingspaden halen de rol uit teamleiders', () =
   assert.doesNotMatch(opnieuw, /resendProfile\?\.role\s*\|\|\s*["']medewerker["']/);
   assert.match(opnieuw, /moetRolHerstellen\(/);
   assert.match(opnieuw, /LEIDINGGEVENDE_ROL_HERSTELD/);
+  // Alleen 📧 (rol_herstellen) en nooit bij 🔑 Reset (reset_wachtwoord) wordt een rol gewijzigd.
+  assert.match(opnieuw, /const magRolHerstellen = body\.rol_herstellen === true && body\.reset_wachtwoord !== true;/);
+  assert.match(opnieuw, /if \(magRolHerstellen && resendRij && bestaandProfielId\)/);
+  // Precies één plek die profiles.role wijzigt, en die zit achter magRolHerstellen.
+  assert.equal((opnieuw.match(/update\(\{ role:/g) || []).length, 1);
+});
+
+test('🔑 Reset en 📨 in de medewerkerslijst vragen nooit om rolherstel', async () => {
+  for (const isReset of [true, false]) {
+    const f = maakFetch({ success: true, message: 'ok' });
+    const a = laadAdmin({ fetch: f.fetch });
+    try {
+      await a.ctx.window.stuurUitnodiging({ textContent: 'x', disabled: false }, 'm@test.nl', 'M', isReset);
+      assert.equal(f.verzoeken[0].body.rol_herstellen, undefined);
+    } finally { a.stop(); }
+  }
 });
 
 function maakFetch(antwoord) {
@@ -89,6 +105,8 @@ test('📧 bij een leidinggevende: de melding van de server over het rolherstel 
     await a.ctx.window.resendInvite('hr@test.nl', 'HR Test');
     assert.equal(f.verzoeken.length, 1);
     assert.equal(f.verzoeken[0].body.resend_invite, true);
+    assert.equal(f.verzoeken[0].body.rol_herstellen, true);
+    assert.equal(f.verzoeken[0].body.reset_wachtwoord, undefined);
     assert.equal(f.verzoeken[0].body.invite_role, undefined, 'de rol komt van de server, niet uit het scherm');
     assert.deepEqual(a.meldingen.alert, ['hr@test.nl: ' + melding]);
   } finally { a.stop(); }
