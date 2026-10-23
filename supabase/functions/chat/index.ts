@@ -998,6 +998,8 @@ Deno.serve(async (req: Request) => {
       : null;
     const zoekMetContext = proefRetrieval ? proefRetrieval.ctx : RETRIEVAL_CONTEXT;
     const zoekStukken = proefRetrieval ? proefRetrieval.stukken : RETRIEVAL_STUKKEN;
+    // Proef "kleine documenten heel": alleen met de testsleutel een andere grens.
+    const kleinDocumentMax: number = isTest && [0, 3000, 6000, 10000].includes(body.test_klein_max) ? body.test_klein_max : KLEIN_DOCUMENT_MAX;
     // Alleen voor het testantwoord: welke zoekfuncties en documenten vector-zoeken gaf.
     let testRetrieval: Record<string, unknown> = {};
     const proefStops: Array<Record<string, unknown>> = [];
@@ -1078,7 +1080,7 @@ Deno.serve(async (req: Request) => {
         const resp = await fetch(eigenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined }),
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined }),
           signal: AbortSignal.timeout(20_000),
         });
         await resp.body?.cancel();
@@ -1156,7 +1158,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined }),
+            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -3976,7 +3978,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               // ---- Kleine documenten heel meegeven ----
               // Alleen documenten waar al een stuk van gevonden is; de overige
               // stukken komen achteraan, per document in volgorde.
-              if (KLEIN_DOCUMENT_MAX > 0) {
+              if (kleinDocumentMax > 0) {
                 const gevondenDocIds = [...new Set(werkChunks.map((c) => c.document_id))];
                 const { data: alleStukken, error: kleinErr } = await supabaseAdmin
                   .from("document_chunks")
@@ -3994,7 +3996,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 for (const docId of gevondenDocIds) {
                   const stukken = perDoc.get(docId) || [];
                   const lengte = stukken.reduce((n, s) => n + (s.chunk_text || "").length, 0);
-                  if (stukken.length < 2 || lengte > KLEIN_DOCUMENT_MAX) continue;
+                  if (stukken.length < 2 || lengte > kleinDocumentMax) continue;
                   for (const s of stukken) if (!aanwezigNu.has(s.id)) kleinErbij.push({ ...s, similarity: 0 });
                 }
                 if (kleinErbij.length > 0) {
@@ -4763,7 +4765,7 @@ ${alleKennisbronnen}`;
           trainingen,
           trainingen_vooraf: trainingenVooraf,
           trainingen_zinnen: trainingenZinnen,
-          retrieval: { ctx: zoekMetContext, stukken: zoekStukken, ...testRetrieval },
+          retrieval: { ctx: zoekMetContext, stukken: zoekStukken, klein_document_max: kleinDocumentMax, ...testRetrieval },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
