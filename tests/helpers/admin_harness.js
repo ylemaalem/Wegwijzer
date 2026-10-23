@@ -60,7 +60,8 @@ function maakElement(id) {
 }
 
 // tabellen: { tabelnaam: [rijen] } — elke select op die tabel geeft alle rijen terug.
-function maakSupabase(tabellen) {
+// dbFouten: { 'tabel:actie': { message } } — die actie geeft een fout terug (zoals een trigger).
+function maakSupabase(tabellen, dbFouten = {}) {
   const log = [];
   function query(tabel, args) {
     const q = { tabel, acties: [], args };
@@ -71,7 +72,10 @@ function maakSupabase(tabellen) {
             log.push(q);
             const rijen = tabellen[tabel] || [];
             const single = q.acties.includes('single') || q.acties.includes('maybeSingle');
-            const res = { data: single ? (rijen[0] || null) : rijen.slice(), error: null, count: rijen.length, status: 200 };
+            const fout = q.acties.map((a) => dbFouten[tabel + ':' + a]).find(Boolean);
+            const res = fout
+              ? { data: null, error: fout, count: null, status: 400 }
+              : { data: single ? (rijen[0] || null) : rijen.slice(), error: null, count: rijen.length, status: 200 };
             return Promise.resolve(res).then(resolve, reject);
           };
         }
@@ -99,6 +103,7 @@ function maakSupabase(tabellen) {
 // Laadt een pagina-script (standaard admin.js). opties.tabellen: nepdata;
 // opties.confirm: antwoord op confirm(); opties.fetch: nep-fetch (Edge Functions);
 // opties.bestanden: te laden scripts; opties.detail: profiel/gebruiker bij start().
+// opties.dbFouten: { 'tabel:actie': { message } } — die database-actie mislukt.
 function laadPagina(opties) {
   opties = opties || {};
   const elementen = {};
@@ -116,7 +121,7 @@ function laadPagina(opties) {
     addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
     body,
   });
-  const supabase = maakSupabase(opties.tabellen || {});
+  const supabase = maakSupabase(opties.tabellen || {}, opties.dbFouten || {});
 
   const ctx = {
     document,

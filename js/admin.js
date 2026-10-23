@@ -5250,19 +5250,12 @@
           }
         }
 
+        // Geen rolwijziging in profiles meer: een nieuwe leidinggevende krijgt de rol
+        // via de uitnodiging, en een medewerker mag nooit ongemerkt leidinggevende
+        // worden. De database weigert een medewerker-adres (migratie 095).
         if (result.error) {
           alert('Opslaan mislukt: ' + result.error.message);
         } else {
-          // Sync profiles.role naar 'teamleider' voor deze email
-          if (email) {
-            await supabaseClient
-              .from('profiles')
-              .update({ role: 'teamleider' })
-              .eq('email', email)
-              .eq('tenant_id', tenantId)
-              .neq('role', 'admin');
-            console.log('[Leidinggevende] profiles.role gesynced naar teamleider voor:', email);
-          }
           modal.classList.remove('show');
           loadTeamleiders();
         }

@@ -9,7 +9,7 @@ const { laadAdmin } = require('./helpers/admin_harness.js');
 
 // ---- (b) Leidinggevende toevoegen ----
 
-function leidingScherm(fetchAntwoord) {
+function leidingScherm(fetchAntwoord, dbFouten) {
   const volgorde = [];
   let a;
   const fetch = async (url, init) => {
@@ -21,7 +21,7 @@ function leidingScherm(fetchAntwoord) {
     const data = body.invite_user ? fetchAntwoord : {};
     return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
   };
-  a = laadAdmin({ fetch, timers: true });
+  a = laadAdmin({ fetch, timers: true, dbFouten });
   return { a, volgorde };
 }
 
@@ -32,6 +32,7 @@ async function voegToe(a, velden) {
 }
 
 const VELDEN = { 'tl-id': '', 'tl-naam': 'Nieuwe HR', 'tl-email': 'actief@test.nl', 'tl-telefoon': '', 'tl-titel': '', 'tl-rol': 'hr' };
+const rolWijzigingen = (a) => a.supabase.log.filter((q) => q.tabel === 'profiles' && q.acties.includes('update') && q.update && q.update[0] && 'role' in q.update[0]);
 const inserts = (a) => a.supabase.log.filter((q) => q.tabel === 'teamleiders' && q.acties.includes('insert'));
 
 test('(b) geweigerde uitnodiging (account in gebruik): geen rij opgeslagen, melding, knop vrij', async () => {
@@ -76,5 +77,29 @@ test('(b) zonder e-mail: geen uitnodiging, wel opslaan', async () => {
     await voegToe(a, { ...VELDEN, 'tl-email': '' });
     assert.deepEqual(volgorde, []);
     assert.equal(inserts(a).length, 1);
+  } finally { a.stop(); }
+});
+
+// ---- Bestaande leidinggevende bewerken (migratie 095) ----
+
+test('bewerken met het adres van een medewerker: database weigert, melding, geen rolwijziging', async () => {
+  const { a, volgorde } = leidingScherm({}, { 'teamleiders:update': { message: 'Dit e-mailadres hoort bij een medewerker. Gebruik een ander e-mailadres voor de leidinggevende.' } });
+  try {
+    await a.start();
+    await voegToe(a, { ...VELDEN, 'tl-id': 'tl-1', 'tl-email': 'medewerker@test.nl' });
+    assert.deepEqual(volgorde, [], 'bewerken stuurt geen uitnodiging');
+    assert.match(a.meldingen.alert[0], /^Opslaan mislukt: Dit e-mailadres hoort bij een medewerker/);
+    assert.equal(rolWijzigingen(a).length, 0);
+  } finally { a.stop(); }
+});
+
+test('bewerken geslaagd: geen rolwijziging in profiles', async () => {
+  const { a } = leidingScherm({});
+  try {
+    await a.start();
+    await voegToe(a, { ...VELDEN, 'tl-id': 'tl-1', 'tl-email': 'leiding@test.nl' });
+    assert.equal(a.supabase.log.filter((q) => q.tabel === 'teamleiders' && q.acties.includes('update')).length, 1);
+    assert.equal(rolWijzigingen(a).length, 0);
+    assert.equal(a.meldingen.alert.length, 0);
   } finally { a.stop(); }
 });
