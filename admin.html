@@ -564,6 +564,18 @@
           </table>
         </div>
 
+        <!-- Kennis ouder dan 6 maanden (alleen bekijken) -->
+        <div style="margin-top:24px" class="vp-collapsible" data-collapse-key="kenn-oud">
+          <h3 class="section-title vp-collapse-header" style="font-size:1rem;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">
+            <span class="vp-chevron" aria-hidden="true">▼</span>
+            <span>Ouder dan 6 maanden <span class="badge badge-open" id="kennis-oud-teller" style="display:none"></span></span>
+          </h3>
+          <div class="vp-collapse-content">
+            <p class="section-subtitle">Kennisbank-items en kennisnotities die 6 maanden of langer niet zijn gewijzigd. Alleen ter controle: klopt het nog?</p>
+            <div id="kennis-oud-lijst"><p class="no-data">Laden...</p></div>
+          </div>
+        </div>
+
         <!-- Kennisbank items (inklapbaar) -->
         <div style="margin-top:24px" class="vp-collapsible" data-collapse-key="kb">
           <h3 class="section-title vp-collapse-header" style="font-size:1rem;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">
@@ -1501,7 +1513,7 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=3"></script>
   <script src="js/medewerker-opslaan.js?v=1"></script>
-  <script src="js/admin.js?v=120"></script>
+  <script src="js/admin.js?v=121"></script>
 
 </body>
 </html>

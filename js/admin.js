@@ -4340,7 +4340,7 @@
     // Haal kennisbank items op
     var kbResult = await supabaseClient
       .from('kennisbank_items')
-      .select('id, vraag, antwoord, created_at')
+      .select('id, vraag, antwoord, created_at, updated_at')
       .eq('tenant_id', tenantId);
 
     var kennisbankItems = (kbResult.data || []);
@@ -4579,6 +4579,45 @@
     });
   };
 
+  // "Gewijzigd 9 apr 2026": laatste wijziging (updated_at), anders de aanmaakdatum.
+  function kennisLaatstGewijzigd(rij) {
+    return new Date(rij.updated_at || rij.created_at);
+  }
+  function kennisDatumTekst(rij) {
+    var d = kennisLaatstGewijzigd(rij);
+    return isNaN(d.getTime()) ? '' : 'Gewijzigd ' + d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Lijst "ouder dan 6 maanden" (alleen bekijken): items en actieve notities die
+  // 6 maanden of langer niet zijn gewijzigd, oudste eerst.
+  async function loadKennisOuderDan6Maanden() {
+    var container = document.getElementById('kennis-oud-lijst');
+    if (!container) return;
+    var grens = new Date();
+    grens.setMonth(grens.getMonth() - 6);
+    var res = await Promise.all([
+      supabaseClient.from('kennisbank_items').select('id, vraag, created_at, updated_at').eq('tenant_id', tenantId),
+      supabaseClient.from('kennisnotities').select('id, originele_vraag, created_at, updated_at').eq('tenant_id', tenantId).eq('actief', true)
+    ]);
+    if (res[0].error || res[1].error) {
+      container.innerHTML = '<p class="no-data">Kon de lijst niet laden.</p>';
+      return;
+    }
+    var oud = (res[0].data || []).map(function (r) { return { soort: 'Kennisbank-item', titel: r.vraag, rij: r }; })
+      .concat((res[1].data || []).map(function (r) { return { soort: 'Kennisnotitie', titel: r.originele_vraag, rij: r }; }))
+      .filter(function (x) { return kennisLaatstGewijzigd(x.rij) <= grens; })
+      .sort(function (a, b) { return kennisLaatstGewijzigd(a.rij) - kennisLaatstGewijzigd(b.rij); });
+    var teller = document.getElementById('kennis-oud-teller');
+    if (teller) { teller.textContent = String(oud.length); teller.style.display = oud.length > 0 ? '' : 'none'; }
+    container.innerHTML = oud.length === 0
+      ? '<p class="no-data">Niets ouder dan 6 maanden.</p>'
+      : oud.map(function (x) {
+        return '<div style="display:flex;gap:8px;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
+          '<span><span style="color:var(--text-muted)">' + x.soort + ':</span> ' + escapeHtml(x.titel) + '</span>' +
+          '<span style="color:var(--text-muted);white-space:nowrap">' + kennisDatumTekst(x.rij) + '</span></div>';
+      }).join('');
+  }
+
   async function loadKennisnotities() {
     var container = document.getElementById('kennisnotities-lijst');
     if (!container) return;
@@ -4601,8 +4640,9 @@
       return;
     }
 
+    loadKennisOuderDan6Maanden();
     container.innerHTML = result.data.map(function (kn) {
-      var datum = new Date(kn.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      var datum = kennisDatumTekst(kn);
       // Standaard ingeklapt; localStorage '0' = uitgeklapt, '1' of niet = ingeklapt.
       var storageKey = 'wegwijzer_kn_collapse_' + kn.id;
       var ingeklapt = localStorage.getItem(storageKey) !== '0';
@@ -4615,10 +4655,10 @@
         '<div class="kn-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
           '<span class="kn-chevron" style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0">' + chevron + '</span>' +
           '<span class="kennisbank-item-vraag" style="font-weight:600">📝 ' + escapeHtml(kn.originele_vraag) + '</span>' +
+          '<span style="font-size:0.7rem;color:var(--text-muted);white-space:nowrap;margin-left:auto">' + datum + '</span>' +
         '</div>' +
         '<div class="kn-tekst-wrap" style="display:' + wrapDisplay + ';margin-top:6px;padding-left:18px">' +
           '<div class="kennisbank-item-antwoord kn-tekst">' + escapeHtml(kn.notitie) + '</div>' +
-          '<span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:4px">' + datum + '</span>' +
         '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
@@ -4826,10 +4866,9 @@
       return;
     }
 
+    loadKennisOuderDan6Maanden();
     container.innerHTML = items.map(function (kb) {
-      var datum = new Date(kb.created_at).toLocaleDateString('nl-NL', {
-        day: 'numeric', month: 'short', year: 'numeric'
-      });
+      var datum = kennisDatumTekst(kb);
       // Standaard ingeklapt; localStorage '0' = uitgeklapt, '1' of niet = ingeklapt.
       // Zelfde patroon als .vp-collapsible secties in de Verbeterpunten-tab.
       var storageKey = 'wegwijzer_kb_collapse_' + kb.id;
@@ -4843,10 +4882,10 @@
         '<div class="kb-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none">' +
           '<span class="kb-chevron" style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0">' + chevron + '</span>' +
           '<span class="kennisbank-item-vraag kb-vraag" style="font-weight:600">✏️ ' + escapeHtml(kb.vraag) + '</span>' +
+          '<span style="font-size:0.7rem;color:var(--text-muted);white-space:nowrap;margin-left:auto">' + datum + '</span>' +
         '</div>' +
         '<div class="kb-antwoord-wrap" style="display:' + wrapDisplay + ';margin-top:6px;padding-left:18px">' +
           '<div class="kennisbank-item-antwoord kb-antwoord" style="white-space:pre-wrap">' + escapeHtml(kb.antwoord) + '</div>' +
-          '<span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-top:4px">' + datum + '</span>' +
         '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
