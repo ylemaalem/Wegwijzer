@@ -4281,7 +4281,10 @@
     document.getElementById('stat-totaal').textContent = totaal;
     document.getElementById('stat-vandaag').textContent = vandaag;
     document.getElementById('stat-week').textContent = week;
-    document.getElementById('stat-positief').textContent = positiefPct + '%';
+    // "61% van 54": het percentage plus het aantal beoordelingen waarop het rust.
+    var positiefEl = document.getElementById('stat-positief');
+    positiefEl.innerHTML = metFeedback.length > 0 ? positiefPct + '%<span style="font-size:0.55em;font-weight:500;color:var(--text-muted)"> van ' + Number(metFeedback.length) + '</span>' : '—';
+    positiefEl.title = metFeedback.length > 0 ? positiefPct + '% positief van ' + metFeedback.length + ' beoordelingen' : 'Nog geen beoordelingen';
 
     var perDag = {};
     for (var i = 13; i >= 0; i--) {

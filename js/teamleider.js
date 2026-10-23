@@ -504,6 +504,14 @@
   // =============================================
   // STATISTIEKEN
   // =============================================
+  // Tegel "Positief": percentage plus het aantal beoordelingen waarop het rust ("61% van 54").
+  function toonPositief(el, pct, aantal) {
+    if (!el) return;
+    // Alleen getallen in de HTML; " van 54" kleiner zodat de tegel op een telefoon past.
+    el.innerHTML = aantal > 0 ? pct + '%<span style="font-size:0.55em;font-weight:500;color:var(--text-muted)"> van ' + Number(aantal) + '</span>' : '—';
+    el.title = aantal > 0 ? pct + '% positief van ' + aantal + ' beoordelingen' : 'Nog geen beoordelingen';
+  }
+
   // Startdatum live (instelling in Beheer): het dashboard telt pas vanaf die datum.
   function toonSindsLive(iso) {
     var tekst = '';
@@ -554,7 +562,7 @@
     var metFeedback = data.filter(function (c) { return c.feedback !== null; });
     var positief = metFeedback.filter(function (c) { return c.feedback === 'goed'; });
     var pct = metFeedback.length > 0 ? Math.round((positief.length / metFeedback.length) * 100) : 0;
-    document.getElementById('tl-stat-positief').textContent = pct + '%';
+    toonPositief(document.getElementById('tl-stat-positief'), pct, metFeedback.length);
   }
 
   // =============================================
