@@ -2678,7 +2678,7 @@ ${vraagLijst}${trendGedekteContext}`;
       // Stap 2: Relevante kennisbankfragmenten ophalen
       let docContext = "";
       try {
-        const { data: docs } = await supabaseAdmin.from("documents").select("naam, content").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null).limit(20);
+        const { data: docs } = await supabaseAdmin.from("documents").select("naam, content").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null).limit(20);
         if (docs && docs.length > 0) {
           // Score documenten op basis van de weekvragen (niet alleen week+functiegroep)
           const searchTerms = vragenContext.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
@@ -3847,9 +3847,10 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
 
     // ---- Fallback: zoektermen + keyword scoring ----
     if (!HEEFT_KENNISBANK_MATCH && !vraagtBron) {
-      const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).not("content", "is", null);
+      // Uitgesloten documenten (vinkje in Beheer, migratie 097) doen nergens mee.
+      const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null);
       const orgDocs = (ruweOrgDocs || []);
-      const { data: persDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).not("content", "is", null);
+      const { data: persDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).eq("uitgesloten_van_zoeken", false).not("content", "is", null);
       const allDocs = [...(orgDocs || []), ...(persDocs || [])];
       console.log(`[Chat] Zoektermen fallback: org=${orgDocs?.length || 0}, pers=${persDocs?.length || 0}`);
 

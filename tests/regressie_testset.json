@@ -1,5 +1,5 @@
 {
- "versie": "2026-10-22",
+ "versie": "2026-10-23",
  "tenant": "AHMN",
  "toelichting": "82 regressievragen (41 basis + 20 extra uit het retrieval-onderzoek van 2026-10-02, met veld 'documenttype') voor de RAG-pipeline. 'kernfeiten' is een lijst van GROEPEN; elke groep is één feit met alleen schrijfvarianten van datzelfde feit (bv. '19:00' en '19.00'). Een groep telt als gevonden als één variant in het antwoord staat (kleine letters, substring). 'min_treffers' = hoeveel groepen gevonden moeten worden; ontbreekt het, dan moeten ALLE groepen gevonden worden. Elk feit komt uit een officieel document (regeling, beleid, procedure, instructie, werkwijze) — niet alleen uit een FAQ of kennisnotitie — en staat niet in de vraag zelf. 'let_op' noemt tegenstrijdigheden tussen documenten die een besluit vragen. 'actief': false = tijdelijk niet in de run (wacht op bevestiging). 'controle': 'trainingen' (vragen 63-72) = aparte controle op tegenspraak tussen de antwoordtekst en het trainingsblok; zonder kernfeiten telt alleen die controle. 'verboden' = zinnen die niet in het antwoord mogen staan (bv. een correctie van de vraagsteller); komt er een voor, dan is de vraag fout.",
  "aanname_kosten": {
@@ -880,7 +880,7 @@
      "3.564"
     ]
    ],
-   "bron": "Salaristabellen CAO Gehandicaptenzorg 2025-2026 (1).pdf",
+   "bron": "CAO_H4_Salariering_FWG.pdf (per 1 juli 2025: FWG 35 trede 12, inpas. nr. 23 = 3.564)",
    "documenttype": "tabel",
    "zeker": false,
    "let_op": "De salaristabel staat door het inlezen van de PDF door elkaar in de kennisbank; faalt naar verwachting tot de tabel leesbaar is ingevoerd.",

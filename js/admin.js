@@ -1744,7 +1744,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, parent_url, is_crawled_page, user_id, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, uitgesloten_van_zoeken, parent_url, is_crawled_page, user_id, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1947,6 +1947,10 @@
         kwaliteitsBadge = '<span style="font-size:0.7rem;margin-left:4px;color:var(--text-muted);cursor:default" title="Te weinig data (' + totaalFeedback + ' feedback' + (totaalFeedback === 1 ? '' : 's') + ', minimaal 5 nodig)">⚪</span>';
       }
 
+      var uitgeslotenBadge = doc.uitgesloten_van_zoeken === true
+        ? '<span style="font-size:0.7rem;margin-left:6px;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.1);color:var(--error)" title="Uitgesloten van zoeken: de chatbot gebruikt dit document niet (✏️ om aan te passen)">🚫 uitgesloten</span>'
+        : '';
+
       // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
       // alleen via 'website-bron verwijderen' (cascade op parent_url).
       var deleteBtn = doc.is_crawled_page
@@ -1959,7 +1963,7 @@
 
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + gebruiktBadge + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + gebruiktBadge + uitgeslotenBadge + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
@@ -3035,6 +3039,8 @@
     if (editMapEl) editMapEl.value = doc.map || '';
     var editNotitieEl = document.getElementById('edit-doc-notitie');
     if (editNotitieEl) editNotitieEl.value = doc.notitie || '';
+    var uitgeslotenEl = document.getElementById('edit-doc-uitgesloten');
+    if (uitgeslotenEl) uitgeslotenEl.checked = doc.uitgesloten_van_zoeken === true;
 
     // Gegenereerde zoektermen (readonly) — door generate_zoektermen gevuld
     var zgroup = document.getElementById('edit-doc-zoektermen-group');
@@ -3106,6 +3112,7 @@
       var mapValue = editMapVal ? editMapVal.value || null : null;
       var editNotitieVal = document.getElementById('edit-doc-notitie');
       var notitieValue = editNotitieVal ? (editNotitieVal.value.trim() || null) : null;
+      var uitgeslotenVal = document.getElementById('edit-doc-uitgesloten');
 
       // Extra zoektermen (synoniemen) — merge met bestaande ipv overschrijven
       var extraEl = document.getElementById('edit-doc-extra-synoniemen');
@@ -3139,6 +3146,9 @@
         map: mapValue,
         notitie: notitieValue
       };
+      if (uitgeslotenVal) updatePayload.uitgesloten_van_zoeken = uitgeslotenVal.checked === true;
+      var uitsluitingGewijzigd = !!huidigDoc && 'uitgesloten_van_zoeken' in updatePayload &&
+        updatePayload.uitgesloten_van_zoeken !== (huidigDoc.uitgesloten_van_zoeken === true);
       // Synoniemen alleen meesturen als er nieuwe zijn toegevoegd of bestaande zijn
       // (voorkomt dat we bestaande lijst per ongeluk leegmaken bij een lege set)
       if (nieuweSyn.length > 0) updatePayload.synoniemen = mergedSyn;
@@ -3154,6 +3164,9 @@
       } else {
         alertBox.className = 'alert alert-success show';
         alertMsg.textContent = 'Document bijgewerkt.';
+        if (uitsluitingGewijzigd) {
+          await logAudit(updatePayload.uitgesloten_van_zoeken ? 'DOCUMENT_UITGESLOTEN' : 'DOCUMENT_WEER_GEBRUIKT', 'document', docId, { naam: naam });
+        }
         await invalideerResponseCache();
         loadMappen();
         loadDocuments();
