@@ -24,16 +24,17 @@ DECLARE
   v_profielen uuid[] := ARRAY[]::uuid[];
   -- testrijen
   r_melding uuid; r_score uuid; r_quiz uuid; r_setting uuid; r_tl uuid; r_trend uuid;
-  r_check uuid; r_docaanvraag uuid; r_aanvraag uuid;
+  r_check uuid; r_docaanvraag uuid; r_aanvraag uuid; r_audit uuid;
   -- tabellen: naam, leesquery, schrijfquery (%1$L = organisatie, %2$L = eigen profiel, %3$L = persoon-index)
   v_tabellen text[] := ARRAY['profiles','meldingen','vertrouwens_scores','quiz_resultaten','settings',
                              'teamleiders','trendanalyse_rapporten','onboarding_checklist',
-                             'document_aanvragen_beheer','aanvragen'];
+                             'document_aanvragen_beheer','aanvragen','audit_log','audit_log_andere_naam'];
   v_lees text[];
   v_schrijf text[];
   -- verwachting per tabel: lezen / schrijven, per persoon in de volgorde van v_namen
-  v_verwacht_l text[] := ARRAY['NYNYYYN','NYNYYYN','NYNYYYN','NYNYYYN','NYNYYYN','YYYYYYN','NYNYYYN','NYNYYYN','NYNNNYN','NYNNNYN'];
-  v_verwacht_s text[] := ARRAY['NNNNNYN','YYYYYYN','NNNNNNN','NNNNNNN','NNNNNYN','NNNNNYN','NYNYYYN','NNNYNNN','NYNYYNN','NYNYYYN'];
+  -- meldingen schrijven: alleen admin (migratie 098); audit_log: alleen admin, op eigen naam (099).
+  v_verwacht_l text[] := ARRAY['NYNYYYN','NYNYYYN','NYNYYYN','NYNYYYN','NYNYYYN','YYYYYYN','NYNYYYN','NYNYYYN','NYNNNYN','NYNNNYN','NNNNNYN','NNNNNYN'];
+  v_verwacht_s text[] := ARRAY['NNNNNYN','NNNNNYN','NNNNNNN','NNNNNNN','NNNNNYN','NNNNNYN','NYNYYYN','NNNYNNN','NYNYYNN','NYNYYYN','NNNNNYN','NNNNNNN'];
   v_l text; v_s text;
   v_matrix text := '';
   v_fouten text := '';
@@ -79,6 +80,7 @@ BEGIN
   INSERT INTO public.document_aanvragen_beheer (tenant_id, ingediend_door, bestandsnaam, bestandspad, toelichting)
     VALUES (v_t, v_tl_profiel, 'a', 'b', 'c') RETURNING id INTO r_docaanvraag;
   INSERT INTO public.aanvragen (tenant_id, aangevraagd_door) VALUES (v_t, v_tl_profiel) RETURNING id INTO r_aanvraag;
+  INSERT INTO public.audit_log (tenant_id, actie) VALUES (v_t, 'RECHTENTEST') RETURNING id INTO r_audit;
 
   v_lees := ARRAY[
     format('SELECT count(*) FROM public.profiles WHERE id = %L', v_eigenaar_profiel),
@@ -90,7 +92,9 @@ BEGIN
     format('SELECT count(*) FROM public.trendanalyse_rapporten WHERE id = %L', r_trend),
     format('SELECT count(*) FROM public.onboarding_checklist WHERE id = %L', r_check),
     format('SELECT count(*) FROM public.document_aanvragen_beheer WHERE id = %L', r_docaanvraag),
-    format('SELECT count(*) FROM public.aanvragen WHERE id = %L', r_aanvraag)];
+    format('SELECT count(*) FROM public.aanvragen WHERE id = %L', r_aanvraag),
+    format('SELECT count(*) FROM public.audit_log WHERE id = %L', r_audit),
+    format('SELECT count(*) FROM public.audit_log WHERE id = %L', r_audit)];
   v_schrijf := ARRAY[
     format('UPDATE public.profiles SET naam = ''Rechtentest gewijzigd'' WHERE id = %L', v_eigenaar_profiel),
     'INSERT INTO public.meldingen (tenant_id, type, bericht) VALUES (%1$L, ''rechtentest'', ''y'')',
@@ -101,7 +105,9 @@ BEGIN
     'INSERT INTO public.trendanalyse_rapporten (tenant_id, tekst) VALUES (%1$L, ''y'')',
     format('UPDATE public.onboarding_checklist SET afgerond = true WHERE id = %L', r_check),
     'INSERT INTO public.document_aanvragen_beheer (tenant_id, ingediend_door, bestandsnaam, bestandspad, toelichting) VALUES (%1$L, %2$L, ''a'', ''b'', ''c'')',
-    'INSERT INTO public.aanvragen (tenant_id, aangevraagd_door) VALUES (%1$L, %2$L)'];
+    'INSERT INTO public.aanvragen (tenant_id, aangevraagd_door) VALUES (%1$L, %2$L)',
+    'INSERT INTO public.audit_log (tenant_id, user_id, actie) VALUES (%1$L, auth.uid(), ''RECHTENTEST'')',
+    format('INSERT INTO public.audit_log (tenant_id, user_id, actie) VALUES (%%1$L, %L, ''RECHTENTEST'')', v_eigenaar)];
 
   -- ---- per persoon ----
   FOR i IN 1..7 LOOP
@@ -135,5 +141,5 @@ BEGIN
   IF v_fouten <> '' THEN
     RAISE EXCEPTION 'MISLUKT:% || MATRIX:%', v_fouten, v_matrix;
   END IF;
-  RAISE EXCEPTION 'GESLAAGD: 7 personen x 10 tabellen, lezen en schrijven zoals verwacht (alles teruggedraaid) || MATRIX:%', v_matrix;
+  RAISE EXCEPTION 'GESLAAGD: 7 personen x 12 tabellen, lezen en schrijven zoals verwacht (alles teruggedraaid) || MATRIX:%', v_matrix;
 END $$;
