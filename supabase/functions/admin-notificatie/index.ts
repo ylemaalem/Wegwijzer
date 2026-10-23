@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { bouwMail } from "./mail.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,32 +30,15 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { type, naam, email, verzoek_type, medewerker_naam, datum, vraag } = body;
-
-    let subject = "";
-    let html = "";
-
-    if (type === "privacy_verzoek") {
-      subject = `Nieuw privacyverzoek van ${naam || "onbekend"}`;
-      html = `<p>Er is een nieuw privacyverzoek ontvangen in Wegwijzer.</p>
-        <p><strong>Naam:</strong> ${naam || "-"}<br>
-        <strong>Email:</strong> ${email || "-"}<br>
-        <strong>Type:</strong> ${verzoek_type || "-"}</p>
-        <p>Ga naar het <a href="https://app.mijnwegwijzer.com/admin.html">admin dashboard</a> om het verzoek te behandelen.</p>`;
-    } else if (type === "document_aanvraag") {
-      subject = "Nieuwe documentaanvraag in Wegwijzer";
-      html = `<p>Er is een nieuwe documentaanvraag ontvangen.</p>
-        <p><strong>Vraag:</strong> ${vraag || "-"}</p>
-        <p>Ga naar het <a href="https://app.mijnwegwijzer.com/admin.html">admin dashboard</a> om de aanvraag te beoordelen.</p>`;
-    } else if (type === "eerste_login") {
-      subject = `Medewerker ${medewerker_naam || ""} heeft Wegwijzer voor het eerst gebruikt`;
-      html = `<p>Medewerker <strong>${medewerker_naam || "-"}</strong> heeft Wegwijzer voor het eerst gebruikt op <strong>${datum || "-"}</strong>.</p>`;
-    } else {
+    // Ingevoerde tekst wordt in mail.ts ge-escaped (geen HTML van gebruikers in de mail).
+    const mail = bouwMail(body);
+    if (!mail) {
       return new Response(JSON.stringify({ error: "Onbekend notificatie type" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const { subject, html } = mail;
 
     const emailRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
