@@ -54,9 +54,18 @@ test('classificatieprompt: noemt de gemiste voorbeelden en sluit praktische werk
 
 test('chat/index.ts: lijst eerst, model alleen zonder lijsttreffer en alleen als ZORG_MODEL_AAN of testoptie', () => {
   const bron = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
-  assert.match(bron, /const zorgModelPromise: Promise<boolean \| null> = \(!zorgLijst && zorgModelAan\) \? vraagZorgModel\(vraag\) : Promise\.resolve\(null\);/);
+  assert.match(bron, /const zorgModelPromise: Promise<boolean \| null> = \(!zorgLijst && zorgModelAan\) \? vraagZorgModel\(vraag, vorigeVraag\) : Promise\.resolve\(null\);/);
   assert.match(bron, /if \(!isZorginhoudelijk && zorgModelOordeel === true\) isZorginhoudelijk = true;/);
   assert.match(bron, /const zorgModelAan: boolean = isTest && typeof body\.test_zorg_model === "boolean" \? body\.test_zorg_model : ZORG_MODEL_AAN;/);
   // Het oordeel moet vóór het eerste gebruik in de systeemprompt afgewacht zijn.
   assert.ok(bron.indexOf('const zorgModelOordeel = await zorgModelPromise;') < bron.indexOf('ZORGINHOUDELIJK_GEEN_DOC : `'));
+});
+
+test('classificatieprompt met vorige vraag: vorige vraag als context, regel tegen erven', () => {
+  const p = zorginhoudClassificatiePrompt('Het gaat mij om de cliënt die hier moeilijk mee kan omgaan.', 'Een autistische cliënt wil op hetzelfde tijdstip afspreken.');
+  assert.match(p, /Vorige vraag: Een autistische cliënt/);
+  assert.match(p, /Huidige vraag: Het gaat mij om/);
+  assert.match(p, /Noemt de huidige vraag een ander onderwerp/);
+  // Zonder vorige vraag precies de oude prompt.
+  assert.doesNotMatch(zorginhoudClassificatiePrompt('Hoe begeleid ik iemand met NAH?'), /Vorige vraag/);
 });

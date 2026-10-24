@@ -8,6 +8,8 @@
 //   Kennis en Expertise of de teamleider. Nooit zelfbedachte inhoud ("volgens AHMN").
 // Getest met: node --test tests/*.test.js
 
+import { VORIGE_VRAAG_REGEL } from "./trainingkeuze.ts";
+
 export const ZORGINHOUDELIJK_PATROON = new RegExp(
   "(?<![\\p{L}])(" + [
     "autis\\p{L}*", "asperger", "adhd", "verslav\\p{L}*", "middelengebruik", "drugsgebruik", "alcoholgebruik",
@@ -30,13 +32,27 @@ export function isZorginhoudelijkeVraag(vraag: string): boolean {
 // dan beslist het model met een korte ja/nee-vraag. Vangt o.a. "dubbele diagnose",
 // "NAH" en "gedragsproblemen" die de lijst mist. Praktische werkvragen zijn uitdrukkelijk
 // NEE, zodat ze geen StudyTube-blok en geen zorginhoud-regel krijgen.
-export function zorginhoudClassificatiePrompt(vraag: string): string {
-  return `Is de vraag hieronder zorginhoudelijk? Antwoord met alleen JA of NEE.
+// F2 stap 2 (2026-10-24): met vorigeVraag (alleen uit het browsergeheugen, binnen 60
+// minuten) kan een vervolgvraag als "het gaat mij om de cliënt die hier moeilijk mee
+// kan omgaan" ook herkend worden. Zonder vorigeVraag is de prompt ongewijzigd.
+export function zorginhoudClassificatiePrompt(vraag: string, vorigeVraag: string | null = null): string {
+  const criteria = `JA: de vraag gaat over problematiek van cliënten, ziektebeelden, diagnoses, beperkingen, psychische of lichamelijke aandoeningen, doelgroepen, of over hoe je cliënten met zo'n probleem begeleidt of benadert (bijvoorbeeld dubbele diagnose, NAH, LVB, gedragsproblemen, psychiatrie).
+NEE: praktische of organisatorische vragen over het werk zelf, zoals verlof, vakantie, ziekmelden, uren schrijven, declareren, reiskosten, salaris, rooster, diensten, systemen, inloggen, formulieren, wie je moet bellen of waar iets staat.`;
+  if (!vorigeVraag) {
+    return `Is de vraag hieronder zorginhoudelijk? Antwoord met alleen JA of NEE.
 
-JA: de vraag gaat over problematiek van cliënten, ziektebeelden, diagnoses, beperkingen, psychische of lichamelijke aandoeningen, doelgroepen, of over hoe je cliënten met zo'n probleem begeleidt of benadert (bijvoorbeeld dubbele diagnose, NAH, LVB, gedragsproblemen, psychiatrie).
-NEE: praktische of organisatorische vragen over het werk zelf, zoals verlof, vakantie, ziekmelden, uren schrijven, declareren, reiskosten, salaris, rooster, diensten, systemen, inloggen, formulieren, wie je moet bellen of waar iets staat.
+${criteria}
 
 Vraag: ${vraag}`;
+  }
+  return `Is de huidige vraag hieronder zorginhoudelijk? Antwoord met alleen JA of NEE.
+
+${criteria}
+
+${VORIGE_VRAAG_REGEL}
+
+Vorige vraag: ${vorigeVraag}
+Huidige vraag: ${vraag}`;
 }
 
 // JA -> true, NEE -> false, iets anders -> null (dan geldt alleen de lijst).

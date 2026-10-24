@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag, leesJaNee, zorginhoudClassificatiePrompt } from "../_shared/zorginhoud.ts";
+import { leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -62,6 +63,13 @@ const ANTWOORD_CACHE_AAN = false;
 // herkend, 0 van 100 praktische vragen); met de testsleutel per vraag of per run
 // uit te zetten via test_zorg_model.
 const ZORG_MODEL_AAN = true;
+
+// Trainingskeuze op onderwerp en vervolgvragen (F2 stap 2, _shared/trainingkeuze.ts):
+// zoeken op het onderwerp i.p.v. de hele zin, keuzestap met beschrijving en liever
+// geen training dan een foute, en de vorige vraag (browsergeheugen, binnen 60 minuten)
+// voor de zorginhoud-herkenning en het onderwerp. Met de testsleutel per vraag of
+// per run te kiezen via test_training_onderwerp.
+const TRAINING_ONDERWERP_AAN = false;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
@@ -1038,6 +1046,7 @@ Deno.serve(async (req: Request) => {
     // Proef "kleine documenten heel": alleen met de testsleutel een andere grens.
     const kleinDocumentMax: number = isTest && [0, 3000, 6000, 10000].includes(body.test_klein_max) ? body.test_klein_max : KLEIN_DOCUMENT_MAX;
     const zorgModelAan: boolean = isTest && typeof body.test_zorg_model === "boolean" ? body.test_zorg_model : ZORG_MODEL_AAN;
+    const trainingOnderwerpAan: boolean = isTest && typeof body.test_training_onderwerp === "boolean" ? body.test_training_onderwerp : TRAINING_ONDERWERP_AAN;
     // Alleen voor het testantwoord: welke zoekfuncties en documenten vector-zoeken gaf.
     let testRetrieval: Record<string, unknown> = {};
     const proefStops: Array<Record<string, unknown>> = [];
@@ -1080,13 +1089,13 @@ Deno.serve(async (req: Request) => {
     };
     // Is de vraag zorginhoudelijk volgens het model? true/false, of null bij een fout
     // of een onduidelijk antwoord (dan geldt alleen de woordenlijst).
-    const vraagZorgModel = async (v: string): Promise<boolean | null> => {
+    const vraagZorgModel = async (v: string, vorigeVraag: string | null = null): Promise<boolean | null> => {
       if (!anthropicApiKey) return null;
       try {
         const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: actiefModel, max_tokens: 5, messages: [{ role: "user", content: zorginhoudClassificatiePrompt(v) }] }),
+          body: JSON.stringify({ model: actiefModel, max_tokens: 5, messages: [{ role: "user", content: zorginhoudClassificatiePrompt(v, vorigeVraag) }] }),
         });
         if (!r.ok) return null;
         const oordeel = leesJaNee(claudeTekst(await r.json()));
@@ -1135,7 +1144,7 @@ Deno.serve(async (req: Request) => {
 
       const laadVragen = async (tenant: string) => (await supabaseAdmin
         .from("regressie_vragen")
-        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle, verboden")
+        .select("id, categorie, vraag, functiegroep, teams, kernfeit_groepen, min_treffers, bron, controle, verboden, vorige_beurten, trainingen_verwacht")
         .eq("tenant_id", tenant)
         .eq("actief", true)
         .order("id")).data;
@@ -1145,7 +1154,7 @@ Deno.serve(async (req: Request) => {
         const resp = await fetch(eigenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined }),
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined }),
           signal: AbortSignal.timeout(20_000),
         });
         await resp.body?.cancel();
@@ -1190,7 +1199,28 @@ Deno.serve(async (req: Request) => {
       // controle "trainingen": fout als de tekst zegt dat er geen training is terwijl er
       // trainingen onder staan of aan het model zijn meegegeven, of als de tekst naar
       // trainingen "hieronder" verwijst terwijl er geen staan.
-      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string; controle: string | null; verboden: string[] | null };
+      type TV = { id: number; categorie: string; vraag: string; functiegroep: string | null; teams: string[]; kernfeit_groepen: string[][]; min_treffers: number | null; bron: string; controle: string | null; verboden: string[] | null; vorige_beurten: VorigeBeurt[] | null; trainingen_verwacht: TrainingenVerwacht | null };
+      // Vervolgvragen (F2 stap 2, migratie 107): de eerdere beurten gaan mee als
+      // messages, zoals de app ze stuurt (browsergeheugen), met t = nu - minuten_geleden.
+      type VorigeBeurt = { role: "user" | "assistant"; content: string; minuten_geleden?: number };
+      // Controle op de getoonde trainingen: bevat = minstens één naam bevat een van deze
+      // woorden; niet = geen enkele naam bevat een van deze woorden; geen = geen trainingen.
+      type TrainingenVerwacht = { bevat?: string[]; niet?: string[]; geen?: boolean };
+      const gesprekVoor = (v: TV): Record<string, unknown> => {
+        if (!Array.isArray(v.vorige_beurten) || v.vorige_beurten.length === 0) return {};
+        const nu = Date.now();
+        const messages = v.vorige_beurten.map((b) => ({ role: b.role === "assistant" ? "assistant" : "user", content: String(b.content || ""), t: nu - Math.round((Number(b.minuten_geleden) || 1) * 60_000) }));
+        messages.push({ role: "user", content: v.vraag, t: nu });
+        return { messages, client_tijd: nu };
+      };
+      const controleerTrainingen = (namen: string[], tv: TrainingenVerwacht) => {
+        const laag = namen.map((n) => normaliseerTest(n));
+        const problemen: string[] = [];
+        if (tv.geen && namen.length > 0) problemen.push("trainingen getoond, verwacht geen");
+        if (Array.isArray(tv.bevat) && tv.bevat.length > 0 && !laag.some((n) => tv.bevat!.some((w) => n.includes(normaliseerTest(w))))) problemen.push(`geen training met ${tv.bevat.join("/")}`);
+        for (const w of tv.niet || []) if (laag.some((n) => n.includes(normaliseerTest(w)))) problemen.push(`training met ${w} (oud onderwerp)`);
+        return problemen;
+      };
 
       // Supabase begrenst aanroepen van functies binnen één trace ("Rate limit
       // exceeded for trace … Retry after Nms"). Dat is geen fout van de bot:
@@ -1223,7 +1253,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined }),
+            body: JSON.stringify({ vraag: v.vraag, ...gesprekVoor(v), functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -1255,6 +1285,16 @@ Deno.serve(async (req: Request) => {
             ok = (groepen.length === 0 || ok) && !tegenspraak;
             trainingControle = { getoond, vooraf, geen_training_zinnen: geenZinnen, verwijst_naar_hieronder: verwijst, systeemzin, zinnen: r.trainingen_zinnen, tegenspraak };
           }
+          // Vervolgvragen: de getoonde trainingen tegen de verwachting (F2 stap 2).
+          let trainingVerwachting: Record<string, unknown> | undefined;
+          if (v.trainingen_verwacht) {
+            const namen = (Array.isArray(r.trainingen) ? r.trainingen : []).map((t: { naam?: string }) => String(t.naam || ""));
+            const problemen = controleerTrainingen(namen, v.trainingen_verwacht);
+            // Met controle "trainingen" is ok hierboven al bepaald (ook zonder kernfeiten).
+            const basisOk = v.controle === "trainingen" ? ok : (groepen.length === 0 || ok);
+            ok = basisOk && problemen.length === 0;
+            trainingVerwachting = { namen, problemen, onderwerp: r.training_onderwerp?.onderwerp ?? null, vorige_vraag: r.training_onderwerp?.vorige_vraag ?? null, zorg: r.zorginhoud?.eindoordeel ?? null };
+          }
           // Verboden zinnen (bv. een correctie van de vraagsteller) maken de vraag fout.
           const verbodenGevonden = (Array.isArray(v.verboden) ? v.verboden : []).filter((z) => bevatTest(antwoordNorm, z));
           if (verbodenGevonden.length > 0) ok = false;
@@ -1262,6 +1302,7 @@ Deno.serve(async (req: Request) => {
             id: v.id, categorie: v.categorie, vraag: v.vraag, geslaagd: ok,
             treffers: v.controle === "trainingen" && groepen.length === 0 ? "n.v.t." : `${aantal}/${nodig}`,
             training_controle: trainingControle,
+            training_verwachting: trainingVerwachting,
             verboden_gevonden: verbodenGevonden.length > 0 ? verbodenGevonden : undefined,
             gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
@@ -3522,8 +3563,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // of een verwijzing (besluit 2026-10-23, _shared/zorginhoud.ts).
     // Lijst eerst (direct ja); staat er geen term uit de lijst in, dan beslist het model
     // (korte ja/nee-aanroep, parallel; pas afgewacht vlak voor de systeemprompt).
+    // De vorige vraag (alleen browsergeheugen, binnen 60 minuten; F2 stap 2) helpt bij
+    // een vervolgvraag zonder het onderwerp. Het model beslist of de huidige vraag er
+    // echt op doorgaat; een vraag over een nieuw onderwerp erft het oude niet.
+    const vorigeVraag: string | null = trainingOnderwerpAan ? vorigeVraagUitGesprek(clientMessages, body.client_tijd) : null;
     const zorgLijst = isZorginhoudelijkeVraag(vraag);
-    const zorgModelPromise: Promise<boolean | null> = (!zorgLijst && zorgModelAan) ? vraagZorgModel(vraag) : Promise.resolve(null);
+    const zorgModelPromise: Promise<boolean | null> = (!zorgLijst && zorgModelAan) ? vraagZorgModel(vraag, vorigeVraag) : Promise.resolve(null);
     let isZorginhoudelijk = zorgLijst;
     const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
     // Fact-Grounding: detecteer feitvragen. Bij true wordt reranking + extractie-call actief.
@@ -3792,7 +3837,58 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     // zonder die check krijgt "training over declareren" losse treffers als
     // "Finance voor beginners".
     type Training = { naam: string; duur_minuten: number | null };
+    // Alleen voor het testantwoord: onderwerp, kandidaten en keuze (F2 stap 2).
+    let testTrainingKeuze: Record<string, unknown> | null = null;
+    // F2 stap 2: zoeken op het onderwerp (plus de vorige vraag als die erop doorgaat),
+    // keuze met naam en beschrijving, liever geen training dan een foute.
+    const zoekTrainingenOpOnderwerp = async (): Promise<Training[]> => {
+      let onderwerp: string | null = null;
+      try {
+        const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: actiefModel, max_tokens: 30, messages: [{ role: "user", content: trainingOnderwerpPrompt(vraag, vorigeVraag) }] }),
+        });
+        if (!r.ok) { console.warn("[StudyTube] Onderwerp: HTTP", r.status); return []; }
+        onderwerp = leesOnderwerp(claudeTekst(await r.json()));
+      } catch (e) { console.warn("[StudyTube] Onderwerp fout:", e); return []; }
+      testTrainingKeuze = { vorige_vraag: vorigeVraag, onderwerp };
+      console.log("[StudyTube] Onderwerp:", onderwerp ?? "GEEN", vorigeVraag ? "(met vorige vraag)" : "");
+      if (!onderwerp || !openaiKeyForChat) return [];
+      const onderwerpEmbedding = await generateEmbedding(onderwerp, openaiKeyForChat);
+      if (!onderwerpEmbedding) return [];
+      // Drempel 0,45 (gemeten 2026-10-24 met onderwerp-embeddings): passende cursussen
+      // 0,54-0,68, losse treffers tot 0,50; de keuzestap filtert de rest.
+      const { data: top, error: rpcErr } = await supabaseAdmin.rpc("match_studytube_cursussen", {
+        query_embedding: JSON.stringify(onderwerpEmbedding),
+        tenant_id_input: profile.tenant_id,
+        match_count: 10,
+        match_threshold: 0.45,
+      });
+      if (rpcErr) { console.error("[StudyTube] RPC fout:", rpcErr.message); return []; }
+      const kandidaten = (top || []) as Array<{ naam: string; duur_minuten: number | null; similarity: number }>;
+      if (kandidaten.length === 0) return [];
+      // match_studytube_cursussen geeft geen beschrijving terug: apart ophalen op naam.
+      const { data: beschr } = await supabaseAdmin.from("studytube_cursussen")
+        .select("naam, beschrijving").eq("tenant_id", profile.tenant_id).in("naam", kandidaten.map((c) => c.naam));
+      const beschrijvingVan = new Map(((beschr || []) as Array<{ naam: string; beschrijving: string | null }>).map((b) => [b.naam, b.beschrijving]));
+      const metBeschrijving = kandidaten.map((c) => ({ naam: c.naam, beschrijving: beschrijvingVan.get(c.naam) ?? null }));
+      let keuze: number[] = [];
+      try {
+        const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: actiefModel, max_tokens: 20, messages: [{ role: "user", content: trainingSelectiePrompt(vraag, onderwerp, vorigeVraag, metBeschrijving) }] }),
+        });
+        if (r.ok) keuze = leesKeuze(claudeTekst(await r.json()), kandidaten.length);
+      } catch (e) { console.warn("[StudyTube] Keuze fout:", e); }
+      const gekozen = keuze.map((i) => ({ naam: kandidaten[i].naam, duur_minuten: kandidaten[i].duur_minuten }));
+      testTrainingKeuze = { vorige_vraag: vorigeVraag, onderwerp, kandidaten: kandidaten.map((c) => `${c.naam} (${c.similarity.toFixed(3)})`), gekozen: gekozen.map((t) => t.naam) };
+      console.log("[StudyTube] Onderwerp-keuze:", gekozen.map((t) => t.naam).join(", ") || "geen");
+      return gekozen;
+    };
     const zoekTrainingen = async (): Promise<Training[]> => {
+      if (trainingOnderwerpAan) return zoekTrainingenOpOnderwerp();
       let trainingRelevant = false;
       try {
         const relRes = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
@@ -4897,6 +4993,7 @@ ${alleKennisbronnen}`;
           trainingen_zinnen: trainingenZinnen,
           retrieval: { ctx: zoekMetContext, stukken: zoekStukken, klein_document_max: kleinDocumentMax, ...testRetrieval },
           zorginhoud: { lijst: zorgLijst, model_aan: zorgModelAan, model: zorgModelOordeel, eindoordeel: isZorginhoudelijk },
+          training_onderwerp: { aan: trainingOnderwerpAan, vorige_vraag: vorigeVraag, ...(testTrainingKeuze || {}) },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

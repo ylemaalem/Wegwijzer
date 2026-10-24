@@ -644,8 +644,8 @@
       } else {
         renderBotBericht(data.antwoord, data.conversation_id, null, null);
         // Voeg toe aan conversatiehistorie zodat opvolgvragen context hebben
-        conversatieHistorie.push({ role: 'user', content: samenvatting });
-        conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
+        conversatieHistorie.push({ role: 'user', content: samenvatting, t: Date.now() });
+        conversatieHistorie.push({ role: 'assistant', content: data.antwoord, t: Date.now() });
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');
@@ -711,8 +711,9 @@
       var session = await supabaseClient.auth.getSession();
       var token = session.data.session.access_token;
 
-      // Voeg vraag toe aan conversatiehistorie
-      conversatieHistorie.push({ role: 'user', content: vraag });
+      // Voeg vraag toe aan conversatiehistorie. t = moment van stellen: de server
+      // gebruikt de vorige vraag alleen als die binnen 60 minuten is gesteld.
+      conversatieHistorie.push({ role: 'user', content: vraag, t: Date.now() });
 
       // Beperk historie tot laatste 20 berichten (10 vraag-antwoord paren)
       var historieVoorApi = conversatieHistorie.slice(-20);
@@ -727,7 +728,8 @@
           vraag: vraag,
           functiegroep: profile.functiegroep,
           weeknummer: weekNummer,
-          messages: historieVoorApi
+          messages: historieVoorApi,
+          client_tijd: Date.now()
         })
       });
 
@@ -756,7 +758,7 @@
       } else {
         renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || [], data.herkomst || null);
         // Voeg antwoord toe aan conversatiehistorie
-        conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
+        conversatieHistorie.push({ role: 'assistant', content: data.antwoord, t: Date.now() });
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');
