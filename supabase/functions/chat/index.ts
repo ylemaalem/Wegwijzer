@@ -3882,16 +3882,17 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       const beschrijvingVan = new Map(((beschr || []) as Array<{ naam: string; beschrijving: string | null }>).map((b) => [b.naam, b.beschrijving]));
       const metBeschrijving = kandidaten.map((c) => ({ naam: c.naam, beschrijving: beschrijvingVan.get(c.naam) ?? null }));
       let keuze: number[] = [];
+      let keuzeRuw: string | null = null;
       try {
         const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ model: actiefModel, max_tokens: 20, messages: [{ role: "user", content: trainingSelectiePrompt(vraag, onderwerp, vorigeVraag, metBeschrijving) }] }),
         });
-        if (r.ok) keuze = leesKeuze(claudeTekst(await r.json()), kandidaten.length);
+        if (r.ok) { keuzeRuw = claudeTekst(await r.json()) || ""; keuze = leesKeuze(keuzeRuw, kandidaten.length); }
       } catch (e) { console.warn("[StudyTube] Keuze fout:", e); }
       const gekozen = keuze.map((i) => ({ naam: kandidaten[i].naam, duur_minuten: kandidaten[i].duur_minuten }));
-      testTrainingKeuze = { vorige_vraag: vorigeVraag, onderwerp, kandidaten: kandidaten.map((c) => `${c.naam} (${c.similarity.toFixed(3)})`), gekozen: gekozen.map((t) => t.naam) };
+      testTrainingKeuze = { vorige_vraag: vorigeVraag, onderwerp, kandidaten: kandidaten.map((c) => `${c.naam} (${c.similarity.toFixed(3)})`), gekozen: gekozen.map((t) => t.naam), keuze_ruw: keuzeRuw };
       console.log("[StudyTube] Onderwerp-keuze:", gekozen.map((t) => t.naam).join(", ") || "geen");
       return gekozen;
     };
