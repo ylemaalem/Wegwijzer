@@ -83,28 +83,29 @@ export function leesOnderwerp(tekst: string | null | undefined): string | null {
 
 export type CursusKandidaat = { naam: string; beschrijving?: string | null };
 
-export function trainingSelectiePrompt(vraag: string, onderwerp: string, vorigeVraag: string | null, kandidaten: CursusKandidaat[]): string {
-  const [hoofd, ...rest] = onderwerp.split(",").map((d) => d.trim()).filter(Boolean);
-  const thema = rest.join(", ");
+// Gemeten 2026-10-24 (testoptie test_keuze_prompt, 6 vragen x3): met de lijst vóór de
+// regels en "alleen nummers, geen uitleg" kiest het model bij schizofrenie en eetstoornis
+// de algemene trainingen over psychische stoornissen, bij tinnitus niets. De eerdere
+// versie gaf daar "geen" of een uitleg zonder nummers.
+// vorigeVraag staat niet in deze prompt: het onderwerp bevat de context al.
+export function trainingSelectiePrompt(vraag: string, onderwerp: string, _vorigeVraag: string | null, kandidaten: CursusKandidaat[]): string {
   const genummerd = kandidaten
     .map((c, i) => `${i + 1}. ${c.naam}${c.beschrijving ? " — " + String(c.beschrijving).replace(/\s+/g, " ").slice(0, 160) : ""}`)
     .join("\n");
-  return `Hieronder staan ${kandidaten.length} trainingen uit StudyTube, met naam en beschrijving. Kies maximaal 3 trainingen voor de medewerker.
+  return `Hieronder staan trainingen uit StudyTube, met naam en beschrijving. Kies maximaal 3 trainingen voor de medewerker.
 
-Onderwerp: ${hoofd || onderwerp}${thema ? `
-Overkoepelend thema: ${thema}` : ""}
-
-Regels:
-- Een training past als de naam of de beschrijving over het onderwerp gaat, of over het overkoepelende thema. De training hoeft niet over het precieze detail van de vraag te gaan.
-- Is er geen training over het onderwerp zelf, dan past een algemene training over het overkoepelende thema wel: bij schizofrenie of een eetstoornis bijvoorbeeld een algemene training over psychische stoornissen. Kies dan die.
-- Een training over een ander ziektebeeld, een andere doelgroep of een ander thema is fout, ook als die er zijdelings mee te maken heeft.
-- Twijfel je, kies dan niet. Liever "geen" dan een training die niet past.
-${vorigeVraag ? `\nVorige vraag: "${vorigeVraag}"` : ""}
+Onderwerp en overkoepelend thema: ${onderwerp}
 Vraag: "${vraag}"
 
-Geef alleen de nummers gescheiden door komma's, of "geen".
+Trainingen:
+${genummerd}
 
-${genummerd}`;
+Regels:
+- Een training past als de naam of de beschrijving over het onderwerp gaat. De training hoeft niet over het precieze detail van de vraag te gaan.
+- Is er geen training over het onderwerp zelf, dan past een algemene training over het overkoepelende thema (bij schizofrenie of een eetstoornis bijvoorbeeld een algemene training over psychische stoornissen).
+- Een training over een ander ziektebeeld, een andere doelgroep of een ander thema is fout, ook als die er zijdelings mee te maken heeft. Past er niets, antwoord dan geen.
+
+Antwoord met alleen de nummers gescheiden door komma's (bijvoorbeeld: 2, 5, 7), of met alleen het woord geen. Geen uitleg.`;
 }
 
 // Nummers uit de keuze ("2, 5" of "geen") -> indexen, hoogstens 3, binnen bereik, uniek.

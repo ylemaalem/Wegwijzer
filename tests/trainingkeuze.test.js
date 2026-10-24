@@ -52,7 +52,7 @@ test('prompts: vorige vraag alleen als die er is; keuze krijgt beschrijving en "
   assert.match(trainingOnderwerpPrompt('x', null), /declareren/);
   const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', null, [{ naam: 'Psychische stoornissen en trauma - Inleiding', beschrijving: 'Psychische stoornissen, trauma' }]);
   assert.match(p, /1\. Psychische stoornissen en trauma - Inleiding — Psychische stoornissen, trauma/);
-  assert.match(p, /Liever "geen"/);
+  assert.match(p, /alleen de nummers .* of met alleen het woord geen\. Geen uitleg\./);
 });
 
 test('chat/index.ts: onderwerp-route achter de schakelaar, vorige vraag alleen uit messages', () => {
@@ -71,9 +71,11 @@ test('medewerker.js: berichten met tijd en client_tijd in het verzoek', () => {
   assert.match(mw, /client_tijd: Date\.now\(\)/);
 });
 
-test('keuzeprompt: onderwerp en overkoepelend thema apart; detail van de vraag hoeft niet', () => {
+test('keuzeprompt: onderwerp met thema, lijst vóór de regels, alleen nummers; detail van de vraag hoeft niet', () => {
   const p = trainingSelectiePrompt('vraag', 'autisme, autismespectrumstoornis', null, [{ naam: 'Autisme - Inleiding' }]);
-  assert.match(p, /Onderwerp: autisme\nOverkoepelend thema: autismespectrumstoornis/);
+  assert.match(p, /Onderwerp en overkoepelend thema: autisme, autismespectrumstoornis/);
+  assert.ok(p.indexOf('1. Autisme - Inleiding') < p.indexOf('Regels:'));
+  assert.match(p, /Geen uitleg\.$/);
   assert.match(p, /hoeft niet over het precieze detail/);
   assert.match(trainingOnderwerpPrompt('x', null), /Nooit algemene woorden als begeleiding/);
 });
@@ -86,6 +88,6 @@ test('onderwerp lezen: labels en regels van het model', () => {
 
 test('keuzeprompt: algemene training over het overkoepelende thema mag (besluit Younes 2026-10-24: breed)', () => {
   const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', null, [{ naam: 'x' }]);
-  assert.match(p, /algemene training over het overkoepelende thema wel/);
+  assert.match(p, /past een algemene training over het overkoepelende thema/);
   assert.match(p, /ander ziektebeeld, een andere doelgroep of een ander thema is fout/);
 });
