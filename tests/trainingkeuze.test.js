@@ -70,3 +70,10 @@ test('medewerker.js: berichten met tijd en client_tijd in het verzoek', () => {
   assert.match(mw, /conversatieHistorie\.push\(\{ role: 'user', content: vraag, t: Date\.now\(\) \}\)/);
   assert.match(mw, /client_tijd: Date\.now\(\)/);
 });
+
+test('keuzeprompt: onderwerp en overkoepelend thema apart; detail van de vraag hoeft niet', () => {
+  const p = trainingSelectiePrompt('vraag', 'autisme, autismespectrumstoornis', null, [{ naam: 'Autisme - Inleiding' }]);
+  assert.match(p, /Onderwerp: autisme\nOverkoepelend thema: autismespectrumstoornis/);
+  assert.match(p, /hoeft niet over het precieze detail/);
+  assert.match(trainingOnderwerpPrompt('x', null), /Nooit algemene woorden als begeleiding/);
+});

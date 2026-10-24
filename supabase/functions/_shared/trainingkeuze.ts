@@ -59,7 +59,11 @@ Trainingen zijn NIET zinvol bij:
 ${vorigeVraag ? `\n${VORIGE_VRAAG_REGEL}\n\nVorige vraag: ${vorigeVraag}\n` : ""}
 Huidige vraag: ${vraag}
 
-Antwoord met alleen het onderwerp en het overkoepelende thema, gescheiden door een komma, samen hoogstens 8 woorden. Voorbeelden: "schizofrenie, psychische stoornissen", "autisme, autismespectrumstoornis", "agressie, spanningsvol gedrag", "rapporteren, rapportage". Is een training niet zinvol, antwoord dan alleen GEEN.`;
+Antwoord in de vorm: onderwerp, overkoepelend thema.
+- Het onderwerp is het ziektebeeld, de doelgroep, de problematiek of de vaardigheid zelf, in 1 tot 3 woorden. Niet het detail van de situatie.
+- Het overkoepelende thema is de bredere categorie waar het onderwerp onder valt, in 1 tot 3 woorden. Nooit algemene woorden als begeleiding, begeleiden, cliënt, omgaan met, situatie of aanpak.
+Voorbeelden: "schizofrenie, psychische stoornissen", "eetstoornis, psychische stoornissen", "autisme, autismespectrumstoornis", "alcoholgebruik, verslaving", "agressie, spanningsvol gedrag", "rapporteren, rapportage".
+Is een training niet zinvol, antwoord dan alleen GEEN.`;
 }
 
 // Onderwerp uit het antwoord van het model; null = geen training zinvol of onleesbaar.
@@ -75,13 +79,18 @@ export function leesOnderwerp(tekst: string | null | undefined): string | null {
 export type CursusKandidaat = { naam: string; beschrijving?: string | null };
 
 export function trainingSelectiePrompt(vraag: string, onderwerp: string, vorigeVraag: string | null, kandidaten: CursusKandidaat[]): string {
+  const [hoofd, ...rest] = onderwerp.split(",").map((d) => d.trim()).filter(Boolean);
+  const thema = rest.join(", ");
   const genummerd = kandidaten
     .map((c, i) => `${i + 1}. ${c.naam}${c.beschrijving ? " — " + String(c.beschrijving).replace(/\s+/g, " ").slice(0, 160) : ""}`)
     .join("\n");
-  return `Hieronder staan ${kandidaten.length} trainingen uit StudyTube, met naam en beschrijving. Kies maximaal 3 trainingen die over het onderwerp "${onderwerp}" gaan en passen bij de vraag van de medewerker.
+  return `Hieronder staan ${kandidaten.length} trainingen uit StudyTube, met naam en beschrijving. Kies maximaal 3 trainingen voor de medewerker.
+
+Onderwerp: ${hoofd || onderwerp}${thema ? `
+Overkoepelend thema: ${thema}` : ""}
 
 Regels:
-- Kies een training alleen als de naam of de beschrijving over dit onderwerp gaat, of over het overkoepelende thema dat in het onderwerp staat.
+- Een training past als de naam of de beschrijving over het onderwerp gaat, of over het overkoepelende thema. De training hoeft niet over het precieze detail van de vraag te gaan.
 - Een training over een ander ziektebeeld, een andere doelgroep of een ander thema is fout, ook als die er zijdelings mee te maken heeft.
 - Twijfel je, kies dan niet. Liever "geen" dan een training die niet past.
 ${vorigeVraag ? `\nVorige vraag: "${vorigeVraag}"` : ""}
