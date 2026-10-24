@@ -29,3 +29,34 @@ test('praktische en organisatievragen niet', async () => {
     'Wat moet ik doen bij agressie van een cliënt?',
   ]) assert.equal(isZorginhoudelijkeVraag(v), false, v);
 });
+
+// ---- Tweede stap: oordeel van het model als de lijst niets vindt (2026-10-24) ----
+const { leesJaNee, zorginhoudClassificatiePrompt } = require('../supabase/functions/_shared/zorginhoud.ts');
+
+test('leesJaNee: JA/NEE herkennen, anders null', () => {
+  assert.equal(leesJaNee('JA'), true);
+  assert.equal(leesJaNee(' ja.'), true);
+  assert.equal(leesJaNee('NEE'), false);
+  assert.equal(leesJaNee('Nee, dit is praktisch'), false);
+  assert.equal(leesJaNee(''), null);
+  assert.equal(leesJaNee(null), null);
+  assert.equal(leesJaNee('Misschien'), null);
+});
+
+test('classificatieprompt: noemt de gemiste voorbeelden en sluit praktische werkvragen uit', () => {
+  const p = zorginhoudClassificatiePrompt('Hoe begeleid ik iemand met NAH?');
+  for (const w of ['dubbele diagnose', 'NAH', 'gedragsproblemen', 'verlof', 'uren schrijven', 'declareren', 'salaris', 'rooster']) {
+    assert.ok(p.includes(w), w);
+  }
+  assert.match(p, /alleen JA of NEE/);
+  assert.match(p, /Vraag: Hoe begeleid ik iemand met NAH\?$/);
+});
+
+test('chat/index.ts: lijst eerst, model alleen zonder lijsttreffer en alleen als ZORG_MODEL_AAN of testoptie', () => {
+  const bron = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
+  assert.match(bron, /const zorgModelPromise: Promise<boolean \| null> = \(!zorgLijst && zorgModelAan\) \? vraagZorgModel\(vraag\) : Promise\.resolve\(null\);/);
+  assert.match(bron, /if \(!isZorginhoudelijk && zorgModelOordeel === true\) isZorginhoudelijk = true;/);
+  assert.match(bron, /const zorgModelAan: boolean = isTest && typeof body\.test_zorg_model === "boolean" \? body\.test_zorg_model : ZORG_MODEL_AAN;/);
+  // Het oordeel moet vóór het eerste gebruik in de systeemprompt afgewacht zijn.
+  assert.ok(bron.indexOf('const zorgModelOordeel = await zorgModelPromise;') < bron.indexOf('ZORGINHOUDELIJK_GEEN_DOC : `'));
+});

@@ -26,6 +26,27 @@ export function isZorginhoudelijkeVraag(vraag: string): boolean {
   return ZORGINHOUDELIJK_PATROON.test(vraag || "");
 }
 
+// Tweede stap naast de lijst (2026-10-24): staat er geen term uit de lijst in de vraag,
+// dan beslist het model met een korte ja/nee-vraag. Vangt o.a. "dubbele diagnose",
+// "NAH" en "gedragsproblemen" die de lijst mist. Praktische werkvragen zijn uitdrukkelijk
+// NEE, zodat ze geen StudyTube-blok en geen zorginhoud-regel krijgen.
+export function zorginhoudClassificatiePrompt(vraag: string): string {
+  return `Is de vraag hieronder zorginhoudelijk? Antwoord met alleen JA of NEE.
+
+JA: de vraag gaat over problematiek van cliënten, ziektebeelden, diagnoses, beperkingen, psychische of lichamelijke aandoeningen, doelgroepen, of over hoe je cliënten met zo'n probleem begeleidt of benadert (bijvoorbeeld dubbele diagnose, NAH, LVB, gedragsproblemen, psychiatrie).
+NEE: praktische of organisatorische vragen over het werk zelf, zoals verlof, vakantie, ziekmelden, uren schrijven, declareren, reiskosten, salaris, rooster, diensten, systemen, inloggen, formulieren, wie je moet bellen of waar iets staat.
+
+Vraag: ${vraag}`;
+}
+
+// JA -> true, NEE -> false, iets anders -> null (dan geldt alleen de lijst).
+export function leesJaNee(tekst: string | null | undefined): boolean | null {
+  const t = String(tekst ?? "").trim().toUpperCase();
+  if (t.startsWith("JA")) return true;
+  if (t.startsWith("NEE")) return false;
+  return null;
+}
+
 // Gaat in de systeemprompt in plaats van de regel "EIGEN KENNIS GEBRUIKEN".
 export const ZORGINHOUDELIJK_BLOK = `ZORGINHOUDELIJKE VRAAG (DEZE REGEL GAAT VOOR ALLE ANDERE REGELS OVER EIGEN KENNIS):
 Deze vraag gaat over zorginhoud (problematiek, ziektebeelden, doelgroepen of begeleiding daarvan). Daarvoor zijn de documenten van de organisatie en StudyTube de bron, niet je eigen kennis.

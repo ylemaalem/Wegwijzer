@@ -5,7 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
-import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag } from "../_shared/zorginhoud.ts";
+import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag, leesJaNee, zorginhoudClassificatiePrompt } from "../_shared/zorginhoud.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -56,6 +56,11 @@ const VERWIJST_NAAR_TRAININGEN_PATROON = /(hieronder|onder dit antwoord|onderaan
 // instructies of gespreksgeschiedenis kent (risico op verouderde antwoorden).
 // Bij false wordt de cache niet gelezen en niet geschreven; de tabel blijft.
 const ANTWOORD_CACHE_AAN = false;
+
+// Zorginhoud ook door het model laten herkennen als de woordenlijst niets vindt
+// (_shared/zorginhoud.ts). Uit tot de meting is goedgekeurd; met de testsleutel
+// per vraag of per run aan te zetten via test_zorg_model.
+const ZORG_MODEL_AAN = false;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
@@ -1031,6 +1036,7 @@ Deno.serve(async (req: Request) => {
     const zoekStukken = proefRetrieval ? proefRetrieval.stukken : RETRIEVAL_STUKKEN;
     // Proef "kleine documenten heel": alleen met de testsleutel een andere grens.
     const kleinDocumentMax: number = isTest && [0, 3000, 6000, 10000].includes(body.test_klein_max) ? body.test_klein_max : KLEIN_DOCUMENT_MAX;
+    const zorgModelAan: boolean = isTest && typeof body.test_zorg_model === "boolean" ? body.test_zorg_model : ZORG_MODEL_AAN;
     // Alleen voor het testantwoord: welke zoekfuncties en documenten vector-zoeken gaf.
     let testRetrieval: Record<string, unknown> = {};
     const proefStops: Array<Record<string, unknown>> = [];
@@ -1071,12 +1077,39 @@ Deno.serve(async (req: Request) => {
       }
       return isTest ? proefAanroep(url, verzoek, soort) : fetch(url, verzoek);
     };
+    // Is de vraag zorginhoudelijk volgens het model? true/false, of null bij een fout
+    // of een onduidelijk antwoord (dan geldt alleen de woordenlijst).
+    const vraagZorgModel = async (v: string): Promise<boolean | null> => {
+      if (!anthropicApiKey) return null;
+      try {
+        const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicApiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: actiefModel, max_tokens: 5, messages: [{ role: "user", content: zorginhoudClassificatiePrompt(v) }] }),
+        });
+        if (!r.ok) return null;
+        const oordeel = leesJaNee(claudeTekst(await r.json()));
+        console.log("[Zorginhoud] Model-oordeel:", oordeel);
+        return oordeel;
+      } catch (e) {
+        console.warn("[Zorginhoud] Model-oordeel fout:", e);
+        return null;
+      }
+    };
     // Alleen in testmodus: extra velden voor de antwoorden van losse onderdelen
     // (kennisscan, weekbrief, quiz enz.). Voor gewone gebruikers een leeg object.
     const testExtra = (): Record<string, unknown> => isTest
       ? { test_modus: true, model: actiefModel, retrieval: { ctx: zoekMetContext, stukken: zoekStukken }, proef_aanroepen: proefStops,
           kosten_usd: Math.round(proefStops.reduce((t, a) => t + ((a.kosten_usd as number) || 0), 0) * 1e6) / 1e6 }
       : {};
+
+    // ---- Testdiagnose: alleen het zorginhoud-oordeel (lijst + model), geen antwoord ----
+    if (isTest && body.test_zorg_classificatie === true && typeof body.vraag === "string") {
+      const lijst = isZorginhoudelijkeVraag(body.vraag);
+      const model = lijst ? null : await vraagZorgModel(body.vraag);
+      return new Response(JSON.stringify({ lijst, model, zorginhoudelijk: lijst || model === true, ...testExtra() }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ---- Regressie-testrun (1A/1D): draait de hele testset in testmodus ----
     // Trigger: admin (dashboardknop) OF de testsleutel (wekelijkse cron).
@@ -1111,7 +1144,7 @@ Deno.serve(async (req: Request) => {
         const resp = await fetch(eigenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined }),
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined }),
           signal: AbortSignal.timeout(20_000),
         });
         await resp.body?.cancel();
@@ -1189,7 +1222,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined }),
+            body: JSON.stringify({ vraag: v.vraag, functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -3486,7 +3519,11 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     const isTrainingVraag = TRAINING_CACHE_TRIGGERS.some(t => vraag.toLowerCase().includes(t));
     // Zorginhoudelijk (problematiek, ziektebeelden): geen eigen kennis, wel StudyTube
     // of een verwijzing (besluit 2026-10-23, _shared/zorginhoud.ts).
-    const isZorginhoudelijk = isZorginhoudelijkeVraag(vraag);
+    // Lijst eerst (direct ja); staat er geen term uit de lijst in, dan beslist het model
+    // (korte ja/nee-aanroep, parallel; pas afgewacht vlak voor de systeemprompt).
+    const zorgLijst = isZorginhoudelijkeVraag(vraag);
+    const zorgModelPromise: Promise<boolean | null> = (!zorgLijst && zorgModelAan) ? vraagZorgModel(vraag) : Promise.resolve(null);
+    let isZorginhoudelijk = zorgLijst;
     const isTeamVraag = TEAM_VRAAG_TRIGGERS.some((t) => vraagLower.includes(t));
     // Fact-Grounding: detecteer feitvragen. Bij true wordt reranking + extractie-call actief.
     // Bij twijfel true — false negative laat hallucinatie bestaan, false positive kost alleen één extra Haiku-call.
@@ -4512,6 +4549,10 @@ De specifieke feitelijke waarde die de vraag opvraagt (tijd, bedrag, nummer, aan
 ${alleKennisbronnen}`;
     }
 
+    // Oordeel van het model over zorginhoud (alleen als de lijst niets vond).
+    const zorgModelOordeel = await zorgModelPromise;
+    if (!isZorginhoudelijk && zorgModelOordeel === true) isZorginhoudelijk = true;
+
     // Bronvraag heeft eigen context — overschrijft normale logica volledig.
     if (bronvraagContext) {
       alleKennisbronnen = bronvraagContext;
@@ -4854,6 +4895,7 @@ ${alleKennisbronnen}`;
           trainingen_vooraf: trainingenVooraf,
           trainingen_zinnen: trainingenZinnen,
           retrieval: { ctx: zoekMetContext, stukken: zoekStukken, klein_document_max: kleinDocumentMax, ...testRetrieval },
+          zorginhoud: { lijst: zorgLijst, model_aan: zorgModelAan, model: zorgModelOordeel, eindoordeel: isZorginhoudelijk },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
