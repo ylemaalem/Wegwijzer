@@ -1213,6 +1213,13 @@ Deno.serve(async (req: Request) => {
         messages.push({ role: "user", content: v.vraag, t: nu });
         return { messages, client_tijd: nu };
       };
+      // Vervolgvragen (109-114) testen de onderwerp-route; zolang TRAINING_ONDERWERP_AAN
+      // uit staat draaien ze altijd met de testoptie aan, zodat de wekelijkse run geen
+      // valse fout geeft. Gewone vragen volgen de run (testoptie of de schakelaar).
+      const onderwerpVoorVraag = (v: TV): boolean | undefined =>
+        (Array.isArray(v.vorige_beurten) && v.vorige_beurten.length > 0) || v.trainingen_verwacht
+          ? true
+          : (isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined);
       const controleerTrainingen = (namen: string[], tv: TrainingenVerwacht) => {
         const laag = namen.map((n) => normaliseerTest(n));
         const problemen: string[] = [];
@@ -1253,7 +1260,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, ...gesprekVoor(v), functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined }),
+            body: JSON.stringify({ vraag: v.vraag, ...gesprekVoor(v), functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: onderwerpVoorVraag(v) }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -1303,6 +1310,7 @@ Deno.serve(async (req: Request) => {
             treffers: v.controle === "trainingen" && groepen.length === 0 ? "n.v.t." : `${aantal}/${nodig}`,
             training_controle: trainingControle,
             training_verwachting: trainingVerwachting,
+            met_onderwerp_route: onderwerpVoorVraag(v) === true ? true : undefined,
             verboden_gevonden: verbodenGevonden.length > 0 ? verbodenGevonden : undefined,
             gemist: groepen.filter((_, i) => !gevonden[i]).map((g) => g[0]),
             zoek_methode: r.zoek_methode, kennisbank_match: r.kennisbank_match,
