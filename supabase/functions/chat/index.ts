@@ -58,9 +58,10 @@ const VERWIJST_NAAR_TRAININGEN_PATROON = /(hieronder|onder dit antwoord|onderaan
 const ANTWOORD_CACHE_AAN = false;
 
 // Zorginhoud ook door het model laten herkennen als de woordenlijst niets vindt
-// (_shared/zorginhoud.ts). Uit tot de meting is goedgekeurd; met de testsleutel
-// per vraag of per run aan te zetten via test_zorg_model.
-const ZORG_MODEL_AAN = false;
+// (_shared/zorginhoud.ts). Aan sinds 2026-10-24 (gemeten: 12 termen x5 alle
+// herkend, 0 van 100 praktische vragen); met de testsleutel per vraag of per run
+// uit te zetten via test_zorg_model.
+const ZORG_MODEL_AAN = true;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
@@ -1106,8 +1107,8 @@ Deno.serve(async (req: Request) => {
     // ---- Testdiagnose: alleen het zorginhoud-oordeel (lijst + model), geen antwoord ----
     if (isTest && body.test_zorg_classificatie === true && typeof body.vraag === "string") {
       const lijst = isZorginhoudelijkeVraag(body.vraag);
-      const model = lijst ? null : await vraagZorgModel(body.vraag);
-      return new Response(JSON.stringify({ lijst, model, zorginhoudelijk: lijst || model === true, ...testExtra() }),
+      const modelOordeel = lijst ? null : await vraagZorgModel(body.vraag);
+      return new Response(JSON.stringify({ ...testExtra(), lijst, model_oordeel: modelOordeel, zorginhoudelijk: lijst || modelOordeel === true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
