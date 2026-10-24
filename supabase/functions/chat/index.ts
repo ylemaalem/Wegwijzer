@@ -76,7 +76,8 @@ const TRAINING_ONDERWERP_AAN = true;
 // Servergeheugen alleen eerder in dit gesprek (F2 stap 2b, _shared/gespreksgeheugen.ts):
 // laatste 60 minuten, niet dubbel met messages, tekst "eerder in dit gesprek". Uit =
 // het oude gedrag (laatste 3, ongeacht de dag). Testoptie: test_servergeheugen_60.
-const SERVERGEHEUGEN_60_AAN = false;
+// Aan sinds 2026-10-24 (run ae4ed419 + herhalingen; geheugenmeting 9/9; akkoord Younes).
+const SERVERGEHEUGEN_60_AAN = true;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
