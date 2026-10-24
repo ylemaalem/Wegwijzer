@@ -67,7 +67,7 @@ test('chat/index.ts: onderwerp-route achter de schakelaar, vorige vraag alleen u
 
 test('medewerker.js: berichten met tijd en client_tijd in het verzoek', () => {
   const mw = fs.readFileSync(path.join(__dirname, '..', 'js', 'medewerker.js'), 'utf8');
-  assert.match(mw, /conversatieHistorie\.push\(\{ role: 'user', content: vraag, t: Date\.now\(\) \}\)/);
+  assert.match(mw, /vraagBericht = \{ role: 'user', content: vraag, t: Date\.now\(\) \};/);
   assert.match(mw, /client_tijd: Date\.now\(\)/);
 });
 

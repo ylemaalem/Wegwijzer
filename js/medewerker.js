@@ -16,6 +16,7 @@
   var chatInitialized = false;
   var historieGeladen = false;
   var conversatieHistorie = []; // {role: 'user'|'assistant', content: string}
+  var laatsteVraagTijd = 0; // Date.now() van de vorige vraag; na 60 min stilte begint het geheugen opnieuw
 
   // ---- Sparring modus state ----
   var sparringModus = false;
@@ -648,6 +649,7 @@
         // als "vorige vraag" meetellen voor trainingen of zorginhoud.
         conversatieHistorie.push({ role: 'user', content: samenvatting });
         conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
+        laatsteVraagTijd = Date.now(); // de stilteklok begint na de sparsessie opnieuw
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');
@@ -702,6 +704,14 @@
     chatInput.value = '';
     chatInput.style.height = 'auto';
 
+    // Na 60 minuten zonder vraag begint het geheugen opnieuw (js/gespreksgeheugen.js);
+    // een scheidingsregel vóór de nieuwe vraag laat zien dat hier een nieuw gesprek begint.
+    if (conversatieHistorie.length > 0 && WegwijzerGeheugen.moetGeheugenWissen(laatsteVraagTijd, Date.now())) {
+      conversatieHistorie = [];
+      toonNieuwGesprekScheiding();
+    }
+    laatsteVraagTijd = Date.now();
+
     // Toon gebruikersbericht
     renderGebruikersBericht(vraag, null);
 
@@ -709,13 +719,18 @@
     typingIndicator.classList.remove('hidden');
     scrollNaarOnder();
 
+    // Mislukt de vraag (fout, limiet, geen verbinding), dan gaat die weer uit het
+    // geheugen: anders telt hij als "vorige vraag" bij de volgende vraag.
+    var vraagBericht = null;
+    var vraagGelukt = false;
     try {
       var session = await supabaseClient.auth.getSession();
       var token = session.data.session.access_token;
 
       // Voeg vraag toe aan conversatiehistorie. t = moment van stellen: de server
       // gebruikt de vorige vraag alleen als die binnen 60 minuten is gesteld.
-      conversatieHistorie.push({ role: 'user', content: vraag, t: Date.now() });
+      vraagBericht = { role: 'user', content: vraag, t: Date.now() };
+      conversatieHistorie.push(vraagBericht);
 
       // Beperk historie tot laatste 20 berichten (10 vraag-antwoord paren)
       var historieVoorApi = conversatieHistorie.slice(-20);
@@ -761,6 +776,7 @@
         renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || [], data.herkomst || null);
         // Voeg antwoord toe aan conversatiehistorie
         conversatieHistorie.push({ role: 'assistant', content: data.antwoord, t: Date.now() });
+        vraagGelukt = true;
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');
@@ -769,10 +785,20 @@
         null, null, null
       );
     }
+    if (!vraagGelukt && vraagBericht) WegwijzerGeheugen.haalBerichtWeg(conversatieHistorie, vraagBericht);
 
     isSending = false;
     sendBtn.disabled = chatInput.value.trim().length === 0;
     scrollNaarOnder();
+  }
+
+  // Scheidingsregel als het geheugen na 60 minuten zonder vraag opnieuw begint
+  // (zelfde stijl als bij een nieuw sparringgesprek).
+  function toonNieuwGesprekScheiding() {
+    var separator = document.createElement('div');
+    separator.style.cssText = 'text-align:center;font-size:0.75rem;color:var(--text-muted,#888);padding:8px 0 4px;border-top:1px dashed var(--border,#e0e0e0);margin:8px 0';
+    separator.textContent = '— Nieuw gesprek (na een uur zonder vragen) —';
+    chatMessages.appendChild(separator);
   }
 
   // =============================================
