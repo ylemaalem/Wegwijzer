@@ -83,3 +83,9 @@ test('onderwerp lezen: labels en regels van het model', () => {
   assert.equal(leesOnderwerp('onderwerp: autisme, autismespectrumstoornis'), 'autisme, autismespectrumstoornis');
   assert.equal(leesOnderwerp('Onderwerp: GEEN'), null);
 });
+
+test('keuzeprompt: algemene training over het overkoepelende thema mag (besluit Younes 2026-10-24: breed)', () => {
+  const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', null, [{ naam: 'x' }]);
+  assert.match(p, /algemene training over het overkoepelende thema wel/);
+  assert.match(p, /ander ziektebeeld, een andere doelgroep of een ander thema is fout/);
+});

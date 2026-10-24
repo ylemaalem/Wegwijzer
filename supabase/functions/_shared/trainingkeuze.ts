@@ -96,6 +96,7 @@ Overkoepelend thema: ${thema}` : ""}
 
 Regels:
 - Een training past als de naam of de beschrijving over het onderwerp gaat, of over het overkoepelende thema. De training hoeft niet over het precieze detail van de vraag te gaan.
+- Is er geen training over het onderwerp zelf, dan past een algemene training over het overkoepelende thema wel: bij schizofrenie of een eetstoornis bijvoorbeeld een algemene training over psychische stoornissen. Kies dan die.
 - Een training over een ander ziektebeeld, een andere doelgroep of een ander thema is fout, ook als die er zijdelings mee te maken heeft.
 - Twijfel je, kies dan niet. Liever "geen" dan een training die niet past.
 ${vorigeVraag ? `\nVorige vraag: "${vorigeVraag}"` : ""}
