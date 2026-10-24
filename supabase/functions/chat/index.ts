@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag, leesJaNee, zorginhoudClassificatiePrompt } from "../_shared/zorginhoud.ts";
+import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
@@ -71,6 +72,11 @@ const ZORG_MODEL_AAN = true;
 // per run te kiezen via test_training_onderwerp. Aan sinds 2026-10-24 (run 240759a6:
 // 111/113, oude set 105/107; schizofrenie/eetstoornis 10/10, praktisch 0/20; akkoord Younes).
 const TRAINING_ONDERWERP_AAN = true;
+
+// Servergeheugen alleen eerder in dit gesprek (F2 stap 2b, _shared/gespreksgeheugen.ts):
+// laatste 60 minuten, niet dubbel met messages, tekst "eerder in dit gesprek". Uit =
+// het oude gedrag (laatste 3, ongeacht de dag). Testoptie: test_servergeheugen_60.
+const SERVERGEHEUGEN_60_AAN = false;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
@@ -1048,6 +1054,7 @@ Deno.serve(async (req: Request) => {
     const kleinDocumentMax: number = isTest && [0, 3000, 6000, 10000].includes(body.test_klein_max) ? body.test_klein_max : KLEIN_DOCUMENT_MAX;
     const zorgModelAan: boolean = isTest && typeof body.test_zorg_model === "boolean" ? body.test_zorg_model : ZORG_MODEL_AAN;
     const trainingOnderwerpAan: boolean = isTest && typeof body.test_training_onderwerp === "boolean" ? body.test_training_onderwerp : TRAINING_ONDERWERP_AAN;
+    const servergeheugen60Aan: boolean = isTest && typeof body.test_servergeheugen_60 === "boolean" ? body.test_servergeheugen_60 : SERVERGEHEUGEN_60_AAN;
     // Alleen voor het testantwoord: welke zoekfuncties en documenten vector-zoeken gaf.
     let testRetrieval: Record<string, unknown> = {};
     const proefStops: Array<Record<string, unknown>> = [];
@@ -1155,7 +1162,7 @@ Deno.serve(async (req: Request) => {
         const resp = await fetch(eigenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined }),
+          body: JSON.stringify({ regressie_deel: true, run_id: runId, test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: isTest && trainingOnderwerpAan !== TRAINING_ONDERWERP_AAN ? trainingOnderwerpAan : undefined, test_servergeheugen_60: isTest && servergeheugen60Aan !== SERVERGEHEUGEN_60_AAN ? servergeheugen60Aan : undefined }),
           signal: AbortSignal.timeout(20_000),
         });
         await resp.body?.cancel();
@@ -1261,7 +1268,7 @@ Deno.serve(async (req: Request) => {
           const resp = await roepAanMetRetry({
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseAnonKey}`, "apikey": supabaseAnonKey, "x-wegwijzer-test": testSecret },
-            body: JSON.stringify({ vraag: v.vraag, ...gesprekVoor(v), functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: onderwerpVoorVraag(v) }),
+            body: JSON.stringify({ vraag: v.vraag, ...gesprekVoor(v), functiegroep: v.functiegroep || undefined, teams: v.teams || [], test_model: proefModel || undefined, test_effort: proefEffort || undefined, test_retrieval: proefRetrieval || undefined, test_klein_max: isTest && kleinDocumentMax !== KLEIN_DOCUMENT_MAX ? kleinDocumentMax : undefined, test_zorg_model: isTest && zorgModelAan !== ZORG_MODEL_AAN ? zorgModelAan : undefined, test_training_onderwerp: onderwerpVoorVraag(v), test_servergeheugen_60: isTest && servergeheugen60Aan !== SERVERGEHEUGEN_60_AAN ? servergeheugen60Aan : undefined }),
           });
           const r = await resp.json();
           if (!resp.ok || !r.test_modus) {
@@ -4493,15 +4500,35 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       kennisnotitieContext = "--- KENNISNOTITIES VAN DE ORGANISATIE ---\n" + kennisnotities.map((kn: { originele_vraag: string; notitie: string }) => `📝 Over "${kn.originele_vraag}": ${kn.notitie}`).join("\n");
     }
 
-    // ---- 6j. Gespreksgeheugen — laatste 3 vragen van deze medewerker.
-    // Het label hier is intern (alleen voor het model). De model-instructie
-    // verderop verbiedt expliciet om "vorige sessie" te zeggen.
-    const { data: recenteGesprekken } = await supabaseAdmin.from("conversations").select("vraag, antwoord").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(3);
-    let geheugenContext = "";
-    if (recenteGesprekken && recenteGesprekken.length > 0) {
-      const recente = [...recenteGesprekken].reverse();
-      geheugenContext = "\n\nGESPREKSGEHEUGEN — eerdere vragen van deze medewerker (chronologisch, oudste eerst):\n" + recente.map((g: { vraag: string; antwoord: string }, i: number) => `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`).join("\n\n");
-    }
+    // ---- 6j. Gespreksgeheugen — alleen eerder in dit gesprek (F2 stap 2b) ----
+    // Laatste 60 minuten, hoogstens 3, en niet de vragen die de app al in messages
+    // meestuurt (_shared/gespreksgeheugen.ts). Het label is intern (alleen voor het
+    // model); de instructie verderop verbiedt "vorige sessie" te zeggen.
+    // Testmodus: het testprofiel heeft geen gesprekken; test_geheugen geeft rijen mee
+    // ({vraag, antwoord, minuten_geleden}) om dit te kunnen meten.
+    const nuGeheugen = Date.now();
+    const geheugenRijen: GeheugenRij[] = isTest
+      ? (Array.isArray(body.test_geheugen) ? body.test_geheugen : []).slice(0, 10).map((g: { vraag?: unknown; antwoord?: unknown; minuten_geleden?: unknown }) => ({
+        vraag: String(g.vraag ?? ""), antwoord: String(g.antwoord ?? ""),
+        created_at: new Date(nuGeheugen - (Number(g.minuten_geleden) || 0) * 60_000).toISOString(),
+      })).sort((a: GeheugenRij, b: GeheugenRij) => b.created_at.localeCompare(a.created_at))
+      : servergeheugen60Aan
+      ? (((await supabaseAdmin.from("conversations").select("vraag, antwoord, created_at")
+        .eq("user_id", profile.id)
+        .gte("created_at", new Date(nuGeheugen - SERVERGEHEUGEN_MAX_MS).toISOString())
+        .order("created_at", { ascending: false }).limit(10)).data) || []) as GeheugenRij[]
+      // Oud gedrag (schakelaar uit): laatste 3, ongeacht de dag.
+      : (((await supabaseAdmin.from("conversations").select("vraag, antwoord, created_at")
+        .eq("user_id", profile.id).order("created_at", { ascending: false }).limit(3)).data) || []) as GeheugenRij[];
+    const gekozenGeheugen: GeheugenRij[] = servergeheugen60Aan
+      ? kiesServerGeheugen(geheugenRijen, clientMessages, nuGeheugen)
+      : geheugenRijen.slice(0, 3).reverse();
+    const geheugenContext = servergeheugen60Aan
+      ? geheugenTekst(gekozenGeheugen)
+      : (gekozenGeheugen.length > 0
+        ? "\n\nGESPREKSGEHEUGEN — eerdere vragen van deze medewerker (chronologisch, oudste eerst):\n" + gekozenGeheugen.map((g, i) => `[${i + 1}] Vraag: ${(g.vraag || "").substring(0, 150)}\n    Antwoord: ${(g.antwoord || "").substring(0, 200)}`).join("\n\n")
+        : "");
+    const geheugenRegel = servergeheugen60Aan ? GESPREKSGEHEUGEN_REGEL : GESPREKSGEHEUGEN_REGEL_OUD;
 
     // Team-context: live data bij team/organisatie-vragen
     let teamContext = "";
@@ -4824,7 +4851,7 @@ ALGEMEEN:
 - BELANGRIJK: Als je een URL vindt in de kennisbronnen die relevant is, plak die DIRECT in je antwoord: 👉 [de volledige URL]. Verzin NOOIT zelf een URL.
 - Als de medewerker vraagt naar zijn/haar leidinggevende: geef direct de naam en het telefoonnummer.
 - ONZEKERHEID: Als je niet volledig zeker bent, zeg dit expliciet. Verzin NOOIT informatie.
-- GESPREKSGEHEUGEN: Je hebt toegang tot de laatste 3 vragen die deze medewerker in eerdere sessies heeft gesteld. Gebruik dit ALLEEN als de nieuwe vraag er direct op aansluit. Verwijs er subtiel naar: 'Je vroeg hier eerder ook naar' of 'Dit sluit aan bij wat je vroeg over...' Zeg NOOIT letterlijk 'vorige sessie' of 'ik heb je gegevens opgeslagen'.
+${geheugenRegel}
 - NOOIT zeggen dat je iets "geleerd hebt" of "voortaan beter zult doen". Je leert niets bij — je antwoordt enkel op basis van de huidige kennisbronnen.
 - NOOIT beloftes maken over toekomstig gedrag of toekomstige updates van je antwoorden.
 - NOOIT je verontschuldigen voor een gemist document of een eerder onvolledig antwoord.
@@ -5011,6 +5038,7 @@ ${alleKennisbronnen}`;
           trainingen_zinnen: trainingenZinnen,
           retrieval: { ctx: zoekMetContext, stukken: zoekStukken, klein_document_max: kleinDocumentMax, ...testRetrieval },
           zorginhoud: { lijst: zorgLijst, model_aan: zorgModelAan, model: zorgModelOordeel, eindoordeel: isZorginhoudelijk },
+          geheugen: { aantal: gekozenGeheugen.length, vragen: gekozenGeheugen.map((g) => g.vraag) },
           training_onderwerp: { aan: trainingOnderwerpAan, vorige_vraag: vorigeVraag, ...(testTrainingKeuze || {}) },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
