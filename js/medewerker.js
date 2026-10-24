@@ -644,8 +644,10 @@
       } else {
         renderBotBericht(data.antwoord, data.conversation_id, null, null);
         // Voeg toe aan conversatiehistorie zodat opvolgvragen context hebben
-        conversatieHistorie.push({ role: 'user', content: samenvatting, t: Date.now() });
-        conversatieHistorie.push({ role: 'assistant', content: data.antwoord, t: Date.now() });
+        // Bewust zonder t: de samenvatting van een sparsessie is geen vraag en mag niet
+        // als "vorige vraag" meetellen voor trainingen of zorginhoud.
+        conversatieHistorie.push({ role: 'user', content: samenvatting });
+        conversatieHistorie.push({ role: 'assistant', content: data.antwoord });
       }
     } catch (err) {
       typingIndicator.classList.add('hidden');

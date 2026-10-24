@@ -6,7 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CLAUDE_MODEL, TEST_MODELLEN, claudeKosten, claudeTekst, claudeVerzoek, denktStandaard, type ClaudeSoort } from "../_shared/claude.ts";
 import { TRAININGEN_ZIN, algemeneGeenTrainingZinnen, verwerkTrainingZinnen, type TrainingZinnen } from "../_shared/trainingzinnen.ts";
 import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag, leesJaNee, zorginhoudClassificatiePrompt } from "../_shared/zorginhoud.ts";
-import { leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
+import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -1209,7 +1209,7 @@ Deno.serve(async (req: Request) => {
       const gesprekVoor = (v: TV): Record<string, unknown> => {
         if (!Array.isArray(v.vorige_beurten) || v.vorige_beurten.length === 0) return {};
         const nu = Date.now();
-        const messages = v.vorige_beurten.map((b) => ({ role: b.role === "assistant" ? "assistant" : "user", content: String(b.content || ""), t: nu - Math.round((Number(b.minuten_geleden) || 1) * 60_000) }));
+        const messages = v.vorige_beurten.map((b) => ({ role: b.role === "assistant" ? "assistant" : "user", content: String(b.content || ""), t: nu - Math.round((Number.isFinite(Number(b.minuten_geleden)) ? Number(b.minuten_geleden) : 1) * 60_000) }));
         messages.push({ role: "user", content: v.vraag, t: nu });
         return { messages, client_tijd: nu };
       };
@@ -3887,9 +3887,10 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
       // ({lijst}, {onderwerp}, {vraag} worden ingevuld).
       const keuzePrompt = isTest && typeof body.test_keuze_prompt === "string" && body.test_keuze_prompt.includes("{lijst}")
         ? body.test_keuze_prompt
-          .replaceAll("{lijst}", metBeschrijving.map((c, i) => `${i + 1}. ${c.naam}${c.beschrijving ? " — " + String(c.beschrijving).slice(0, 160) : ""}`).join("\n"))
-          .replaceAll("{onderwerp}", onderwerp).replaceAll("{vraag}", vraag)
-        : trainingSelectiePrompt(vraag, onderwerp, vorigeVraag, metBeschrijving);
+          // Vervangen met een functie: anders worden $&, $' enz. in de tekst als patroon gelezen.
+          .replaceAll("{lijst}", () => genummerdeTrainingen(metBeschrijving))
+          .replaceAll("{onderwerp}", () => onderwerp!).replaceAll("{vraag}", () => vraag)
+        : trainingSelectiePrompt(vraag, onderwerp, metBeschrijving);
       try {
         const r = await claudeFetch("https://api.anthropic.com/v1/messages", { soort: "ja_nee",
           method: "POST",

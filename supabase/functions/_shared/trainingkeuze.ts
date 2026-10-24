@@ -76,7 +76,8 @@ export function leesOnderwerp(tekst: string | null | undefined): string | null {
     .map((r) => r.replace(/^\s*[-*]?\s*(overkoepelend thema|onderwerp|thema)\s*[:=-]\s*/i, "").trim())
     .filter(Boolean);
   const t = regels.join(", ").replace(/["“”.]/g, " ").replace(/\s+/g, " ").trim();
-  if (!t || /^geen\b/i.test(t)) return null;
+  // GEEN als los woord, ook niet vooraan ("Training niet zinvol: GEEN"): geen training.
+  if (!t || /(^|[^\p{L}])geen([^\p{L}]|$)/iu.test(t)) return null;
   const schoon = t.replace(/[^\p{L}\p{N} ,'’&-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   return schoon.length >= 2 ? schoon : null;
 }
@@ -87,11 +88,15 @@ export type CursusKandidaat = { naam: string; beschrijving?: string | null };
 // regels en "alleen nummers, geen uitleg" kiest het model bij schizofrenie en eetstoornis
 // de algemene trainingen over psychische stoornissen, bij tinnitus niets. De eerdere
 // versie gaf daar "geen" of een uitleg zonder nummers.
-// vorigeVraag staat niet in deze prompt: het onderwerp bevat de context al.
-export function trainingSelectiePrompt(vraag: string, onderwerp: string, _vorigeVraag: string | null, kandidaten: CursusKandidaat[]): string {
-  const genummerd = kandidaten
-    .map((c, i) => `${i + 1}. ${c.naam}${c.beschrijving ? " — " + String(c.beschrijving).replace(/\s+/g, " ").slice(0, 160) : ""}`)
+// De vorige vraag staat niet in deze prompt: het onderwerp bevat de context al.
+export function genummerdeTrainingen(kandidaten: CursusKandidaat[]): string {
+  return kandidaten
+    .map((c, i) => `${i + 1}. ${String(c.naam).replace(/\s+/g, " ")}${c.beschrijving ? " — " + String(c.beschrijving).replace(/\s+/g, " ").slice(0, 160) : ""}`)
     .join("\n");
+}
+
+export function trainingSelectiePrompt(vraag: string, onderwerp: string, kandidaten: CursusKandidaat[]): string {
+  const genummerd = genummerdeTrainingen(kandidaten);
   return `Hieronder staan trainingen uit StudyTube, met naam en beschrijving. Kies maximaal 3 trainingen voor de medewerker.
 
 Onderwerp en overkoepelend thema: ${onderwerp}

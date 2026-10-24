@@ -50,7 +50,7 @@ test('prompts: vorige vraag alleen als die er is; keuze krijgt beschrijving en "
   assert.doesNotMatch(trainingOnderwerpPrompt('Hoe declareer ik?', null), /Vorige vraag/);
   assert.match(trainingOnderwerpPrompt('Het gaat mij om de cliënt', 'autistische cliënt'), /Vorige vraag: autistische cliënt/);
   assert.match(trainingOnderwerpPrompt('x', null), /declareren/);
-  const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', null, [{ naam: 'Psychische stoornissen en trauma - Inleiding', beschrijving: 'Psychische stoornissen, trauma' }]);
+  const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', [{ naam: 'Psychische stoornissen en trauma - Inleiding', beschrijving: 'Psychische stoornissen, trauma' }]);
   assert.match(p, /1\. Psychische stoornissen en trauma - Inleiding — Psychische stoornissen, trauma/);
   assert.match(p, /alleen de nummers .* of met alleen het woord geen\. Geen uitleg\./);
 });
@@ -72,7 +72,7 @@ test('medewerker.js: berichten met tijd en client_tijd in het verzoek', () => {
 });
 
 test('keuzeprompt: onderwerp met thema, lijst vóór de regels, alleen nummers; detail van de vraag hoeft niet', () => {
-  const p = trainingSelectiePrompt('vraag', 'autisme, autismespectrumstoornis', null, [{ naam: 'Autisme - Inleiding' }]);
+  const p = trainingSelectiePrompt('vraag', 'autisme, autismespectrumstoornis', [{ naam: 'Autisme - Inleiding' }]);
   assert.match(p, /Onderwerp en overkoepelend thema: autisme, autismespectrumstoornis/);
   assert.ok(p.indexOf('1. Autisme - Inleiding') < p.indexOf('Regels:'));
   assert.match(p, /Geen uitleg\.$/);
@@ -87,7 +87,17 @@ test('onderwerp lezen: labels en regels van het model', () => {
 });
 
 test('keuzeprompt: algemene training over het overkoepelende thema mag (besluit Younes 2026-10-24: breed)', () => {
-  const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', null, [{ naam: 'x' }]);
+  const p = trainingSelectiePrompt('vraag', 'schizofrenie, psychische stoornissen', [{ naam: 'x' }]);
   assert.match(p, /past een algemene training over het overkoepelende thema/);
   assert.match(p, /ander ziektebeeld, een andere doelgroep of een ander thema is fout/);
+});
+
+test('review 2026-10-24: GEEN ook niet vooraan; sparring-samenvatting telt niet als vorige vraag', () => {
+  assert.equal(leesOnderwerp('Training niet zinvol: GEEN'), null);
+  assert.equal(leesOnderwerp('declareren, GEEN'), null);
+  assert.equal(leesOnderwerp('geenszins, x'), 'geenszins, x');
+  const mw = fs.readFileSync(path.join(__dirname, '..', 'js', 'medewerker.js'), 'utf8');
+  assert.match(mw, /conversatieHistorie\.push\(\{ role: 'user', content: samenvatting \}\)/);
+  // Laatste user-bericht zonder t (sparring) -> geen vorige vraag.
+  assert.equal(vorigeVraagUitGesprek([{ role: 'user', content: 'Sparring over cliëntsituatie' }, { role: 'assistant', content: 'a' }, { role: 'user', content: 'en dan?', t: NU }], NU), null);
 });
