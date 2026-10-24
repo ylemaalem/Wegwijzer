@@ -44,11 +44,11 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'medewerker.html'), 'utf
 
 test('medewerker.js: wissen vóór de nieuwe vraag, met scheidingsregel; mislukte vraag eruit', () => {
   const f = mw.slice(mw.indexOf('async function verstuurVraag'), mw.indexOf('// BERICHTEN RENDEREN'));
-  const wis = f.indexOf('WegwijzerGeheugen.moetGeheugenWissen(laatsteVraagTijd, Date.now())');
+  const wis = f.indexOf('geheugen.moetGeheugenWissen(laatsteVraagTijd, Date.now())');
   assert.ok(wis > 0 && wis < f.lastIndexOf('renderGebruikersBericht(vraag, null)'), 'controle vóór het tonen van de vraag');
   assert.match(f, /conversatieHistorie = \[\];\s*toonNieuwGesprekScheiding\(\);/);
   assert.match(f, /vraagGelukt = true;/);
-  assert.match(f, /if \(!vraagGelukt && vraagBericht\) WegwijzerGeheugen\.haalBerichtWeg\(conversatieHistorie, vraagBericht\);/);
+  assert.match(f, /if \(!vraagGelukt && vraagBericht && geheugen\) geheugen\.haalBerichtWeg\(conversatieHistorie, vraagBericht\);/);
   // vraagGelukt alleen in de tak met een echt antwoord.
   assert.equal((f.match(/vraagGelukt = true;/g) || []).length, 1);
   assert.ok(f.indexOf('vraagGelukt = true;') > f.indexOf("conversatieHistorie.push({ role: 'assistant', content: data.antwoord"));
@@ -57,5 +57,40 @@ test('medewerker.js: wissen vóór de nieuwe vraag, met scheidingsregel; mislukt
 
 test('medewerker.html: gespreksgeheugen.js vóór medewerker.js, nieuwe versies', () => {
   assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') > 0);
-  assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') < html.indexOf('js/medewerker.js?v=21'));
+  assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') < html.indexOf('js/medewerker.js?v=22'));
+});
+
+// Punt 4 (2026-10-24): gespreksgeheugen.js niet geladen -> doorgaan zonder wissen, geen
+// melding aan de gebruiker, één regel in de console.
+const vm = require('node:vm');
+function laadGeheugenModule(window) {
+  const begin = mw.indexOf('  var geheugenWaarschuwingGelogd = false;');
+  const eind = mw.indexOf('\n  }', mw.indexOf('function geheugenModule()')) + 4;
+  const waarschuwingen = [];
+  const ctx = { window, console: { warn: (m) => waarschuwingen.push(m) } };
+  vm.runInNewContext(mw.slice(begin, eind) + '\nthis.geheugenModule = geheugenModule;', ctx);
+  return { geheugenModule: ctx.geheugenModule, waarschuwingen };
+}
+
+test('geheugenModule: niet geladen -> null, één consolemelding, geen fout', () => {
+  const { geheugenModule, waarschuwingen } = laadGeheugenModule({});
+  assert.equal(geheugenModule(), null);
+  assert.equal(geheugenModule(), null);
+  assert.equal(waarschuwingen.length, 1);
+  assert.match(waarschuwingen[0], /gespreksgeheugen\.js is niet geladen/);
+});
+
+test('geheugenModule: geladen -> de module, geen melding; half geladen telt als niet geladen', () => {
+  const echt = require('../js/gespreksgeheugen.js');
+  const a = laadGeheugenModule({ WegwijzerGeheugen: echt });
+  assert.equal(a.geheugenModule(), echt);
+  assert.equal(a.waarschuwingen.length, 0);
+  const b = laadGeheugenModule({ WegwijzerGeheugen: { moetGeheugenWissen: () => true } });
+  assert.equal(b.geheugenModule(), null);
+});
+
+test('verstuurVraag gebruikt WegwijzerGeheugen alleen via geheugenModule()', () => {
+  const f = mw.slice(mw.indexOf('async function verstuurVraag'), mw.indexOf('// BERICHTEN RENDEREN'));
+  assert.doesNotMatch(f, /WegwijzerGeheugen\./);
+  assert.match(f, /var geheugen = geheugenModule\(\);/);
 });

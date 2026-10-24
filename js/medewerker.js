@@ -17,6 +17,20 @@
   var historieGeladen = false;
   var conversatieHistorie = []; // {role: 'user'|'assistant', content: string}
   var laatsteVraagTijd = 0; // Date.now() van de vorige vraag; na 60 min stilte begint het geheugen opnieuw
+  var geheugenWaarschuwingGelogd = false;
+
+  // js/gespreksgeheugen.js (wissen na 60 minuten, mislukte vraag eruit). Niet geladen
+  // (bijv. een oude html of een mislukte download): de chat werkt gewoon door, zonder
+  // wissen en zonder melding aan de gebruiker; één regel in de console.
+  function geheugenModule() {
+    var m = (typeof window !== 'undefined') ? window.WegwijzerGeheugen : undefined;
+    if (m && typeof m.moetGeheugenWissen === 'function' && typeof m.haalBerichtWeg === 'function') return m;
+    if (!geheugenWaarschuwingGelogd) {
+      geheugenWaarschuwingGelogd = true;
+      console.warn('[Wegwijzer] js/gespreksgeheugen.js is niet geladen: het gespreksgeheugen wordt niet gewist en mislukte vragen blijven erin.');
+    }
+    return null;
+  }
 
   // ---- Sparring modus state ----
   var sparringModus = false;
@@ -706,7 +720,8 @@
 
     // Na 60 minuten zonder vraag begint het geheugen opnieuw (js/gespreksgeheugen.js);
     // een scheidingsregel vóór de nieuwe vraag laat zien dat hier een nieuw gesprek begint.
-    if (conversatieHistorie.length > 0 && WegwijzerGeheugen.moetGeheugenWissen(laatsteVraagTijd, Date.now())) {
+    var geheugen = geheugenModule();
+    if (geheugen && conversatieHistorie.length > 0 && geheugen.moetGeheugenWissen(laatsteVraagTijd, Date.now())) {
       conversatieHistorie = [];
       toonNieuwGesprekScheiding();
     }
@@ -785,7 +800,7 @@
         null, null, null
       );
     }
-    if (!vraagGelukt && vraagBericht) WegwijzerGeheugen.haalBerichtWeg(conversatieHistorie, vraagBericht);
+    if (!vraagGelukt && vraagBericht && geheugen) geheugen.haalBerichtWeg(conversatieHistorie, vraagBericht);
 
     isSending = false;
     sendBtn.disabled = chatInput.value.trim().length === 0;
