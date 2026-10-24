@@ -68,8 +68,9 @@ const ZORG_MODEL_AAN = true;
 // zoeken op het onderwerp i.p.v. de hele zin, keuzestap met beschrijving en liever
 // geen training dan een foute, en de vorige vraag (browsergeheugen, binnen 60 minuten)
 // voor de zorginhoud-herkenning en het onderwerp. Met de testsleutel per vraag of
-// per run te kiezen via test_training_onderwerp.
-const TRAINING_ONDERWERP_AAN = false;
+// per run te kiezen via test_training_onderwerp. Aan sinds 2026-10-24 (run 240759a6:
+// 111/113, oude set 105/107; schizofrenie/eetstoornis 10/10, praktisch 0/20; akkoord Younes).
+const TRAINING_ONDERWERP_AAN = true;
 
 // Spaties zijn cruciaal: voorkomen dat "praktijk" matcht op "ik",
 // of "mijnheer" op "mijn".
