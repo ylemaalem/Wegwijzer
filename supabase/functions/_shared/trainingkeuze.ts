@@ -59,7 +59,7 @@ Trainingen zijn NIET zinvol bij:
 ${vorigeVraag ? `\n${VORIGE_VRAAG_REGEL}\n\nVorige vraag: ${vorigeVraag}\n` : ""}
 Huidige vraag: ${vraag}
 
-Antwoord in de vorm: onderwerp, overkoepelend thema.
+Antwoord op één regel, zonder labels, in de vorm: onderwerp, overkoepelend thema.
 - Het onderwerp is het ziektebeeld, de doelgroep, de problematiek of de vaardigheid zelf, in 1 tot 3 woorden. Niet het detail van de situatie.
 - Het overkoepelende thema is de bredere categorie waar het onderwerp onder valt, in 1 tot 3 woorden. Nooit algemene woorden als begeleiding, begeleiden, cliënt, omgaan met, situatie of aanpak.
 Voorbeelden: "schizofrenie, psychische stoornissen", "eetstoornis, psychische stoornissen", "autisme, autismespectrumstoornis", "alcoholgebruik, verslaving", "agressie, spanningsvol gedrag", "rapporteren, rapportage".
@@ -70,7 +70,12 @@ Is een training niet zinvol, antwoord dan alleen GEEN.`;
 // Alleen letters, cijfers, spaties, komma's, koppel- en apostroftekens (het gaat naar
 // de embedding en in de keuzeprompt, nooit in een filter).
 export function leesOnderwerp(tekst: string | null | undefined): string | null {
-  const t = String(tekst ?? "").replace(/["“”.]/g, " ").replace(/\s+/g, " ").trim();
+  // Het model zet er soms labels voor ("Onderwerp: x" / "Overkoepelend thema: y") op
+  // aparte regels: labels weg, regels samen met een komma.
+  const regels = String(tekst ?? "").split(/\r?\n/)
+    .map((r) => r.replace(/^\s*[-*]?\s*(overkoepelend thema|onderwerp|thema)\s*[:=-]\s*/i, "").trim())
+    .filter(Boolean);
+  const t = regels.join(", ").replace(/["“”.]/g, " ").replace(/\s+/g, " ").trim();
   if (!t || /^geen\b/i.test(t)) return null;
   const schoon = t.replace(/[^\p{L}\p{N} ,'’&-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   return schoon.length >= 2 ? schoon : null;

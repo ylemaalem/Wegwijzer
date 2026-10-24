@@ -77,3 +77,9 @@ test('keuzeprompt: onderwerp en overkoepelend thema apart; detail van de vraag h
   assert.match(p, /hoeft niet over het precieze detail/);
   assert.match(trainingOnderwerpPrompt('x', null), /Nooit algemene woorden als begeleiding/);
 });
+
+test('onderwerp lezen: labels en regels van het model', () => {
+  assert.equal(leesOnderwerp('Onderwerp: schizofrenie\nOverkoepelend thema: psychische stoornissen'), 'schizofrenie, psychische stoornissen');
+  assert.equal(leesOnderwerp('onderwerp: autisme, autismespectrumstoornis'), 'autisme, autismespectrumstoornis');
+  assert.equal(leesOnderwerp('Onderwerp: GEEN'), null);
+});
