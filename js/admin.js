@@ -5094,7 +5094,7 @@
       .order('naam', { ascending: true });
 
     if (result.error || !result.data) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="no-data">Kon leidinggevenden niet laden.</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="no-data">Kon leidinggevenden niet laden.</td></tr>';
       return;
     }
 
@@ -5110,13 +5110,31 @@
     if (!tbody) return;
 
     if (result.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="no-data">Nog geen leidinggevenden.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="no-data">Nog geen leidinggevenden.</td></tr>';
       return;
     }
 
     var rolLabels = { teamleider: 'Leidinggevende', manager: 'Manager', hr: 'HR Medewerker' };
 
+    // D1: per rij of er een inlogaccount is (zie js/leidinggevende-status.js). Zonder
+    // profiel kan de persoon niet inloggen; 📧 nodigt dan opnieuw uit met de rol uit deze lijst.
+    var accountProfielen = null;
+    var profielRes = await supabaseClient
+      .from('profiles')
+      .select('email, role, eerste_login_op, laatste_actief')
+      .eq('tenant_id', tenantId);
+    if (!profielRes.error && profielRes.data) accountProfielen = profielRes.data;
+    var statusKleur = { geen_account: '#B42318', rol_medewerker: '#B54708', uitgenodigd: '#666', actief: '#067647', beheerder: '#666', geen_email: '#666' };
+
     tbody.innerHTML = result.data.map(function (tl) {
+      var status = accountProfielen && window.WegwijzerLeidinggevende
+        ? window.WegwijzerLeidinggevende.leidinggevendeStatus(tl, accountProfielen)
+        : null;
+      var statusCel = status
+        ? '<span style="font-size:12px;font-weight:600;color:' + (statusKleur[status.code] || '#666') + '">' + escapeHtml(status.label) + '</span>'
+        : '<span style="font-size:12px;color:#666">Onbekend</span>';
+      var knopTekst = status && status.knopTekst ? status.knopTekst : '📧';
+      var knopTitel = status && status.knopTitel ? status.knopTitel : 'Uitnodiging opnieuw sturen';
       var rolLabel = rolLabels[tl.rol] || 'Leidinggevende';
       var koppelingStr = '-';
       if (tl.rol === 'manager' && tl.afdelingen && tl.afdelingen.length > 0) {
@@ -5134,9 +5152,10 @@
         '<td>' + escapeHtml(tl.telefoon || '-') + '</td>' +
         '<td><span class="badge badge-admin">' + rolLabel + '</span></td>' +
         '<td>' + escapeHtml(koppelingStr) + '</td>' +
+        '<td>' + statusCel + '</td>' +
         '<td>' +
           '<button class="btn-icon" onclick="window.editTeamleider(\'' + tl.id + '\')" title="Bewerken">✏️</button>' +
-          (tl.email ? '<button class="btn-icon" onclick="window.resendInvite(\'' + escapeHtml(tl.email) + '\', \'' + escapeHtml(tl.naam) + '\')" title="Uitnodiging opnieuw sturen">📧</button>' : '') +
+          (tl.email ? '<button class="btn-icon" onclick="window.resendInvite(\'' + escapeHtml(tl.email) + '\', \'' + escapeHtml(tl.naam) + '\')" title="' + escapeHtml(knopTitel) + '">' + knopTekst + '</button>' : '') +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteTeamleider(\'' + tl.id + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
