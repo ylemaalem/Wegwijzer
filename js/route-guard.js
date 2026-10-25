@@ -6,6 +6,30 @@
 (function () {
   'use strict';
 
+  // Waar moet deze gebruiker heen? null = de pagina mag. Los te testen:
+  // node --test tests/*.test.js (tests/alleen_dashboard.test.js).
+  // D2 (migratie 108): een account met alleen_dashboard komt niet op de
+  // kennisassistent; met een rij in teamleiders gaat het naar het dashboard, zonder
+  // rij (komt niet voor: de database zet alleen_dashboard dan uit) naar het inlogscherm.
+  function bestemming(requiredRole, profile, isTeamleider) {
+    var alleenDashboard = profile.alleen_dashboard === true && profile.role !== 'admin';
+    if (alleenDashboard && !isTeamleider) return 'index.html';
+    if (!requiredRole) return null;
+    var allowed = false;
+    if (requiredRole === 'admin' && profile.role === 'admin') allowed = true;
+    if (requiredRole === 'medewerker' && !alleenDashboard && (profile.role === 'medewerker' || profile.role === 'teamleider' || isTeamleider)) allowed = true;
+    if (requiredRole === 'teamleider' && isTeamleider) allowed = true;
+    if (allowed) return null;
+    if (profile.role === 'admin') return 'admin.html';
+    if (isTeamleider) return 'teamleider.html';
+    return 'medewerker.html';
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { bestemming: bestemming };
+    return;
+  }
+
   // Bepaal welke rol deze pagina vereist
   var requiredRole = document.documentElement.dataset.requiredRole || null;
 
@@ -47,22 +71,11 @@
       }
 
       // Check rol als die vereist is
-      if (requiredRole) {
-        var allowed = false;
-        if (requiredRole === 'admin' && profile.role === 'admin') allowed = true;
-        if (requiredRole === 'medewerker' && (profile.role === 'medewerker' || profile.role === 'teamleider' || isTeamleider)) allowed = true;
-        if (requiredRole === 'teamleider' && isTeamleider) allowed = true;
-
-        if (!allowed) {
-          if (profile.role === 'admin') {
-            window.location.href = appUrl('admin.html');
-          } else if (isTeamleider) {
-            window.location.href = appUrl('teamleider.html');
-          } else {
-            window.location.href = appUrl('medewerker.html');
-          }
-          return;
-        }
+      var doel = bestemming(requiredRole, profile, isTeamleider);
+      if (doel) {
+        if (doel === 'index.html') await supabaseClient.auth.signOut();
+        window.location.href = appUrl(doel);
+        return;
       }
 
       // Sla profiel op voor gebruik door andere scripts

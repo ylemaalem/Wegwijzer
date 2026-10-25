@@ -17,6 +17,12 @@
     var user = e.detail.user;
     tenantId = profile.tenant_id;
 
+    // D2 (migratie 108): account met alleen het dashboard, geen knop naar de kennisassistent.
+    if (profile.alleen_dashboard === true) {
+      var chatKnop = document.getElementById('chat-link-btn');
+      if (chatKnop) chatKnop.style.display = 'none';
+    }
+
     // Haal rol en teams op uit teamleiders-tabel
     try {
       var tlResult = await supabaseClient

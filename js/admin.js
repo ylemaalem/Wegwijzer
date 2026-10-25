@@ -14,6 +14,7 @@
   var allConversations = [];
   var allProfiles = [];
   var allTeamleiders = [];
+  var leidinggevendeProfielen = []; // D1/D2: profielen van de organisatie voor de accountstatus
   var allDocuments = [];
   var allFunctiegroepen = [];
   // Aantal chunks per document-id; gevuld door loadDocuments, gelezen door de herindexeerknoppen.
@@ -5121,9 +5122,10 @@
     var accountProfielen = null;
     var profielRes = await supabaseClient
       .from('profiles')
-      .select('email, role, eerste_login_op, laatste_actief')
+      .select('email, role, eerste_login_op, laatste_actief, alleen_dashboard')
       .eq('tenant_id', tenantId);
     if (!profielRes.error && profielRes.data) accountProfielen = profielRes.data;
+    leidinggevendeProfielen = accountProfielen || [];
     var statusKleur = { geen_account: '#B42318', rol_medewerker: '#B54708', uitgenodigd: '#666', actief: '#067647', beheerder: '#666', geen_email: '#666' };
 
     tbody.innerHTML = result.data.map(function (tl) {
@@ -5227,6 +5229,10 @@
         document.getElementById('tl-id').value = '';
         if (rolSelect) rolSelect.value = 'teamleider';
         populateTeamCheckboxes('tl-teams', []);
+        var nieuwDashEl = document.getElementById('tl-alleen-dashboard');
+        if (nieuwDashEl) { nieuwDashEl.checked = false; nieuwDashEl.disabled = false; }
+        var nieuwDashHint = document.getElementById('tl-alleen-dashboard-hint');
+        if (nieuwDashHint) nieuwDashHint.textContent = 'Het account kan inloggen op het dashboard, maar geen vragen stellen aan de kennisassistent.';
         // Reset afdelingen checkboxes
         var afdCheckboxes = document.querySelectorAll('input[name="tl-afdelingen"]');
         afdCheckboxes.forEach(function (cb) { cb.checked = false; });
@@ -5260,6 +5266,8 @@
         var titel = document.getElementById('tl-titel') ? document.getElementById('tl-titel').value.trim() : '';
         var rol = rolSelect ? rolSelect.value : 'teamleider';
         var teams = getCheckedTeams('tl-teams');
+        var alleenDashboardEl = document.getElementById('tl-alleen-dashboard');
+        var alleenDashboard = !!(alleenDashboardEl && alleenDashboardEl.checked);
 
         // Afdelingen ophalen
         var afdelingen = [];
@@ -5296,6 +5304,26 @@
             .eq('id', tlId);
           // Nieuw e-mailadres: niet automatisch uitnodigen, wel de vraag tonen.
           if (!result.error && email && email.toLowerCase() !== oudEmail) nieuwEmailBijBewerken = email;
+          // D2: chattoegang via de server (controle + auditregel), alleen bij een bestaand
+          // account met de leidinggevende-rol en als de keuze verandert.
+          if (!result.error && email && !nieuwEmailBijBewerken && window.WegwijzerLeidinggevende) {
+            var st = window.WegwijzerLeidinggevende.leidinggevendeStatus({ email: email }, leidinggevendeProfielen);
+            var heeftAccount = st.code === 'actief' || st.code === 'uitgenodigd';
+            if (heeftAccount && st.alleenDashboard !== alleenDashboard) {
+              try {
+                var zetSessie = await supabaseClient.auth.getSession();
+                var zetResp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + zetSessie.data.session.access_token },
+                  body: JSON.stringify({ zet_alleen_dashboard: true, email: email, waarde: alleenDashboard })
+                });
+                var zetData = await zetResp.json();
+                if (zetData.error) alert('Opgeslagen, maar de chattoegang is niet gewijzigd: ' + zetData.error);
+              } catch (zetErr) {
+                alert('Opgeslagen, maar de chattoegang kon niet worden gewijzigd (' + (zetErr && zetErr.message ? zetErr.message : zetErr) + ').');
+              }
+            }
+          }
         } else {
           // Nieuwe leidinggevende met e-mail: eerst uitnodigen, pas daarna de rij
           // opslaan. Weigert de server de uitnodiging (bijv. account al in gebruik of
@@ -5317,6 +5345,7 @@
                   invite_email: email,
                   invite_naam: naam,
                   invite_role: 'teamleider',  // Alle leidinggevenden krijgen role=teamleider in profiles
+                  invite_alleen_dashboard: alleenDashboard,
                   redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
                 })
               });
@@ -5435,6 +5464,19 @@
     // Teams checkboxes
     populateTeamCheckboxes('tl-teams', tl.teams || []);
 
+    // D2: alleen dashboard; zonder (leidinggevende-)account niet te kiezen.
+    var dashEl = document.getElementById('tl-alleen-dashboard');
+    var dashHint = document.getElementById('tl-alleen-dashboard-hint');
+    if (dashEl && window.WegwijzerLeidinggevende) {
+      var dashSt = window.WegwijzerLeidinggevende.leidinggevendeStatus(tl, leidinggevendeProfielen);
+      var kanKiezen = dashSt.code === 'actief' || dashSt.code === 'uitgenodigd';
+      dashEl.checked = dashSt.alleenDashboard;
+      dashEl.disabled = !kanKiezen;
+      if (dashHint) dashHint.textContent = kanKiezen
+        ? 'Het account kan inloggen op het dashboard, maar geen vragen stellen aan de kennisassistent.'
+        : 'Nog geen account met de leidinggevende-rol: kies dit bij 📧 Uitnodigen of Herstellen.';
+    }
+
     // Afdelingen checkboxes
     var selectedAfd = tl.afdelingen || [];
     var afdCheckboxes = document.querySelectorAll('input[name="tl-afdelingen"]');
@@ -5458,6 +5500,14 @@
   // zonderBevestiging: de beheerder heeft al op de knop "Uitnodiging versturen" geklikt.
   window.resendInvite = async function (email, naam, zonderBevestiging) {
     if (!zonderBevestiging && !confirm('Uitnodigingsmail opnieuw sturen naar ' + email + '?')) return;
+    // D2: zonder account wordt er een nieuw account gemaakt; vraag of dat alleen het dashboard krijgt.
+    var resendAlleenDashboard = false;
+    if (window.WegwijzerLeidinggevende) {
+      var resendSt = window.WegwijzerLeidinggevende.leidinggevendeStatus({ email: email }, leidinggevendeProfielen);
+      if (resendSt.code === 'geen_account') {
+        resendAlleenDashboard = confirm('Er is nog geen account voor ' + email + '.\n\nOK = alleen het dashboard (geen kennisassistent)\nAnnuleren = dashboard én kennisassistent');
+      }
+    }
 
     console.log('[Invite] Heruitnodiging starten voor:', email);
     try {
@@ -5474,6 +5524,7 @@
           resend_invite: true,
           // Alleen 📧 bij Leidinggevenden mag een rol rechtzetten (uit de rij in teamleiders).
           rol_herstellen: true,
+          invite_alleen_dashboard: resendAlleenDashboard,
           invite_email: email,
           invite_naam: naam,
           redirect_url: window.location.origin + appUrl('wachtwoord-instellen.html')
@@ -5502,6 +5553,12 @@
   // 'medewerker' (nooit een admin) en schrijft dat in het auditlog (migratie 096).
   window.deleteTeamleider = async function (id) {
     if (!confirm('Weet je zeker dat je deze leidinggevende wilt verwijderen?\nHeeft deze persoon een account, dan wordt dat weer een gewoon medewerkersaccount zonder dashboard.')) return;
+    // D2: een account met alleen het dashboard krijgt dan de kennisassistent.
+    var weg = allTeamleiders.find(function (t) { return t.id === id; });
+    if (weg && weg.email && window.WegwijzerLeidinggevende) {
+      var wegSt = window.WegwijzerLeidinggevende.leidinggevendeStatus(weg, leidinggevendeProfielen);
+      if (wegSt.alleenDashboard && !confirm(weg.email + ' heeft nu alleen het dashboard.\nNa verwijderen wordt het een gewoon medewerkersaccount mét kennisassistent.\nWil je dat niet, verwijder dan het account bij Medewerkers.\n\nToch doorgaan?')) return;
+    }
 
     var res = await supabaseClient
       .from('teamleiders')

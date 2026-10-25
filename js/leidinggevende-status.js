@@ -15,9 +15,18 @@
     return String(e == null ? '' : e).trim().toLowerCase();
   }
 
-  // rij: { email }; profielen: [{ email, role, eerste_login_op, laatste_actief }] van de
-  // eigen organisatie. Geeft { code, label, knopTekst, knopTitel } terug.
+  // rij: { email }; profielen: [{ email, role, eerste_login_op, laatste_actief,
+  // alleen_dashboard }] van de eigen organisatie. Geeft { code, label, knopTekst,
+  // knopTitel, alleenDashboard } terug.
   function leidinggevendeStatus(rij, profielen) {
+    var s = basisStatus(rij, profielen);
+    s.alleenDashboard = !!(s.profiel && s.profiel.alleen_dashboard === true);
+    if (s.alleenDashboard && s.code !== 'rol_medewerker') s.label += ' · alleen dashboard';
+    delete s.profiel;
+    return s;
+  }
+
+  function basisStatus(rij, profielen) {
     var email = normaalEmail(rij && rij.email);
     if (!email) {
       return { code: 'geen_email', label: 'Geen e-mailadres', knopTekst: null, knopTitel: null };
@@ -29,18 +38,18 @@
     }
     if (p.role === 'admin') {
       return { code: 'beheerder', label: 'Beheerder', knopTekst: '📧',
-        knopTitel: 'Uitnodiging of resetmail opnieuw sturen' };
+        knopTitel: 'Uitnodiging of resetmail opnieuw sturen', profiel: p };
     }
     if (p.role !== 'teamleider') {
       return { code: 'rol_medewerker', label: 'Account zonder dashboard', knopTekst: '📧 Herstellen',
-        knopTitel: 'Het account heeft de rol medewerker. Zet de rol recht uit deze lijst.' };
+        knopTitel: 'Het account heeft de rol medewerker. Zet de rol recht uit deze lijst.', profiel: p };
     }
     if (!p.eerste_login_op && !p.laatste_actief) {
       return { code: 'uitgenodigd', label: 'Uitgenodigd, nog niet ingelogd', knopTekst: '📧',
-        knopTitel: 'Uitnodiging opnieuw sturen' };
+        knopTitel: 'Uitnodiging opnieuw sturen', profiel: p };
     }
     return { code: 'actief', label: 'Account actief', knopTekst: '📧',
-      knopTitel: 'Uitnodiging opnieuw sturen' };
+      knopTitel: 'Uitnodiging opnieuw sturen', profiel: p };
   }
 
   var api = { leidinggevendeStatus: leidinggevendeStatus };

@@ -9,6 +9,7 @@ import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag
 import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
+import { ALLEEN_DASHBOARD_MELDING, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
@@ -2597,6 +2598,43 @@ ${vraagLijst}${trendGedekteContext}`;
       }
     }
 
+    // ---- Alleen dashboard (D2, migratie 108): niets na de dashboardroutes ----
+    if (alleenDashboardGeweigerd(profile, isTest)) {
+      return new Response(JSON.stringify({ error: ALLEEN_DASHBOARD_MELDING, alleen_dashboard: true }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ---- Beheerder: chattoegang van een leidinggevende aan/uit (D2) ----
+    if (body.zet_alleen_dashboard === true && typeof body.email === "string") {
+      const zetAntwoord = (inhoud: Record<string, unknown>, status = 200) => new Response(
+        JSON.stringify(inhoud), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (profile.role !== "admin") return zetAntwoord({ error: "Niet geautoriseerd" }, 403);
+      const waarde = body.waarde === true;
+      const zetEmail = String(body.email).trim().toLowerCase();
+      try {
+        const rij = await leidinggevendeRijVoor(supabaseAdmin, zetEmail, profile.tenant_id);
+        if (!rij) return zetAntwoord({ error: "Dit e-mailadres staat niet in de lijst met leidinggevenden. Er is niets gewijzigd." });
+        const { data: kandidaten, error: doelFout } = await supabaseAdmin.from("profiles")
+          .select("id, email, naam, role, alleen_dashboard").eq("tenant_id", profile.tenant_id);
+        if (doelFout) return zetAntwoord({ error: "Profiel kon niet worden gecontroleerd: " + doelFout.message });
+        const doel = (kandidaten || []).find((p: { email: string | null }) => String(p.email || "").trim().toLowerCase() === zetEmail);
+        if (!doel) return zetAntwoord({ error: "Er is nog geen account. Stuur eerst een uitnodiging (📧)." });
+        if (doel.role !== "teamleider") return zetAntwoord({ error: "Dit account heeft geen leidinggevende-rol. Gebruik eerst 📧 Herstellen." });
+        if (doel.alleen_dashboard === waarde) return zetAntwoord({ success: true, gewijzigd: false, alleen_dashboard: waarde });
+        const { error: zetFout } = await supabaseAdmin.from("profiles").update({ alleen_dashboard: waarde })
+          .eq("id", doel.id).eq("tenant_id", profile.tenant_id).eq("role", "teamleider");
+        if (zetFout) return zetAntwoord({ error: "Wijzigen mislukt: " + zetFout.message });
+        await logAuditEvent(
+          supabaseAdmin, profile.tenant_id, user.id, user.email || null, profile.naam || null,
+          "CHATTOEGANG_GEWIJZIGD", "medewerker", doel.id,
+          { email: doel.email, naam: doel.naam, alleen_dashboard: waarde, teamleider_rij: rij.id },
+        );
+        return zetAntwoord({ success: true, gewijzigd: true, alleen_dashboard: waarde });
+      } catch (err) {
+        return zetAntwoord({ error: "Wijzigen mislukt: " + (err instanceof Error ? err.message : String(err)) });
+      }
+    }
+
     // ---- 5. Rate limiting per rol ----
     if (!isTest) {
     const { todayStart, todayStr } = vandaagVoorLimiet();
@@ -2708,6 +2746,7 @@ ${vraagLijst}${trendGedekteContext}`;
           role: inviteRole,
           functiegroep: inviteFunctiegroep,
           afdeling: inviteAfdeling,
+          alleen_dashboard: uitnodigingAlleenDashboard(body.invite_alleen_dashboard, inviteRole),
           aangemaakt_door: profile.id,
         });
         if (registerError) {
@@ -2860,6 +2899,8 @@ ${vraagLijst}${trendGedekteContext}`;
           email: String(resendEmail).trim().toLowerCase(),
           naam: resendNaam,
           role: resendRole,
+          // Alleen bij een nieuw account (geen profiel meer); een bestaand profiel houdt zijn waarde.
+          alleen_dashboard: uitnodigingAlleenDashboard(body.invite_alleen_dashboard, resendRole),
           aangemaakt_door: profile.id,
         });
         if (resendRegisterError) {

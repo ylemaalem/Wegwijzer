@@ -49,3 +49,13 @@ test('admin.html laadt de module vóór admin.js; admin.js gebruikt de status en
   assert.match(js, /WegwijzerLeidinggevende\.leidinggevendeStatus\(tl, accountProfielen\)/);
   assert.match(js, /rol_herstellen: true/);
 });
+
+test('D2: alleen dashboard zichtbaar in het label en als vlag', () => {
+  const p = [{ email: 'd@example.nl', role: 'teamleider', eerste_login_op: '2026-10-01', alleen_dashboard: true }];
+  const s = leidinggevendeStatus({ email: 'd@example.nl' }, p);
+  assert.equal(s.code, 'actief');
+  assert.equal(s.label, 'Account actief · alleen dashboard');
+  assert.equal(s.alleenDashboard, true);
+  assert.equal(s.profiel, undefined);
+  assert.equal(leidinggevendeStatus({ email: 'x@example.nl' }, p).alleenDashboard, false);
+});
