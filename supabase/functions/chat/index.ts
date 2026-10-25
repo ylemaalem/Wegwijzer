@@ -11,7 +11,7 @@ import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
 import { ALLEEN_DASHBOARD_MELDING, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
-import { bereikTekst, kiesMonitorIds, normaliseerDashboardRol, type DashboardRol } from "../_shared/dashboardrol.ts";
+import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
 import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
 
@@ -2276,7 +2276,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
       const startLive = await haalStartdatumLive(supabaseAdmin, profile.tenant_id);
       const startdatumLive = startLive ? startLive.toISOString() : null;
 
-      const monitorIds = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null);
+      const metaRol = await bepaalDashboardRol(supabaseAdmin, profile, user.email || null);
+      const monitorIds = await resolveMonitorProfileIds(supabaseAdmin, profile, user.email || null, metaRol);
       if (monitorIds.length === 0) {
         return new Response(
           JSON.stringify({ metadata: [], startdatum_live: startdatumLive }),
@@ -2288,7 +2289,8 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
         .from("conversations")
         .select("user_id, feedback, created_at")
         .eq("tenant_id", profile.tenant_id)
-        .in("user_id", monitorIds);
+        // D3: organisatiebreed ook de losgekoppelde gesprekken van verwijderde accounts.
+        .or(gebruikerFilter(monitorIds, telLosgekoppeldMee(metaRol)));
       if (startLive) convQuery = convQuery.gte("created_at", startLive.toISOString());
       const { data: convs, error: convErr } = await convQuery
         .order("created_at", { ascending: false })
@@ -2434,14 +2436,14 @@ Document inhoud: ${(doc.content as string).substring(0, 3000)}`;
           .from("conversations")
           .select("vraag, created_at")
           .eq("tenant_id", profile.tenant_id)
-          .in("user_id", monitorIdsTrend);
+          .or(gebruikerFilter(monitorIdsTrend, telLosgekoppeldMee(trendRol)));
         if (trendSinds) trendQuery = trendQuery.gte("created_at", trendSinds.toISOString());
         const { data: trendConvs } = await trendQuery
           .order("created_at", { ascending: false })
           .limit(1000);
         vragen = ((trendConvs || []) as Array<{ vraag: string | null }>)
           .map((c) => c.vraag)
-          .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0 && v !== "[verwijderd]");
       }
 
       if (vragen.length === 0) {

@@ -3366,35 +3366,65 @@
     }
   };
 
-  window.deleteMedewerker = async function (profileId, userId) {
-    if (!confirm('Weet je zeker dat je deze medewerker wilt verwijderen? Dit verwijdert ook alle gesprekken en het account.')) return;
+  // D3 (migratie 109): verwijderen via de server (verwijder-gebruiker -> verwijder_account).
+  // De database controleert, koppelt de gesprekken los (uit_dienst) of wist de tekst (avg),
+  // en schrijft de auditregel. Is het account ook leidinggevende, dan eerst een keuze;
+  // standaard: alleen de chattoegang uitzetten.
+  async function roepVerwijderAan(profileId, modus, leidinggevende) {
+    var session = await supabaseClient.auth.getSession();
+    var token = session.data.session.access_token;
+    var resp = await fetch(SUPABASE_URL + '/functions/v1/verwijder-gebruiker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ profile_id: profileId, modus: modus, leidinggevende: leidinggevende || undefined })
+    });
+    return await resp.json();
+  }
 
+  // Geeft true terug als het account (of de chattoegang) is aangepast.
+  async function verwijderAccount(profileId, modus) {
+    var r;
     try {
-      var session = await supabaseClient.auth.getSession();
-      var token = session.data.session.access_token;
-      var delResponse = await fetch(SUPABASE_URL + '/functions/v1/verwijder-gebruiker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ user_id: userId, profile_id: profileId })
-      });
-      var delData = await delResponse.json();
-      if (!delData.deleted) {
-        console.error('[Delete] Verwijdering mislukt:', delData.error);
-        alert('Verwijdering mislukt: ' + (delData.error || 'onbekende fout'));
-        return;
+      r = await roepVerwijderAan(profileId, modus, null);
+      if (r && r.keuze_nodig) {
+        var rolNaam = { teamleider: 'leidinggevende', manager: 'manager', hr: 'HR-medewerker' }[r.leidinggevende_rol] || 'leidinggevende';
+        var alleenChat = confirm((r.naam || 'Deze persoon') + ' is ook ' + rolNaam + '.\n\n' +
+          'OK = alleen de chattoegang uitzetten (aanbevolen): het account en het dashboard blijven.\n' +
+          'Annuleren = een andere keuze.');
+        if (alleenChat) {
+          r = await roepVerwijderAan(profileId, modus, 'chattoegang_uit');
+        } else {
+          if (!confirm('Account én leidinggevende verwijderen?\nDe persoon kan daarna niet meer inloggen en staat niet meer bij Leidinggevende/HR.')) return false;
+          r = await roepVerwijderAan(profileId, modus, 'ook_leidinggevende');
+        }
       }
-      console.log('[Delete] Medewerker en auth-account verwijderd');
     } catch (err) {
       console.error('[Delete] Exception:', err);
       alert('Verwijdering mislukt — probeer het opnieuw.');
-      return;
+      return false;
     }
+    if (r && r.chattoegang_uit) {
+      alert('De chattoegang is uitgezet. Het account en het dashboard blijven bestaan.');
+      return true;
+    }
+    if (!r || !r.deleted) {
+      alert('Verwijdering mislukt: ' + ((r && r.error) || 'onbekende fout'));
+      return false;
+    }
+    if (r.error) alert(r.error);
+    return true;
+  }
+  window.verwijderAccount = verwijderAccount;
 
-    await logAudit('MEDEWERKER_VERWIJDERD', 'medewerker', profileId, { user_id: userId });
-
+  window.deleteMedewerker = async function (profileId) {
+    if (!confirm('Weet je zeker dat je deze medewerker wilt verwijderen?\n' +
+      'Het account wordt verwijderd. De gesprekken blijven bewaard zonder koppeling aan de persoon, ' +
+      'zodat de statistieken kloppen, en de tekst wordt na 12 maanden gewist.')) return;
+    if (!(await verwijderAccount(profileId, 'uit_dienst'))) return;
     loadMedewerkers();
     loadGesprekken();
     loadStatistieken();
+    if (typeof loadTeamleiders === 'function') loadTeamleiders();
   };
 
   // =============================================
@@ -4157,7 +4187,8 @@
       var profile = allProfiles.find(function (p) { return p.id === c.user_id; });
       var fg = profile ? formatFunctiegroep(profile.functiegroep) : '';
       var teams = profile && profile.teams ? profile.teams.join(', ') : '';
-      var naam = 'Medewerker' + (fg ? ' — ' + fg : '') + (teams ? ' — ' + teams : '');
+      // D3: zonder user_id is het account verwijderd (gesprek losgekoppeld).
+      var naam = !c.user_id ? 'Verwijderd account' : 'Medewerker' + (fg ? ' — ' + fg : '') + (teams ? ' — ' + teams : '');
 
       var feedbackBadge = '';
       if (c.feedback === 'goed') {
@@ -7082,6 +7113,8 @@
     ZOEKTERMEN_GEGENEREERD: 'Zoektermen gegenereerd',
     MEDEWERKER_UITGENODIGD: 'Medewerker uitgenodigd',
     MEDEWERKER_VERWIJDERD: 'Medewerker verwijderd',
+    ACCOUNT_VERWIJDERD_AVG: 'Account verwijderd (AVG-verzoek)',
+    CHATTOEGANG_GEWIJZIGD: 'Chattoegang gewijzigd',
     INWERKTRAJECT_AFGESLOTEN: 'Inwerktraject afgesloten',
     NAAM_ONTSLOTEN: 'Naam ontsloten',
     RAPPORT_GEGENEREERD: 'Rapport gegenereerd',

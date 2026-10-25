@@ -34,6 +34,19 @@ export function kiesMonitorIds(
   return zichtbaar.map((m) => m.id).filter((id) => id !== eigenProfielId);
 }
 
+// D3 (migratie 109): gesprekken van een verwijderd account hebben geen user_id meer
+// (losgekoppeld). Ze horen bij geen team meer, dus alleen een organisatiebreed bereik
+// (manager, hr, admin) telt ze mee; een teamleider ziet ze niet.
+export function telLosgekoppeldMee(dashboardRol: DashboardRol): boolean {
+  return dashboardRol.rol !== "teamleider";
+}
+
+// PostgREST-filter: user_id in de lijst, plus (organisatiebreed) user_id leeg.
+export function gebruikerFilter(ids: string[], metLosgekoppeld: boolean): string {
+  const lijst = `user_id.in.(${ids.join(",")})`;
+  return metLosgekoppeld ? `${lijst},user_id.is.null` : lijst;
+}
+
 export function bereikTekst(dashboardRol: DashboardRol): string {
   return dashboardRol.rol === "teamleider" ? "binnen jouw team" : "binnen de hele organisatie";
 }

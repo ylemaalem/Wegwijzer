@@ -1,9 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Account verwijderen (D3, migratie 109, akkoord Younes 2026-10-25).
+// De database doet alles in één transactie (verwijder_account): controle (beheerder, eigen
+// organisatie, niet het eigen account), de keuze bij een leidinggevende, gesprekken
+// loskoppelen (uit_dienst) of de tekst wissen (avg), het profiel verwijderen en de
+// auditregel. Daarna verwijdert deze functie het inlogaccount.
+// Body: { profile_id, modus?: 'uit_dienst' | 'avg', leidinggevende?: 'chattoegang_uit' | 'ook_leidinggevende' }
+// Antwoord: { deleted: true } | { keuze_nodig: true, leidinggevende_rol, naam } |
+//           { deleted: false, chattoegang_uit: true } | { error }
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type",
 };
+
+function antwoord(inhoud: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(inhoud), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -20,66 +33,53 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: authHeader } },
   });
   const { data: { user }, error: authErr } = await supabaseUser.auth.getUser();
-  if (authErr || !user) {
-    return new Response(JSON.stringify({ error: "Niet ingelogd" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  if (authErr || !user) return antwoord({ error: "Niet ingelogd" }, 401);
 
   const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
-  // Controleer of aanroeper admin is
-  const { data: callerProfile } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!callerProfile || callerProfile.role !== "admin") {
-    return new Response(JSON.stringify({ error: "Alleen admins kunnen gebruikers verwijderen" }), {
-      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return antwoord({ error: "Ongeldig verzoek", deleted: false }, 400);
   }
+  const profielId = typeof body.profile_id === "string" ? body.profile_id : null;
+  const modus = body.modus === "avg" ? "avg" : "uit_dienst";
+  const leidinggevende = body.leidinggevende === "chattoegang_uit" || body.leidinggevende === "ook_leidinggevende"
+    ? body.leidinggevende : null;
+  if (!profielId) return antwoord({ error: "profile_id is verplicht", deleted: false }, 400);
 
-  const body = await req.json();
-  const { user_id, profile_id } = body;
-
-  // Alleen accounts van de eigen organisatie (migratie 094: één beslisregel in de
-  // database; NULL = toegestaan, anders de reden).
-  const { data: weigering, error: controleFout } = await supabaseAdmin.rpc("controleer_accountverwijdering", {
-    p_beller: user.id, p_doel: user_id || null, p_profiel: profile_id || null,
+  const { data: uitkomst, error: rpcFout } = await supabaseAdmin.rpc("verwijder_account", {
+    p_beller: user.id, p_profiel: profielId, p_modus: modus, p_leidinggevende: leidinggevende,
   });
-  if (controleFout) {
-    console.error("[VerwijderGebruiker] Controle mislukt:", controleFout.message);
-    return new Response(JSON.stringify({ error: "Account kon niet worden gecontroleerd", deleted: false }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (rpcFout) {
+    console.error("[VerwijderGebruiker] verwijder_account mislukt:", rpcFout.message);
+    return antwoord({ error: "Verwijderen mislukt: " + rpcFout.message + ". Er is niets verwijderd.", deleted: false }, 500);
   }
-  if (weigering) {
-    console.warn("[VerwijderGebruiker] Geweigerd:", weigering, "doel:", user_id, "door:", user.id);
-    return new Response(JSON.stringify({ error: weigering, deleted: false }), {
-      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  const u = (uitkomst || {}) as Record<string, unknown>;
+  if (u.fout) {
+    console.warn("[VerwijderGebruiker] Geweigerd:", u.fout, "profiel:", profielId, "door:", user.id);
+    return antwoord({ error: u.fout, deleted: false }, 403);
   }
-
-  // Verwijder profiel (cascade verwijdert conversations); altijd gekoppeld aan dit account.
-  if (profile_id) {
-    await supabaseAdmin.from("profiles").delete().eq("id", profile_id).eq("user_id", user_id);
-  } else {
-    await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
+  if (u.keuze_nodig) {
+    return antwoord({ keuze_nodig: true, leidinggevende_rol: u.leidinggevende_rol, naam: u.naam, deleted: false });
+  }
+  if (u.actie === "chattoegang_uit") {
+    return antwoord({ deleted: false, chattoegang_uit: true });
   }
 
-  // Verwijder auth gebruiker permanent
-  const { error: delError } = await supabaseAdmin.auth.admin.deleteUser(user_id);
-  if (delError) {
-    console.error("[VerwijderGebruiker] Auth delete fout:", delError.message);
-    return new Response(JSON.stringify({ error: delError.message, deleted: false }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  // Profiel is weg; nu het inlogaccount (cascade: scores, quiz, briefings, cache).
+  const doelUser = typeof u.user_id === "string" ? u.user_id : null;
+  if (doelUser) {
+    const { error: delError } = await supabaseAdmin.auth.admin.deleteUser(doelUser);
+    if (delError) {
+      console.error("[VerwijderGebruiker] Auth delete fout:", delError.message);
+      return antwoord({
+        deleted: true, auth_fout: delError.message, gesprekken: u.gesprekken, modus,
+        error: "Het profiel is verwijderd, maar het inlogaccount niet: " + delError.message + ". Probeer het opnieuw of meld het.",
+      });
+    }
   }
-
-  console.log("[VerwijderGebruiker] Gebruiker verwijderd:", user_id);
-  return new Response(JSON.stringify({ deleted: true }), {
-    status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  console.log("[VerwijderGebruiker] Verwijderd:", profielId, "modus:", modus);
+  return antwoord({ deleted: true, gesprekken: u.gesprekken, modus });
 });
