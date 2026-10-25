@@ -68,3 +68,23 @@ test('teamleider.js verbergt de knop Kennisassistent; admin heeft het vinkje', (
   assert.match(js, /invite_alleen_dashboard: alleenDashboard/);
   assert.match(js, /zet_alleen_dashboard: true/);
 });
+
+test('B8: einddatum in Nederlandse tijd, laatste dag hele dag toegang, ook bij vaste accounts', () => {
+  const { accountVerlopen, vandaagNl } = require('../supabase/functions/_shared/chattoegang.ts');
+  // 25 okt 2026 23:30 NL = 22:30 UTC (wintertijd vanaf 25 okt 03:00).
+  const laatAvond = new Date('2026-10-25T22:30:00Z');
+  assert.equal(vandaagNl(laatAvond), '2026-10-25');
+  assert.equal(accountVerlopen('2026-10-25', laatAvond), false, 'laatste dag: nog toegang');
+  assert.equal(accountVerlopen('2026-10-24', laatAvond), true);
+  // 26 okt 00:30 NL = 25 okt 23:30 UTC: de dag erna.
+  assert.equal(accountVerlopen('2026-10-25', new Date('2026-10-25T23:30:00Z')), true);
+  // Zomertijd: 1 aug 01:30 NL = 31 jul 23:30 UTC.
+  assert.equal(vandaagNl(new Date('2026-07-31T23:30:00Z')), '2026-08-01');
+  assert.equal(accountVerlopen(null, laatAvond), false);
+  assert.equal(accountVerlopen('', laatAvond), false);
+  assert.equal(accountVerlopen('onzin', laatAvond), false);
+  const s = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
+  assert.match(s, /if \(accountVerlopen\(profile\.einddatum\)\) \{/);
+  assert.doesNotMatch(s, /profile\.account_type === "tijdelijk" && profile\.einddatum/);
+  assert.equal((s.match(/accountVerlopen\(/g) || []).length, 3);
+});

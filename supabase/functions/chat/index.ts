@@ -9,7 +9,7 @@ import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag
 import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
-import { ALLEEN_DASHBOARD_MELDING, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
+import { ALLEEN_DASHBOARD_MELDING, accountVerlopen, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
@@ -674,7 +674,7 @@ async function bouwTeamContext(
         if (naamLower.includes("test")) return false;
         if (p.naam === "Wegwijzer Beheer") return false;
         if (p.role === "admin") return false;
-        if (p.einddatum && new Date(p.einddatum) <= nu) return false;
+        if (accountVerlopen(p.einddatum, nu)) return false;
         return true;
       }) as Array<{ naam: string; role: string | null; functiegroep: string | null; teams: string[] | null; afdeling: string | null }>;
 
@@ -1016,15 +1016,12 @@ Deno.serve(async (req: Request) => {
       console.log("[Edge] Stap 3 OK: profiel=", profile.naam, "rol=", profile.role, "tenant=", profile.tenant_id);
     }
 
-    // Check tijdelijk account verlopen
-    if (profile.account_type === "tijdelijk" && profile.einddatum) {
-      const eind = new Date(profile.einddatum);
-      if (new Date() > eind) {
-        return new Response(
-          JSON.stringify({ error: "Je account is verlopen. Neem contact op met je leidinggevende." }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    // Check account verlopen (vast of tijdelijk; laatste dag hele dag toegang, NL-tijd)
+    if (accountVerlopen(profile.einddatum)) {
+      return new Response(
+        JSON.stringify({ error: "Je account is verlopen. Neem contact op met je leidinggevende." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ---- 4. Request body ----
@@ -2992,7 +2989,7 @@ ${vraagLijst}${trendGedekteContext}`;
         if (!isTest) await supabaseAdmin.from("weekstart_briefings").insert({ user_id: user.id, week_nummer: wk, briefing_tekst: briefText });
 
         // Push naar de medewerker zelf (geen expired accounts; niet in testmodus)
-        if (!isTest && (profile.account_type !== "tijdelijk" || !profile.einddatum || new Date(profile.einddatum) > new Date())) {
+        if (!isTest && !accountVerlopen(profile.einddatum)) {
           pushNaarGebruikers(supabaseAdmin, [user.id], profile.tenant_id,
             { title: "Wegwijzer — Week " + wk, body: "Je weekstart briefing voor week " + wk + " staat klaar.", url: "/medewerker.html" },
             "weekstart_briefing",

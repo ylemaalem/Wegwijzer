@@ -17,3 +17,17 @@ export function alleenDashboardGeweigerd(profiel: { alleen_dashboard?: unknown; 
 export function uitnodigingAlleenDashboard(gevraagd: unknown, rol: string): boolean {
   return gevraagd === true && rol === "teamleider";
 }
+
+// Einddatum (F keuze 8, 2026-10-25): gelijk aan de factuur. Geldt voor vaste én tijdelijke
+// accounts; de laatste dag heeft de hele dag toegang, in Nederlandse tijd. Voorheen alleen
+// bij 'tijdelijk' en vergeleken met middernacht UTC (laatste dag vanaf 02:00 verlopen).
+export function vandaagNl(nu: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam", year: "numeric", month: "2-digit", day: "2-digit" }).format(nu);
+}
+
+export function accountVerlopen(einddatum: unknown, nu: Date = new Date()): boolean {
+  if (einddatum == null || einddatum === "") return false;
+  const dag = String(einddatum).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dag)) return false;
+  return dag < vandaagNl(nu);
+}
