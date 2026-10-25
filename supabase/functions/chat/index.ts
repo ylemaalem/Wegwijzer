@@ -9,6 +9,7 @@ import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag
 import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
+import { isZorgwekkend, zorgwekkendeOnderwerpen } from "../_shared/patroonmelding.ts";
 import { ALLEEN_DASHBOARD_MELDING, accountVerlopen, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -32,12 +33,7 @@ const STOPWOORDEN = new Set([
   "haar", "zij", "wij", "ik", "je", "jij", "hij", "het", "men", "er",
 ]);
 
-// Zorgwekkende onderwerpen voor patroonherkenning
-const ZORGWEKKENDE_TERMEN = [
-  "agressie", "agressief", "geweld", "slaan", "dreigen", "dreiging",
-  "crisis", "crisisplan", "noodsituatie", "nood",
-  "suicid", "suïcid", "zelfdoding", "zelfmoord", "levenseinde",
-];
+// Zorgwekkende onderwerpen voor patroonherkenning: _shared/patroonmelding.ts (H1).
 
 const WEBSITE_TRIGGERS = [
   "cao", "salaris", "loon", "trede",
@@ -3534,7 +3530,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
 
     // ---- 5b. Patroonherkenning zorgwekkende onderwerpen ----
     const vraagLower = vraag.toLowerCase();
-    const gevondenTermen = ZORGWEKKENDE_TERMEN.filter(t => vraagLower.includes(t));
+    const gevondenOnderwerpen = zorgwekkendeOnderwerpen(vraag);
 
     const BRON_TRIGGERS = [
       "waar haal je dit vandaan", "waar haal je dat vandaan", "wat is je bron",
@@ -3543,7 +3539,7 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     ];
     const vraagtBron = BRON_TRIGGERS.some(t => vraagLower.includes(t));
 
-    if (!isTest && gevondenTermen.length > 0) {
+    if (!isTest && gevondenOnderwerpen.length > 0) {
       const weekStart = new Date();
       const dag = weekStart.getDay();
       const offset = dag === 0 ? 6 : dag - 1;
@@ -3563,14 +3559,12 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
           if (weekConvs) {
             let zorgCount = 0;
             for (const conv of weekConvs) {
-              if (ZORGWEKKENDE_TERMEN.some(t => (conv.vraag || "").toLowerCase().includes(t))) zorgCount++;
+              if (isZorgwekkend(conv.vraag)) zorgCount++;
             }
             zorgCount++;
             if (zorgCount >= 3) {
-              let onderwerp = "een zorgwekkend onderwerp";
-              if (gevondenTermen.some(t => t.includes("agressie") || t.includes("geweld") || t.includes("slaan") || t.includes("dreig"))) onderwerp = "agressie";
-              else if (gevondenTermen.some(t => t.includes("crisis") || t.includes("nood"))) onderwerp = "crisissituaties";
-              else if (gevondenTermen.some(t => t.includes("suicid") || t.includes("suïcid") || t.includes("zelfdoding") || t.includes("zelfmoord"))) onderwerp = "suïcidaliteit";
+              // Eerste gevonden onderwerp, volgorde agressie, crisissituaties, suïcidaliteit (als voorheen).
+              const onderwerp = gevondenOnderwerpen[0];
 
               // Team voor melding = eerste team van de medewerker (meestal
               // zit elke medewerker in één team; bij meerdere kiezen we
