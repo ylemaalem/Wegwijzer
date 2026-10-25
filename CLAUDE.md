@@ -33,8 +33,13 @@ Beschrijf vóór het bouwen, kort:
 - Meld per stap welke skills gebruikt zijn.
 
 ## Database
-- Vanaf 30 oktober 2026 krijgen nieuwe tabellen in het public-schema geen automatische API-toegang. Zet in elke migratie met een nieuwe tabel, naast de RLS-regels:
-  `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.<tabel> TO anon, authenticated;`
+- Vanaf 30 oktober 2026 krijgen nieuwe tabellen in het public-schema geen automatische API-rechten meer, ook niet voor `service_role` (Edge Functions). Elke migratie die een tabel maakt, bevat in dezelfde migratie:
+  - de GRANTs op die tabel, alleen voor de rollen die het echt nodig hebben (`authenticated` voor de app, `service_role` voor de Edge Functions; geen enkele rol als de tabel alleen via SECURITY DEFINER-functies wordt gebruikt, met `-- geen-grant: <tabel> <reden>`);
+  - `anon` alleen na uitdrukkelijk akkoord van Younes, met `-- anon-akkoord: <tabel>` in de migratie;
+  - `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` en de policies (of `-- geen-policy: <tabel> <reden>`);
+  - bij een serial-kolom: `GRANT USAGE ON SEQUENCE`;
+  - nieuwe functies: `REVOKE EXECUTE ... FROM PUBLIC, anon` en een `GRANT EXECUTE` aan de rol die de functie nodig heeft.
+  `tests/migratie_grants.test.js` laat een migratie (vanaf 110) falen bij een nieuwe tabel zonder GRANT, RLS, policy of sequence-GRANT, of met anon zonder akkoord. Functies controleert de test (nog) niet.
 - Elke wijziging aan rechten krijgt een rechtentest in een teruggedraaide transactie (beheerder, HR, teamleider, medewerker, andere organisatie), zie `tests/sql/`.
 
 ## Deploy en verslag
