@@ -24,7 +24,41 @@
     }
 
     await loadOverzicht();
+    initFacturatie();
   });
+
+  // F (migratie 110): maandoverzicht uit de database (facturatie_maandoverzicht, alleen superadmin).
+  function initFacturatie() {
+    var input = document.getElementById('sa-fact-maand');
+    if (!input) return;
+    var nu = new Date();
+    input.value = nu.getFullYear() + '-' + String(nu.getMonth() + 1).padStart(2, '0');
+    input.addEventListener('change', loadFacturatie);
+    loadFacturatie();
+  }
+
+  async function loadFacturatie() {
+    var input = document.getElementById('sa-fact-maand');
+    var el = document.getElementById('sa-fact-tabel');
+    if (!input || !el || !input.value) return;
+    el.innerHTML = '<p class="no-data">Laden...</p>';
+    var res = await supabaseClient.rpc('facturatie_maandoverzicht', { p_maand: input.value + '-01' });
+    if (res.error) { el.innerHTML = '<p class="no-data">Kon het overzicht niet laden: ' + escapeHtml(res.error.message) + '</p>'; return; }
+    var F = window.WegwijzerFacturatie;
+    var rijen = res.data || [];
+    if (rijen.length === 0) { el.innerHTML = '<p class="no-data">Geen organisaties.</p>'; return; }
+    var totaal = 0;
+    el.innerHTML = '<table class="data-table"><thead><tr><th>Organisatie</th><th>Actief</th><th>Te factureren</th><th>Tarief</th><th>Bedrag</th><th>Status</th></tr></thead><tbody>' +
+      rijen.map(function (r) {
+        if (r.factureren) totaal += r.bedrag_cent;
+        var status = !r.factureren ? 'Niet factureren' : (r.vastgezet ? 'Vastgezet' : 'Lopend / berekend');
+        if (!r.tarief_ingesteld) status += ' · standaardtarief';
+        return '<tr><td>' + escapeHtml(r.organisatie) + '</td><td>' + r.aantal_actief + '</td><td>' + r.te_factureren + '</td>' +
+          '<td>' + F.euro(r.prijs_cent) + ' (' + F.contractTekst(r.contract) + ')</td><td>' + F.euro(r.bedrag_cent) + '</td>' +
+          '<td>' + escapeHtml(status) + '</td></tr>';
+      }).join('') +
+      '</tbody><tfoot><tr><th colspan="4">Totaal (alleen te factureren)</th><th>' + F.euro(totaal) + '</th><th></th></tr></tfoot></table>';
+  }
 
   function initLogout() {
     var btn = document.getElementById('logout-btn');

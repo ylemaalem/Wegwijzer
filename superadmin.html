@@ -49,6 +49,14 @@
         </div>
       </section>
 
+      <!-- Facturatie (F, migratie 110): alleen de superadmin -->
+      <section style="margin-bottom:28px">
+        <h2 class="section-title">Facturatie</h2>
+        <p class="section-subtitle">Elk account dat in de kalendermaand actief was telt mee (beheerders en accounts met alleen het dashboard niet), minimaal 15 per organisatie. Een afgelopen maand wordt op de 2e vastgezet.</p>
+        <label style="font-size:0.9rem">Maand <input type="month" id="sa-fact-maand" class="form-input" style="width:auto;display:inline-block;margin-left:6px"></label>
+        <div id="sa-fact-tabel" style="margin-top:12px;overflow-x:auto"><p class="no-data">Laden...</p></div>
+      </section>
+
       <!-- Per organisatie -->
       <section>
         <h2 class="section-title">Organisaties</h2>
@@ -67,7 +75,8 @@
   <script src="js/base-path.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=4"></script>
-  <script src="js/superadmin.js?v=2"></script>
+  <script src="js/facturatie.js?v=1"></script>
+  <script src="js/superadmin.js?v=3"></script>
 
 </body>
 </html>

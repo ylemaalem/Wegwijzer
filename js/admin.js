@@ -338,10 +338,18 @@
 
     var profsRes = await supabaseClient
       .from('profiles')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'medewerker');
-    var totaalMedewerkers = (profsRes.data || []).length;
+      .select('id, role, alleen_dashboard, einddatum')
+      .eq('tenant_id', tenantId);
+    var alleProfielen = profsRes.data || [];
+    var totaalMedewerkers = alleProfielen.filter(function (p) { return p.role === 'medewerker'; }).length;
+    // F (migratie 110): dezelfde telregel als de factuur (js/facturatie.js), einddatum niet verlopen.
+    var vandaagIso = new Date().toISOString().slice(0, 10);
+    var aantalVoorFactuur = alleProfielen.filter(function (p) {
+      return window.WegwijzerFacturatie && window.WegwijzerFacturatie.teltVoorFactuur(p) &&
+        (!p.einddatum || String(p.einddatum).slice(0, 10) >= vandaagIso);
+    }).length;
+    var tariefRes = await supabaseClient.from('facturatie_tarief').select('contract, prijs_cent, minimum, factureren, geldig_vanaf').eq('tenant_id', tenantId);
+    var tarieven = tariefRes.error ? [] : (tariefRes.data || []);
 
     var totaalVragen = convs.length;
     var uren = Math.round(totaalVragen * 6 / 60);
@@ -389,13 +397,17 @@
       }
     }
 
-    // Abonnementskosten: €15/pp/mnd, minimum 15 accounts, jaarkorting 10%
+    // Abonnementskosten (F, migratie 110): tarief uit facturatie_tarief (standaard
+    // maandcontract €19,50), minimaal 15 accounts; dezelfde bron als de factuur.
     var abonnementMetric = document.getElementById('roi-metric-abonnement');
-    if (abonnementMetric) {
-      var aantalVoorPrijs = Math.max(totaalMedewerkers, 15);
-      var maandprijs = aantalVoorPrijs * 15;
-      var jaarprijs = Math.round(aantalVoorPrijs * 15 * 12 * 0.9);
-      setText('roi-abonnement', '€' + maandprijs.toLocaleString('nl-NL') + '/mnd · €' + jaarprijs.toLocaleString('nl-NL') + '/jr (-10%)');
+    if (abonnementMetric && window.WegwijzerFacturatie) {
+      var F = window.WegwijzerFacturatie;
+      var tarief = F.geldendTarief(tarieven, vandaagIso);
+      var sch = F.schatting(aantalVoorFactuur, tarief);
+      setText('roi-abonnement', F.euro(sch.bedragCent) + '/mnd (' + sch.teFactureren + ' accounts)');
+      var noot = document.getElementById('roi-noot-abonnement');
+      if (noot) noot.textContent = 'Abonnement: ' + F.euro(tarief.prijs_cent) + ' per account per maand (' + F.contractTekst(tarief.contract) +
+        '), minimaal ' + tarief.minimum + ' accounts. Schatting op basis van de accounts van vandaag; de factuur telt elk account dat in de maand actief was.';
     }
   }
 

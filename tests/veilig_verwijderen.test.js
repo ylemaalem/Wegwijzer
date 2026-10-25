@@ -62,5 +62,5 @@ test('D4: verwijderverzoek via verwijderAccount in de stand avg, zonder eigen de
   assert.doesNotMatch(blok, /anoniem/i);
   // Bij avg geen keuze "alleen chattoegang uit".
   assert.match(s, /r\.keuze_nodig && modus === 'avg'[\s\S]{0,300}'ook_leidinggevende'/);
-  assert.match(bron('admin.html'), /js\/admin\.js\?v=128/);
+  assert.ok(Number((bron('admin.html').match(/js\/admin\.js\?v=(\d+)/) || [])[1]) >= 128, 'admin.js minstens v=128');
 });
