@@ -3571,7 +3571,10 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
               // het eerste — voor weergave bij teamleider).
               const teamVoorMelding = userTeams[0] || null;
 
-              const { data: bestaandeMelding } = await supabaseAdmin.from("meldingen").select("id").eq("tenant_id", profile.tenant_id).eq("type", "patroon_" + onderwerp).gte("created_at", weekStart.toISOString()).limit(1);
+              // H2: hoogstens één melding per team, per onderwerp en per week (voorheen per organisatie).
+              let bestaandQuery = supabaseAdmin.from("meldingen").select("id").eq("tenant_id", profile.tenant_id).eq("type", "patroon_" + onderwerp).gte("created_at", weekStart.toISOString());
+              bestaandQuery = teamVoorMelding ? bestaandQuery.eq("team", teamVoorMelding) : bestaandQuery.is("team", null);
+              const { data: bestaandeMelding } = await bestaandQuery.limit(1);
               if (!bestaandeMelding || bestaandeMelding.length === 0) {
                 await supabaseAdmin.from("meldingen").insert({
                   tenant_id: profile.tenant_id,

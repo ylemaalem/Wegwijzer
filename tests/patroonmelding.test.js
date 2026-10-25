@@ -45,3 +45,11 @@ test('chat/index.ts gebruikt de module, geen includes() op de oude lijst', () =>
   assert.match(s, /const gevondenOnderwerpen = zorgwekkendeOnderwerpen\(vraag\);/);
   assert.match(s, /if \(isZorgwekkend\(conv\.vraag\)\) zorgCount\+\+;/);
 });
+
+test('H2: bestaande melding wordt per team gezocht', () => {
+  const s = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
+  assert.match(s, /bestaandQuery = teamVoorMelding \? bestaandQuery\.eq\("team", teamVoorMelding\) : bestaandQuery\.is\("team", null\);/);
+  const i = s.indexOf('const teamVoorMelding = userTeams[0] || null;');
+  const j = s.indexOf('let bestaandQuery');
+  assert.ok(i > 0 && i < j, 'team bepaald vóór de controle');
+});
