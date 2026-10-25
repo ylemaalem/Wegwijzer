@@ -59,3 +59,32 @@ test('D2: alleen dashboard zichtbaar in het label en als vlag', () => {
   assert.equal(s.profiel, undefined);
   assert.equal(leidinggevendeStatus({ email: 'x@example.nl' }, p).alleenDashboard, false);
 });
+
+// ---- Verwijderkeuzes (a)/(b) en alleen-dashboard buiten de lijst Medewerkers (2026-10-25) ----
+test('verwijderKeuzes: per status de juiste knoppen, (a) en (b) gelijk aan Medewerkers', () => {
+  const { leidinggevendeStatus: st, verwijderKeuzes, verwijderKeuzesMedewerker } = require('../js/leidinggevende-status.js');
+  const keys = (s) => verwijderKeuzes(s).map((k) => k.key);
+  const p = (extra) => [{ id: 'p1', email: 'a@x.nl', role: 'teamleider', laatste_actief: '2026-10-01', ...extra }];
+  assert.deepEqual(keys(st({ email: 'a@x.nl' }, [])), ['rij'], 'geen account');
+  assert.deepEqual(keys(st({ email: '' }, [])), ['rij'], 'geen e-mail');
+  assert.deepEqual(keys(st({ email: 'a@x.nl' }, p())), ['chattoegang_uit', 'ook_leidinggevende', 'rij']);
+  assert.deepEqual(keys(st({ email: 'a@x.nl' }, p({ alleen_dashboard: true }))), ['ook_leidinggevende', 'rij'], 'alleen dashboard: (a) is al zo');
+  assert.deepEqual(keys(st({ email: 'a@x.nl' }, p({ role: 'medewerker' }))), ['ook_leidinggevende', 'rij']);
+  assert.deepEqual(keys(st({ email: 'a@x.nl' }, p({ role: 'admin' }))), ['rij'], 'beheerder nooit via hier verwijderen');
+  assert.equal(st({ email: 'a@x.nl' }, p()).profielId, 'p1');
+  assert.deepEqual(verwijderKeuzesMedewerker().map((k) => k.key), ['chattoegang_uit', 'ook_leidinggevende']);
+  for (const k of verwijderKeuzes(st({ email: 'a@x.nl' }, p()))) assert.ok(k.titel && k.uitleg, k.key);
+  assert.match(verwijderKeuzesMedewerker()[0].titel, /^\(a\)/);
+  assert.match(verwijderKeuzesMedewerker()[1].titel, /^\(b\)/);
+});
+
+test('admin.js: alleen-dashboard niet in Medewerkers; Leidinggevende/HR verwijdert via (a)/(b) of alleen de rij', () => {
+  const s = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'js', 'admin.js'), 'utf8');
+  assert.match(s, /var zichtbaar = result\.data\.filter\(function \(p\) \{ return p\.alleen_dashboard !== true; \}\);/);
+  assert.match(s, /var sorted = zichtbaar\.slice\(\)/);
+  assert.match(s, /verwijderAccount\(wegSt\.profielId, 'uit_dienst', keuze\)/);
+  assert.match(s, /\.select\('id, email, role, eerste_login_op, laatste_actief, alleen_dashboard'\)/);
+  assert.doesNotMatch(s, /Annuleren = een andere keuze/);
+  const h = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'admin.html'), 'utf8');
+  assert.match(h, /id="modal-verwijder-keuze"/);
+});

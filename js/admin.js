@@ -3213,7 +3213,7 @@
     try {
     var result = await supabaseClient
       .from('profiles')
-      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op, created_at')
+      .select('id, naam, email, role, functiegroep, startdatum, user_id, inwerktraject_url, werkuren, afdeling, account_type, einddatum, teams, teamleider_naam, inwerken_afgerond, eerste_login_op, created_at, alleen_dashboard')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
@@ -3237,13 +3237,17 @@
     updateTeamFilter();
     if (allConversations.length > 0) renderGesprekken();
 
-    if (result.data.length === 0) {
+    // Accounts met alleen het dashboard staan bij Leidinggevende/HR (label 'alleen dashboard'),
+    // niet in deze lijst. allProfiles blijft compleet (namen bij gesprekken, teamfilter).
+    var zichtbaar = result.data.filter(function (p) { return p.alleen_dashboard !== true; });
+
+    if (zichtbaar.length === 0) {
       tbody.innerHTML = '<tr><td colspan="10" class="no-data">Nog geen medewerkers.</td></tr>';
       return;
     }
 
     var now = new Date();
-    var sorted = result.data.slice().sort(function (a, b) {
+    var sorted = zichtbaar.slice().sort(function (a, b) {
       var aExpired = a.einddatum && new Date(a.einddatum) < now;
       var bExpired = b.einddatum && new Date(b.einddatum) < now;
       if (aExpired && !bExpired) return 1;
@@ -3393,26 +3397,52 @@
     return await resp.json();
   }
 
+  // Venster met een knop per keuze ([{ key, titel, uitleg }], zie leidinggevende-status.js).
+  // Geeft de gekozen key terug, of null bij Annuleren.
+  function kiesVerwijderKeuze(titel, tekst, keuzes) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('modal-verwijder-keuze');
+      var opties = document.getElementById('verwijder-keuze-opties');
+      var annuleer = document.getElementById('verwijder-keuze-annuleren');
+      if (!modal || !opties || !annuleer) { resolve(null); return; }
+      document.getElementById('verwijder-keuze-titel').textContent = titel;
+      document.getElementById('verwijder-keuze-tekst').textContent = tekst;
+      opties.innerHTML = '';
+      function klaar(key) { modal.classList.remove('show'); annuleer.onclick = null; resolve(key); }
+      keuzes.forEach(function (k) {
+        var knop = document.createElement('button');
+        knop.type = 'button';
+        knop.className = 'btn btn-secondary';
+        knop.style.cssText = 'text-align:left;white-space:normal;height:auto;padding:10px 12px;display:block;width:100%' +
+          (k.key === 'ook_leidinggevende' ? ';color:#B42318;border-color:#B42318' : '');
+        var t = document.createElement('strong'); t.textContent = k.titel;
+        var u = document.createElement('div'); u.textContent = k.uitleg; u.style.cssText = 'font-size:0.8rem;font-weight:400;margin-top:2px';
+        knop.appendChild(t); knop.appendChild(u);
+        knop.onclick = function () { klaar(k.key); };
+        opties.appendChild(knop);
+      });
+      annuleer.onclick = function () { klaar(null); };
+      modal.classList.add('show');
+    });
+  }
+
   // Geeft true terug als het account (of de chattoegang) is aangepast.
   // Bij modus 'avg' (verwijderverzoek) is er geen keuze: account én leidinggevende weg.
-  async function verwijderAccount(profileId, modus) {
+  // keuzeVooraf: (a) 'chattoegang_uit' of (b) 'ook_leidinggevende', al gekozen bij Leidinggevende/HR.
+  async function verwijderAccount(profileId, modus, keuzeVooraf) {
     var r;
     try {
-      r = await roepVerwijderAan(profileId, modus, null);
+      r = await roepVerwijderAan(profileId, modus, keuzeVooraf || null);
       if (r && r.keuze_nodig && modus === 'avg') {
         if (!confirm((r.naam || 'Deze persoon') + ' staat ook bij Leidinggevende/HR. Bij een verwijderverzoek wordt die rij ook verwijderd. Doorgaan?')) return false;
         r = await roepVerwijderAan(profileId, modus, 'ook_leidinggevende');
       } else if (r && r.keuze_nodig) {
         var rolNaam = { teamleider: 'leidinggevende', manager: 'manager', hr: 'HR-medewerker' }[r.leidinggevende_rol] || 'leidinggevende';
-        var alleenChat = confirm((r.naam || 'Deze persoon') + ' is ook ' + rolNaam + '.\n\n' +
-          'OK = alleen de chattoegang uitzetten (aanbevolen): het account en het dashboard blijven.\n' +
-          'Annuleren = een andere keuze.');
-        if (alleenChat) {
-          r = await roepVerwijderAan(profileId, modus, 'chattoegang_uit');
-        } else {
-          if (!confirm('Account én leidinggevende verwijderen?\nDe persoon kan daarna niet meer inloggen en staat niet meer bij Leidinggevende/HR.')) return false;
-          r = await roepVerwijderAan(profileId, modus, 'ook_leidinggevende');
-        }
+        var keuze = await kiesVerwijderKeuze('Verwijderen: kies (a) of (b)',
+          (r.naam || 'Deze persoon') + ' is ook ' + rolNaam + '. Wat wil je doen?',
+          window.WegwijzerLeidinggevende.verwijderKeuzesMedewerker());
+        if (!keuze) return false;
+        r = await roepVerwijderAan(profileId, modus, keuze);
       }
     } catch (err) {
       console.error('[Delete] Exception:', err);
@@ -3420,7 +3450,7 @@
       return false;
     }
     if (r && r.chattoegang_uit) {
-      alert('De chattoegang is uitgezet. Het account en het dashboard blijven bestaan.');
+      alert('De chattoegang is uitgezet. Het account en het dashboard blijven bestaan.\nHet account staat nu bij Leidinggevende/HR met het label "alleen dashboard".');
       return true;
     }
     if (!r || !r.deleted) {
@@ -5169,7 +5199,7 @@
     var accountProfielen = null;
     var profielRes = await supabaseClient
       .from('profiles')
-      .select('email, role, eerste_login_op, laatste_actief, alleen_dashboard')
+      .select('id, email, role, eerste_login_op, laatste_actief, alleen_dashboard')
       .eq('tenant_id', tenantId);
     if (!profielRes.error && profielRes.data) accountProfielen = profielRes.data;
     leidinggevendeProfielen = accountProfielen || [];
@@ -5598,13 +5628,22 @@
 
   // Na het verwijderen zet de database het profiel met dat e-mailadres terug naar
   // 'medewerker' (nooit een admin) en schrijft dat in het auditlog (migratie 096).
+  // Accounts met alleen het dashboard staan niet bij Medewerkers; daarom kan hier ook het
+  // account weg: (a) chattoegang uit, (b) account én leidinggevende verwijderen, of alleen
+  // de rij weghalen (het account wordt dan een medewerkersaccount met kennisassistent).
   window.deleteTeamleider = async function (id) {
-    if (!confirm('Weet je zeker dat je deze leidinggevende wilt verwijderen?\nHeeft deze persoon een account, dan wordt dat weer een gewoon medewerkersaccount zonder dashboard.')) return;
-    // D2: een account met alleen het dashboard krijgt dan de kennisassistent.
     var weg = allTeamleiders.find(function (t) { return t.id === id; });
-    if (weg && weg.email && window.WegwijzerLeidinggevende) {
-      var wegSt = window.WegwijzerLeidinggevende.leidinggevendeStatus(weg, leidinggevendeProfielen);
-      if (wegSt.alleenDashboard && !confirm(weg.email + ' heeft nu alleen het dashboard.\nNa verwijderen wordt het een gewoon medewerkersaccount mét kennisassistent.\nWil je dat niet, verwijder dan het account bij Medewerkers.\n\nToch doorgaan?')) return;
+    var wegSt = weg && window.WegwijzerLeidinggevende
+      ? window.WegwijzerLeidinggevende.leidinggevendeStatus(weg, leidinggevendeProfielen) : null;
+    var keuze = await kiesVerwijderKeuze('Verwijderen: ' + ((weg && weg.naam) || 'leidinggevende'),
+      (wegSt ? 'Status: ' + wegSt.label + '. ' : '') + 'Wat wil je doen?',
+      window.WegwijzerLeidinggevende.verwijderKeuzes(wegSt));
+    if (!keuze) return;
+    if (keuze !== 'rij') {
+      if (!(await verwijderAccount(wegSt.profielId, 'uit_dienst', keuze))) return;
+      loadTeamleiders();
+      loadMedewerkers();
+      return;
     }
 
     var res = await supabaseClient

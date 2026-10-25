@@ -1433,6 +1433,18 @@
       </div>
     </div>
 
+    <!-- ========== MODAL: VERWIJDERKEUZE (a)/(b) ========== -->
+    <div class="modal-overlay" id="modal-verwijder-keuze" role="dialog" aria-modal="true" aria-labelledby="verwijder-keuze-titel">
+      <div class="modal">
+        <h3 class="modal-title" id="verwijder-keuze-titel">Verwijderen</h3>
+        <p id="verwijder-keuze-tekst" style="margin:0 0 12px;font-size:0.9rem"></p>
+        <div id="verwijder-keuze-opties" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="verwijder-keuze-annuleren">Annuleren</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ========== MODAL: TEAMLEIDER TOEVOEGEN/BEWERKEN ========== -->
     <div class="modal-overlay" id="modal-teamleider">
       <div class="modal">
@@ -1522,9 +1534,9 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/route-guard.js?v=4"></script>
   <script src="js/medewerker-opslaan.js?v=1"></script>
-  <script src="js/leidinggevende-status.js?v=2"></script>
+  <script src="js/leidinggevende-status.js?v=3"></script>
   <script src="js/facturatie.js?v=1"></script>
-  <script src="js/admin.js?v=129"></script>
+  <script src="js/admin.js?v=130"></script>
 
 </body>
 </html>

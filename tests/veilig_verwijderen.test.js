@@ -36,8 +36,13 @@ test('admin: verwijderen via verwijderAccount, standaard chattoegang uit bij een
   const s = bron('js/admin.js');
   assert.match(s, /window\.deleteMedewerker = async function \(profileId\) \{/);
   assert.match(s, /verwijderAccount\(profileId, 'uit_dienst'\)/);
-  assert.match(s, /OK = alleen de chattoegang uitzetten \(aanbevolen\)/);
-  assert.match(s, /roepVerwijderAan\(profileId, modus, 'chattoegang_uit'\)/);
+  // Keuzevenster (a)/(b) in plaats van OK/Annuleren (2026-10-25); (a) blijft de aanbevolen keuze.
+  assert.match(s, /window\.WegwijzerLeidinggevende\.verwijderKeuzesMedewerker\(\)/);
+  assert.match(s, /roepVerwijderAan\(profileId, modus, keuze\)/);
+  const k = require('../js/leidinggevende-status.js').verwijderKeuzesMedewerker();
+  assert.equal(k[0].key, 'chattoegang_uit');
+  assert.match(k[0].titel, /^\(a\) Alleen de chattoegang uitzetten \(aanbevolen\)/);
+  assert.equal(k[1].key, 'ook_leidinggevende');
   assert.doesNotMatch(s, /logAudit\('MEDEWERKER_VERWIJDERD'/, 'de database schrijft de auditregel');
   assert.match(s, /'Verwijderd account'/);
   // Geen belofte "anoniem" in de teksten bij verwijderen.

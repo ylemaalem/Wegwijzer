@@ -114,12 +114,86 @@ test('Beheer: geen waarschuwing als iedereen met de rol een rij heeft', async ()
   } finally { a.stop(); }
 });
 
+// Verwijdervenster met knoppen (2026-10-25): (a) chattoegang uit, (b) account én
+// leidinggevende weg, of alleen de rij. Accounts met alleen het dashboard staan niet
+// meer bij Medewerkers, dus hier moet ook het account weg kunnen.
+const MET_MODULE = ['js/medewerker-opslaan.js', 'js/leidinggevende-status.js', 'js/admin.js'];
+const TL_TABELLEN = (extra) => ({
+  teamleiders: [{ id: 'tl1', naam: 'Tl Een', email: 'tl@x.nl', rol: 'teamleider', teams: ['A'] }],
+  profiles: [{ id: 'p1', email: 'tl@x.nl', role: 'teamleider', laatste_actief: '2026-10-01', ...extra }],
+});
+const knoppen = (a) => a.elementen['verwijder-keuze-opties'].kinderen;
+const knopTitels = (a) => knoppen(a).map((k) => k.kinderen[0].textContent);
+
 test('Beheer: verwijderen mislukt → melding', async () => {
-  const a = laadAdmin({ confirm: true, dbFouten: { 'teamleiders:delete': { message: 'geen rechten' } } });
+  const a = laadAdmin({ bestanden: MET_MODULE, tabellen: TL_TABELLEN(), dbFouten: { 'teamleiders:delete': { message: 'geen rechten' } } });
   try {
     await a.start();
-    await a.ctx.deleteTeamleider('tl1');
+    const bezig = a.ctx.deleteTeamleider('tl1');
+    await a.wacht();
+    assert.ok(a.elementen['modal-verwijder-keuze'].classList.contains('show'), 'venster open');
+    const rij = knoppen(a)[knoppen(a).length - 1];
+    assert.match(rij.kinderen[1].textContent, /gewoon medewerkersaccount/);
+    rij.onclick();
+    await bezig;
     assert.match(a.meldingen.alert[0], /^Verwijderen mislukt: geen rechten/);
-    assert.match(a.meldingen.confirm[0], /gewoon medewerkersaccount/);
+  } finally { a.stop(); }
+});
+
+test('Beheer: Leidinggevende/HR met alleen dashboard: (b) en "alleen uit de lijst", geen (a)', async () => {
+  const verzoeken = [];
+  const fetch = async (url, init) => { verzoeken.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ deleted: true }) }; };
+  const a = laadAdmin({ bestanden: MET_MODULE, tabellen: TL_TABELLEN({ alleen_dashboard: true }), fetch });
+  try {
+    await a.start();
+    const bezig = a.ctx.deleteTeamleider('tl1');
+    await a.wacht();
+    assert.deepEqual(knopTitels(a), ['(b) Account én leidinggevende verwijderen', 'Alleen uit de lijst Leidinggevende/HR halen']);
+    knoppen(a)[0].onclick();
+    await bezig;
+    const v = verzoeken.find((x) => /verwijder-gebruiker/.test(x.url));
+    assert.deepEqual(v.body, { profile_id: 'p1', modus: 'uit_dienst', leidinggevende: 'ook_leidinggevende' });
+    assert.equal(a.supabase.log.filter((q) => q.tabel === 'teamleiders' && q.acties.includes('delete')).length, 0, 'rij weg via de database-functie, niet vanuit de browser');
+  } finally { a.stop(); }
+});
+
+test('Beheer: Leidinggevende/HR met chat: (a) zet de chattoegang uit; Annuleren doet niets', async () => {
+  const verzoeken = [];
+  const fetch = async (url, init) => { verzoeken.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ deleted: false, chattoegang_uit: true }) }; };
+  const a = laadAdmin({ bestanden: MET_MODULE, tabellen: TL_TABELLEN(), fetch });
+  try {
+    await a.start();
+    let bezig = a.ctx.deleteTeamleider('tl1');
+    await a.wacht();
+    assert.equal(knopTitels(a)[0], '(a) Alleen de chattoegang uitzetten (aanbevolen)');
+    a.elementen['verwijder-keuze-annuleren'].onclick();
+    await bezig;
+    assert.equal(verzoeken.length, 0, 'Annuleren: geen verzoek');
+    bezig = a.ctx.deleteTeamleider('tl1');
+    await a.wacht();
+    knoppen(a)[knoppen(a).length - 3].onclick();
+    await bezig;
+    assert.equal(verzoeken[0].leidinggevende, 'chattoegang_uit');
+    assert.match(a.meldingen.alert[0], /alleen dashboard/);
+  } finally { a.stop(); }
+});
+
+test('Beheer: Medewerkers, leidinggevende: venster met (a) en (b), keuze gaat naar de server', async () => {
+  const verzoeken = [];
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body); verzoeken.push(body);
+    const json = body.leidinggevende ? { deleted: true } : { keuze_nodig: true, leidinggevende_rol: 'hr', naam: 'Tl Een' };
+    return { ok: true, status: 200, json: async () => json };
+  };
+  const a = laadAdmin({ bestanden: MET_MODULE, tabellen: TL_TABELLEN(), fetch });
+  try {
+    await a.start();
+    const bezig = a.ctx.verwijderAccount('p1', 'uit_dienst');
+    await a.wacht();
+    assert.deepEqual(knopTitels(a), ['(a) Alleen de chattoegang uitzetten (aanbevolen)', '(b) Account én leidinggevende verwijderen']);
+    assert.match(a.elementen['verwijder-keuze-tekst'].textContent, /HR-medewerker/);
+    knoppen(a)[1].onclick();
+    assert.equal(await bezig, true);
+    assert.equal(verzoeken[1].leidinggevende, 'ook_leidinggevende');
   } finally { a.stop(); }
 });

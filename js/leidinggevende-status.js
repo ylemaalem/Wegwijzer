@@ -22,8 +22,34 @@
     var s = basisStatus(rij, profielen);
     s.alleenDashboard = !!(s.profiel && s.profiel.alleen_dashboard === true);
     if (s.alleenDashboard && s.code !== 'rol_medewerker') s.label += ' · alleen dashboard';
+    s.profielId = (s.profiel && s.profiel.id) || null;
     delete s.profiel;
     return s;
+  }
+
+  // Keuzes in het verwijdervenster van het tabblad Leidinggevende/HR (2026-10-25).
+  // (a) en (b) zijn dezelfde keuzes als bij Medewerkers; 'rij' haalt alleen de rij weg.
+  // Geeft [{ key, titel, uitleg }] terug, in de volgorde van het venster.
+  var KEUZE_A = { key: 'chattoegang_uit', titel: '(a) Alleen de chattoegang uitzetten (aanbevolen)',
+    uitleg: 'Het account en het dashboard blijven. De persoon kan de kennisassistent niet meer gebruiken.' };
+  var KEUZE_B = { key: 'ook_leidinggevende', titel: '(b) Account én leidinggevende verwijderen',
+    uitleg: 'De persoon kan niet meer inloggen en staat niet meer bij Leidinggevende/HR. Gesprekken blijven zonder naam bewaard; de tekst wordt na 12 maanden gewist.' };
+
+  function verwijderKeuzes(status) {
+    var code = status && status.code;
+    if (!status || !status.profielId || code === 'geen_email' || code === 'geen_account') {
+      return [{ key: 'rij', titel: 'Uit de lijst Leidinggevende/HR halen', uitleg: 'Er is geen inlogaccount; alleen deze rij wordt verwijderd.' }];
+    }
+    var rijMetAccount = { key: 'rij', titel: 'Alleen uit de lijst Leidinggevende/HR halen',
+      uitleg: 'Het account blijft, maar wordt een gewoon medewerkersaccount mét kennisassistent en zonder dashboard.' };
+    if (code === 'beheerder') return [rijMetAccount];
+    if (code === 'rol_medewerker') return [KEUZE_B, rijMetAccount];
+    return status.alleenDashboard ? [KEUZE_B, rijMetAccount] : [KEUZE_A, KEUZE_B, rijMetAccount];
+  }
+
+  // Zelfde (a) en (b) voor het venster bij Medewerkers.
+  function verwijderKeuzesMedewerker() {
+    return [KEUZE_A, KEUZE_B];
   }
 
   function basisStatus(rij, profielen) {
@@ -52,7 +78,7 @@
       knopTitel: 'Uitnodiging opnieuw sturen', profiel: p };
   }
 
-  var api = { leidinggevendeStatus: leidinggevendeStatus };
+  var api = { leidinggevendeStatus: leidinggevendeStatus, verwijderKeuzes: verwijderKeuzes, verwijderKeuzesMedewerker: verwijderKeuzesMedewerker };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.WegwijzerLeidinggevende = api;
 })(typeof window !== 'undefined' ? window : globalThis);
