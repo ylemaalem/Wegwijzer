@@ -9,7 +9,7 @@ import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag
 import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
-import { isZorgwekkend, zorgwekkendeOnderwerpen } from "../_shared/patroonmelding.ts";
+import { MIN_ACTIEVE_MEDEWERKERS, kiesGroep, meldingNodig, weekBeginNl, zorgwekkendeOnderwerpen, type DrempelProfiel } from "../_shared/patroonmelding.ts";
 import { ALLEEN_DASHBOARD_MELDING, accountVerlopen, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -3539,67 +3539,58 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     ];
     const vraagtBron = BRON_TRIGGERS.some(t => vraagLower.includes(t));
 
+    // H3 (voorstel A, akkoord Younes 2026-10-25): wie meetelt, de groep, de drempel en de
+    // week staan in _shared/patroonmelding.ts. Push volgens de rijen in teamleiders.
     if (!isTest && gevondenOnderwerpen.length > 0) {
-      const weekStart = new Date();
-      const dag = weekStart.getDay();
-      const offset = dag === 0 ? 6 : dag - 1;
-      weekStart.setDate(weekStart.getDate() - offset);
-      weekStart.setHours(0, 0, 0, 0);
-
+      const weekStart = weekBeginNl();
       const userTeams: string[] = profile.teams || [];
-      if (userTeams.length > 0) {
-        const { data: teamProfiles } = await supabaseAdmin.from("profiles").select("id").eq("tenant_id", profile.tenant_id).overlaps("teams", userTeams);
-        // MINIMUMDREMPEL: alleen melding genereren als het team minimaal 5
-        // actieve medewerkers heeft. Bij kleinere teams is identiteit
-        // feitelijk niet anoniem ook zonder naam-ontsluiting.
-        const MIN_ACTIEVE_MEDEWERKERS = 5;
-        if (teamProfiles && teamProfiles.length >= MIN_ACTIEVE_MEDEWERKERS) {
-          const teamProfileIds = teamProfiles.map((p: { id: string }) => p.id);
-          const { data: weekConvs } = await supabaseAdmin.from("conversations").select("vraag").in("user_id", teamProfileIds).gte("created_at", weekStart.toISOString());
-          if (weekConvs) {
-            let zorgCount = 0;
-            for (const conv of weekConvs) {
-              if (isZorgwekkend(conv.vraag)) zorgCount++;
-            }
-            zorgCount++;
-            if (zorgCount >= 3) {
-              // Eerste gevonden onderwerp, volgorde agressie, crisissituaties, suïcidaliteit (als voorheen).
-              const onderwerp = gevondenOnderwerpen[0];
-
-              // Team voor melding = eerste team van de medewerker (meestal
-              // zit elke medewerker in één team; bij meerdere kiezen we
-              // het eerste — voor weergave bij teamleider).
-              const teamVoorMelding = userTeams[0] || null;
-
-              // H2: hoogstens één melding per team, per onderwerp en per week (voorheen per organisatie).
-              let bestaandQuery = supabaseAdmin.from("meldingen").select("id").eq("tenant_id", profile.tenant_id).eq("type", "patroon_" + onderwerp).gte("created_at", weekStart.toISOString());
-              bestaandQuery = teamVoorMelding ? bestaandQuery.eq("team", teamVoorMelding) : bestaandQuery.is("team", null);
-              const { data: bestaandeMelding } = await bestaandQuery.limit(1);
-              if (!bestaandeMelding || bestaandeMelding.length === 0) {
-                await supabaseAdmin.from("meldingen").insert({
-                  tenant_id: profile.tenant_id,
-                  type: "patroon_" + onderwerp,
-                  bericht: `Er zijn deze week meerdere vragen gesteld over ${onderwerp} in jouw team. Overweeg dit te bespreken in het teamoverleg.`,
-                  team: teamVoorMelding,
-                  medewerker_profile_id: profile.id,
-                });
-
-                // Push naar teamleiders van het betreffende team
-                if (teamVoorMelding) {
-                  const { data: tlProfiles } = await supabaseAdmin.from("profiles")
-                    .select("user_id").eq("tenant_id", profile.tenant_id).eq("role", "teamleider")
-                    .contains("teams", [teamVoorMelding]);
-                  const tlIds = (tlProfiles || []).map((p: { user_id: string }) => p.user_id);
+      const teamVoorMelding = userTeams[0] || null;
+      if (teamVoorMelding) {
+        const { data: tlRijen } = await supabaseAdmin.from("teamleiders")
+          .select("email, teams").eq("tenant_id", profile.tenant_id).eq("rol", "teamleider");
+        const rijen = (tlRijen || []) as Array<{ email: string | null; teams: string[] | null }>;
+        const { data: kandidaten } = await supabaseAdmin.from("profiles")
+          .select("id, role, alleen_dashboard, teams, eerste_login_op, laatste_actief, einddatum")
+          .eq("tenant_id", profile.tenant_id).eq("role", "medewerker");
+        const groep = kiesGroep(teamVoorMelding, rijen.map((r) => r.teams), (kandidaten || []) as DrempelProfiel[], profile.id);
+        if (!groep) {
+          console.log("[Patroonherkenning] Groep te klein voor een melding (minder dan", MIN_ACTIEVE_MEDEWERKERS, "actieve medewerkers)");
+        } else {
+          const { data: weekConvs } = await supabaseAdmin.from("conversations").select("user_id, vraag")
+            .in("user_id", groep.leden).gte("created_at", weekStart.toISOString());
+          if (weekConvs && meldingNodig(weekConvs as Array<{ user_id: string | null; vraag: string | null }>, profile.id)) {
+            // Eerste gevonden onderwerp, volgorde agressie, crisissituaties, suïcidaliteit (als voorheen).
+            const onderwerp = gevondenOnderwerpen[0];
+            // H2/H3: hoogstens één melding per groep (team, of de samengevoegde teams), per onderwerp en per week.
+            const { data: bestaandeMelding } = await supabaseAdmin.from("meldingen").select("id")
+              .eq("tenant_id", profile.tenant_id).eq("type", "patroon_" + onderwerp)
+              .in("team", groep.teams).gte("created_at", weekStart.toISOString()).limit(1);
+            if (!bestaandeMelding || bestaandeMelding.length === 0) {
+              const waar = groep.samengevoegd ? "in jouw teams" : "in jouw team";
+              await supabaseAdmin.from("meldingen").insert({
+                tenant_id: profile.tenant_id,
+                type: "patroon_" + onderwerp,
+                bericht: `Er zijn deze week meerdere vragen gesteld over ${onderwerp} ${waar}. Overweeg dit te bespreken in het teamoverleg.`,
+                team: teamVoorMelding,
+                medewerker_profile_id: profile.id,
+              });
+              // Push naar de leidinggevenden met dit team in hun rij in teamleiders.
+              const adressen = new Set(rijen.filter((r) => Array.isArray(r.teams) && r.teams.includes(teamVoorMelding) && r.email)
+                .map((r) => String(r.email).trim().toLowerCase()));
+              if (adressen.size > 0) {
+                const { data: tlProfiles } = await supabaseAdmin.from("profiles")
+                  .select("user_id, email").eq("tenant_id", profile.tenant_id).eq("role", "teamleider");
+                const tlIds = ((tlProfiles || []) as Array<{ user_id: string; email: string | null }>)
+                  .filter((p) => adressen.has(String(p.email || "").trim().toLowerCase())).map((p) => p.user_id);
+                if (tlIds.length > 0) {
                   pushNaarGebruikers(supabaseAdmin, tlIds, profile.tenant_id,
-                    { title: "Wegwijzer — Patroonmelding", body: `Er zijn meerdere vragen over ${onderwerp} in jouw team.`, url: "/teamleider.html" },
+                    { title: "Wegwijzer — Patroonmelding", body: `Er zijn meerdere vragen over ${onderwerp} ${waar}.`, url: "/teamleider.html" },
                     "patroon_melding"
                   );
                 }
               }
             }
           }
-        } else {
-          console.log("[Patroonherkenning] Team te klein voor melding:", teamProfiles?.length || 0, "<", MIN_ACTIEVE_MEDEWERKERS);
         }
       }
     }
