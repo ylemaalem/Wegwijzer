@@ -3382,11 +3382,15 @@
   }
 
   // Geeft true terug als het account (of de chattoegang) is aangepast.
+  // Bij modus 'avg' (verwijderverzoek) is er geen keuze: account én leidinggevende weg.
   async function verwijderAccount(profileId, modus) {
     var r;
     try {
       r = await roepVerwijderAan(profileId, modus, null);
-      if (r && r.keuze_nodig) {
+      if (r && r.keuze_nodig && modus === 'avg') {
+        if (!confirm((r.naam || 'Deze persoon') + ' staat ook bij Leidinggevende/HR. Bij een verwijderverzoek wordt die rij ook verwijderd. Doorgaan?')) return false;
+        r = await roepVerwijderAan(profileId, modus, 'ook_leidinggevende');
+      } else if (r && r.keuze_nodig) {
         var rolNaam = { teamleider: 'leidinggevende', manager: 'manager', hr: 'HR-medewerker' }[r.leidinggevende_rol] || 'leidinggevende';
         var alleenChat = confirm((r.naam || 'Deze persoon') + ' is ook ' + rolNaam + '.\n\n' +
           'OK = alleen de chattoegang uitzetten (aanbevolen): het account en het dashboard blijven.\n' +
@@ -7050,20 +7054,40 @@
     URL.revokeObjectURL(url);
   };
 
+  // D4 (migratie 109): AVG-verwijderverzoek via dezelfde serverroute als verwijderen
+  // (verwijder_account, modus 'avg'): inlogaccount en profiel weg, vraag- en antwoordtekst
+  // direct gewist ('[verwijderd]'); alleen datum, organisatie, duimpje en zoekmethode blijven.
+  // De database schrijft de auditregel ACCOUNT_VERWIJDERD_AVG (zonder naam of e-mailadres).
   window.handlePrivacyVerwijdering = async function (id, email) {
-    if (!confirm('WAARSCHUWING: Alle data van ' + email + ' wordt permanent verwijderd. Dit kan niet ongedaan worden gemaakt. Doorgaan?')) return;
+    if (!confirm('Verwijderverzoek van ' + email + '.\n\n' +
+      'Het account wordt verwijderd en de tekst van alle vragen en antwoorden wordt direct gewist. ' +
+      'Alleen datum, duimpje en zoekmethode blijven, zonder koppeling aan de persoon.\n' +
+      'Dit kan niet ongedaan worden gemaakt. Doorgaan?')) return;
 
-    var profResult = await supabaseClient.from('profiles').select('id').eq('email', email).single();
-    if (profResult.data) {
-      // Verwijder gesprekken
-      await supabaseClient.from('conversations').delete().eq('user_id', profResult.data.id);
-      // Verwijder profiel
-      await supabaseClient.from('profiles').delete().eq('id', profResult.data.id);
+    var doel = String(email || '').trim().toLowerCase();
+    var profResult = await supabaseClient.from('profiles').select('id, email').eq('tenant_id', tenantId);
+    if (profResult.error) { alert('Profiel kon niet worden gezocht: ' + profResult.error.message + '. Er is niets verwijderd.'); return; }
+    var profiel = (profResult.data || []).find(function (p) { return String(p.email || '').trim().toLowerCase() === doel; });
+    if (profiel) {
+      if (!(await verwijderAccount(profiel.id, 'avg'))) return;
+    } else if (!confirm('Er is geen account met dit e-mailadres in jouw organisatie. Er is niets verwijderd.\nHet verzoek toch als afgehandeld markeren?')) {
+      return;
     }
 
-    // Update status
-    await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('id', id);
-    alert('Data van ' + email + ' is verwijderd.');
+    var upd = await supabaseClient.from('privacy_verzoeken').update({ status: 'afgehandeld' }).eq('id', id);
+    if (upd.error) alert('Gegevens verwijderd, maar de status van het verzoek is niet bijgewerkt: ' + upd.error.message);
+    try {
+      var session = await supabaseClient.auth.getSession();
+      await fetch(SUPABASE_URL + '/functions/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.data.session.access_token },
+        body: JSON.stringify({ privacy_audit: true, verzoek_id: id, actie: 'afgehandeld',
+          details: { type: 'verwijdering', account_gevonden: !!profiel, afgehandeld_door: currentUserEmail } })
+      });
+    } catch (e) {
+      console.warn('[Privacy] Audit log fout:', e);
+    }
+    alert(profiel ? 'Het account van ' + email + ' is verwijderd en de gesprekstekst is gewist.' : 'Het verzoek is als afgehandeld gemarkeerd.');
     loadPrivacyVerzoeken();
     loadMedewerkers();
   };

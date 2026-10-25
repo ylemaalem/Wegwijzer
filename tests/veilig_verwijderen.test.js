@@ -52,3 +52,15 @@ test('migratie 109: SET NULL, losgekoppeld_op, alleen de server mag verwijder_ac
   assert.match(m, /REVOKE EXECUTE ON FUNCTION public\.wis_losgekoppelde_gesprekken\(\) FROM PUBLIC, anon, authenticated;/);
   assert.match(m, /interval '12 months'/);
 });
+
+test('D4: verwijderverzoek via verwijderAccount in de stand avg, zonder eigen deletes in de browser', () => {
+  const s = bron('js/admin.js');
+  const blok = s.slice(s.indexOf('window.handlePrivacyVerwijdering = async function'), s.indexOf('window.handlePrivacyCorrectie = function'));
+  assert.match(blok, /verwijderAccount\(profiel\.id, 'avg'\)/);
+  assert.doesNotMatch(blok, /from\('conversations'\)\.delete\(\)/);
+  assert.doesNotMatch(blok, /from\('profiles'\)\.delete\(\)/);
+  assert.doesNotMatch(blok, /anoniem/i);
+  // Bij avg geen keuze "alleen chattoegang uit".
+  assert.match(s, /r\.keuze_nodig && modus === 'avg'[\s\S]{0,300}'ook_leidinggevende'/);
+  assert.match(bron('admin.html'), /js\/admin\.js\?v=128/);
+});
