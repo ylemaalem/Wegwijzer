@@ -9,7 +9,7 @@ import { ZORGINHOUDELIJK_BLOK, ZORGINHOUDELIJK_GEEN_DOC, isZorginhoudelijkeVraag
 import { GESPREKSGEHEUGEN_REGEL, GESPREKSGEHEUGEN_REGEL_OUD, SERVERGEHEUGEN_MAX_MS, geheugenTekst, kiesServerGeheugen, type GeheugenRij } from "../_shared/gespreksgeheugen.ts";
 import { genummerdeTrainingen, leesKeuze, leesOnderwerp, trainingOnderwerpPrompt, trainingSelectiePrompt, vorigeVraagUitGesprek } from "../_shared/trainingkeuze.ts";
 import { beoordeelBestaandAccount, meldingVoorBeheerder, type AccountBesluit, type AuthGebruiker, type Profiel } from "../_shared/accountcheck.ts";
-import { MIN_ACTIEVE_MEDEWERKERS, kiesGroep, meldingNodig, weekBeginNl, zorgwekkendeOnderwerpen, type DrempelProfiel } from "../_shared/patroonmelding.ts";
+import { MIN_ACTIEVE_MEDEWERKERS, heeftIngelogd, kiesGroep, meldingNodig, weekBeginNl, zorgwekkendeOnderwerpen, type DrempelProfiel } from "../_shared/patroonmelding.ts";
 import { ALLEEN_DASHBOARD_MELDING, accountVerlopen, alleenDashboardGeweigerd, uitnodigingAlleenDashboard } from "../_shared/chattoegang.ts";
 import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen, zoekLeidinggevendeRij, type LeidinggevendeRij } from "../_shared/uitnodigingsrol.ts";
 import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
@@ -3552,7 +3552,13 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
         const { data: kandidaten } = await supabaseAdmin.from("profiles")
           .select("id, role, alleen_dashboard, teams, eerste_login_op, laatste_actief, einddatum")
           .eq("tenant_id", profile.tenant_id).eq("role", "medewerker");
-        const groep = kiesGroep(teamVoorMelding, rijen.map((r) => r.teams), (kandidaten || []) as DrempelProfiel[], profile.id);
+        // H4: zonder login-velden telt ook iemand met ooit een opgeslagen gesprek.
+        const profielen = (kandidaten || []) as DrempelProfiel[];
+        await Promise.all(profielen.filter((p) => !heeftIngelogd(p)).map(async (p) => {
+          const { count } = await supabaseAdmin.from("conversations").select("id", { count: "exact", head: true }).eq("user_id", p.id);
+          p.heeft_gesprek = (count || 0) > 0;
+        }));
+        const groep = kiesGroep(teamVoorMelding, rijen.map((r) => r.teams), profielen, profile.id);
         if (!groep) {
           console.log("[Patroonherkenning] Groep te klein voor een melding (minder dan", MIN_ACTIEVE_MEDEWERKERS, "actieve medewerkers)");
         } else {

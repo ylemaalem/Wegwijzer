@@ -99,3 +99,44 @@ test('H3: week begint maandag 00:00 Nederlandse tijd (zomer- en wintertijd)', ()
   // Woensdag 4 nov: maandag 2 nov 00:00 NL = 1 nov 23:00 UTC.
   assert.equal(weekBeginNl(new Date('2026-11-04T09:00:00Z')).toISOString(), '2026-11-01T23:00:00.000Z');
 });
+
+// ---- H4 (2026-10-25): dreig* alleen met een persoonswoord dichtbij; 'ingelogd' ruimer ----
+const { dreigMetPersoon, heeftIngelogd } = require('../supabase/functions/_shared/patroonmelding.ts');
+
+test('H4: dreig* met persoonswoord WEL, zonder persoon NIET (testset Younes)', () => {
+  for (const v of [
+    'Hoe ga ik om met een fysiek dreigende cliënt?',
+    'Mijn cliënt dreigt mij',
+    'cliënt dreigt mij',
+    'Hij dreigt mij te slaan',
+    'Wat doe ik als een cliënt dreigt?',
+    'Een bewoner die dreigde met een mes',
+    'Ze dreigt de boel kort en klein te slaan',
+    'Wat doe ik bij dreigend gedrag?',
+    'Ik krijg dreigementen',
+  ]) assert.deepEqual(zorgwekkendeOnderwerpen(v), ['agressie'], v);
+  for (const v of [
+    'Er dreigt een tekort aan personeel',
+    'er dreigt een tekort aan personeel',
+    'Dreigend personeelstekort, wat nu?',
+    'Er dreigt een wachtlijst voor cliënten',
+    'Mijn verlof dreigt te verlopen',
+    'Het rooster dreigt vast te lopen',
+  ]) assert.deepEqual(zorgwekkendeOnderwerpen(v), [], v);
+  assert.equal(dreigMetPersoon(null), false);
+  assert.equal(dreigMetPersoon('dreigt'), false);
+});
+
+test('H4: ingelogd = eerste_login_op of laatste_actief of ooit een gesprek', () => {
+  assert.equal(heeftIngelogd({ id: 'a', role: 'medewerker', teams: [] }), false);
+  assert.equal(heeftIngelogd({ id: 'a', role: 'medewerker', teams: [], heeft_gesprek: true }), true);
+  assert.equal(heeftIngelogd({ id: 'a', role: 'medewerker', teams: [], laatste_actief: '2026-05-13' }), true);
+  assert.equal(teltVoorDrempel(mw('b', ['A'], { eerste_login_op: null, heeft_gesprek: true }), NU), true, 'b.swart-geval');
+  assert.equal(teltVoorDrempel(mw('b', ['A'], { eerste_login_op: null, heeft_gesprek: true, einddatum: '2026-01-01' }), NU), false);
+});
+
+test('H4: chat/index.ts zoekt gesprekken alleen voor wie geen login-velden heeft', () => {
+  const s = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
+  assert.match(s, /profielen\.filter\(\(p\) => !heeftIngelogd\(p\)\)/);
+  assert.match(s, /p\.heeft_gesprek = \(count \|\| 0\) > 0;/);
+});

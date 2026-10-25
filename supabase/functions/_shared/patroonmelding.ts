@@ -2,8 +2,8 @@
 // akkoord Younes 2026-10-25).
 // Voorheen een lijst met includes(): 'nood' pakte 'noodzakelijk', 'slaan' pakte 'opslaan'
 // en 'overslaan'. Nu hele woorden of woordstammen met woordgrenzen (geen letter ervoor of
-// erna), zoals in zorginhoud.ts. Weggelaten op verzoek: 'dreig*' ("er dreigt een tekort"),
-// 'nood' ("nood in de familie") en 'levenseinde' (palliatieve zorg).
+// erna), zoals in zorginhoud.ts. Weggelaten op verzoek: 'nood' ("nood in de familie") en
+// 'levenseinde' (palliatieve zorg). 'dreig*' alleen met een persoonswoord dichtbij (H4).
 // Getest met: node --test tests/*.test.js
 
 import { accountVerlopen } from "./chattoegang.ts";
@@ -13,7 +13,8 @@ const L ="\\p{L}*";
 export const ZORGWEKKEND_PER_ONDERWERP: Record<string, string[]> = {
   "agressie": [
     "agressi" + L, "geweld" + L, "slaan", "slaat", "sloeg", "geslagen", "schopt", "schoppen",
-    "mishandel" + L, "bedreig" + L, "dreiging" + L, "handtastelijk" + L,
+    "mishandel" + L, "bedreig" + L, "dreiging" + L, "dreigement" + L, "dreigende? (?:gedrag|taal|houding)",
+    "handtastelijk" + L,
   ],
   "crisissituaties": ["crisis" + L, "noodsituatie" + L, "noodgeval" + L],
   "suïcidaliteit": ["su[iï]cid" + L, "zelfdoding" + L, "zelfmoord" + L, "doodswens", "niet meer (?:willen )?leven"],
@@ -25,10 +26,28 @@ function patroon(termen: string[]): RegExp {
 
 const PATRONEN: Array<[string, RegExp]> = Object.entries(ZORGWEKKEND_PER_ONDERWERP).map(([o, t]) => [o, patroon(t)]);
 
+// H4 (2026-10-25): 'dreig*' (dreigt, dreigde, dreigend, dreigende ...) telt als agressie
+// alleen als binnen 2 woorden ervoor of erna een persoonswoord staat: "fysiek dreigende
+// cliënt", "cliënt dreigt mij", "hij dreigt". Zo niet bij "er dreigt een tekort aan
+// personeel" of "dreigend personeelstekort".
+export const DREIG_VENSTER = 2;
+const DREIG_WOORD = /^dreig\p{L}*$/u;
+const PERSOONSWOORD = new RegExp("^(?:" + [
+  "cli[eë]nt" + L, "bewoner" + L, "deelnemer" + L, "jongere" + L, "collega" + L, "bezoeker" + L,
+  "ouders", "vader", "moeder", "partner", "familielid" + L, "man", "vrouw", "jongen", "meisje",
+  "iemand", "hij", "zij", "ze", "hem", "haar", "mij", "me",
+].join("|") + ")$", "iu");
+
+export function dreigMetPersoon(tekst: string | null | undefined): boolean {
+  const woorden = String(tekst ?? "").toLowerCase().match(/\p{L}+/gu) || [];
+  return woorden.some((w, i) => DREIG_WOORD.test(w)
+    && woorden.slice(Math.max(0, i - DREIG_VENSTER), i + DREIG_VENSTER + 1).some((x, j) => x !== w && PERSOONSWOORD.test(x)));
+}
+
 // De onderwerpen die in de tekst voorkomen, in vaste volgorde (agressie, crisis, suïcide).
 export function zorgwekkendeOnderwerpen(tekst: string | null | undefined): string[] {
   const t = String(tekst ?? "");
-  return PATRONEN.filter(([, re]) => re.test(t)).map(([o]) => o);
+  return PATRONEN.filter(([o, re]) => re.test(t) || (o === "agressie" && dreigMetPersoon(t))).map(([o]) => o);
 }
 
 export function isZorgwekkend(tekst: string | null | undefined): boolean {
@@ -52,11 +71,18 @@ export const MIN_VERSCHILLENDE_MEDEWERKERS = 2;
 export type DrempelProfiel = {
   id: string; role: string | null; alleen_dashboard?: boolean | null; teams: string[] | null;
   eerste_login_op?: string | null; laatste_actief?: string | null; einddatum?: string | null;
+  heeft_gesprek?: boolean; // H4: ooit een opgeslagen gesprek (conversations)
 };
+
+// H4 (2026-10-25): 'ingelogd' = eerste_login_op of laatste_actief gevuld, of ooit een
+// gesprek. Oudere accounts (vóór die kolommen) hebben vaak wel vragen maar lege velden.
+export function heeftIngelogd(p: DrempelProfiel): boolean {
+  return !!(p.eerste_login_op || p.laatste_actief || p.heeft_gesprek);
+}
 
 export function teltVoorDrempel(p: DrempelProfiel, nu: Date = new Date()): boolean {
   return p.role === "medewerker" && p.alleen_dashboard !== true
-    && !!(p.eerste_login_op || p.laatste_actief) && !accountVerlopen(p.einddatum, nu);
+    && heeftIngelogd(p) && !accountVerlopen(p.einddatum, nu);
 }
 
 // Teams van de groep voor deze melding. teamleiderTeams: per teamleider-rij (rol
