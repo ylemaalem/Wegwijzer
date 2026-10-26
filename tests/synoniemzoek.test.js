@@ -59,6 +59,8 @@ test('chat/index.ts: synoniemen in de gewone route, documentnaam in trefwoordzoe
   assert.match(bron, /const SYNONIEM_DOCUMENTEN = 3;/);
   assert.match(bron, /documentenViaTermen\(vraag, termDocs, SYNONIEM_DOCUMENTEN\)/);
   assert.match(bron, /zoekvraag: trefwoordVraag,/);
+  assert.match(bron, /const namenViaTermen = viaTermen\.filter\(\(d\) => d\.synoniem\)\.map/, 'naam alleen bij een synoniem');
+  assert.match(bron, /doc_ids: viaTermen\.map\(\(d\) => d\.id\)/, 'stukken bij synoniem én zoekterm');
   assert.match(bron, /rpc\("match_chunks_in_documenten"/);
   assert.match(bron, /const chunkMatches = synoniemNieuw\.length > 0/);
   assert.match(bron, /\.eq\("tenant_id", profile\.tenant_id\)\.is\("user_id", null\)\.eq\("uitgesloten_van_zoeken", false\);/);

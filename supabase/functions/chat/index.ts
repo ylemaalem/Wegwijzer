@@ -4103,7 +4103,11 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
             termDocs = (td || []) as DocTermen[];
           }
           const viaTermen = documentenViaTermen(vraag, termDocs, SYNONIEM_DOCUMENTEN);
-          const namenViaTermen = viaTermen.map((d) => naamVoorZoeken(d.naam)).filter(Boolean);
+          // Documentnaam alleen bij een synoniem (door de beheerder ingevuld); bij een
+          // zoekterm alleen de beste stukken. Gemeten 2026-10-26: de naam van het
+          // Productenboek (zoekterm "traject ondersteuning stabiliteit") verdrong bij
+          // vraag 95 het stuk uit de O&S-handleiding.
+          const namenViaTermen = viaTermen.filter((d) => d.synoniem).map((d) => naamVoorZoeken(d.naam)).filter(Boolean);
           const trefwoordVraag = namenViaTermen.length > 0 ? `${vraag}\n${namenViaTermen.join("\n")}` : vraag;
           if (viaTermen.length > 0) console.log(`[Chat] Via synoniem/zoekterm: ${viaTermen.map((d) => `"${d.naam}" (${d.termen.join(", ")})`).join(", ")}`);
           // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken; het
