@@ -15,6 +15,7 @@ import { TOEGESTANE_UITNODIGINGSROLLEN, bepaalUitnodigingsrol, moetRolHerstellen
 import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, telLosgekoppeldMee, type DashboardRol } from "../_shared/dashboardrol.ts";
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
 import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
+import { documentenViaTermen, naamVoorZoeken, type DocTermen } from "../_shared/synoniemzoek.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -170,6 +171,13 @@ const EXTERNE_MAPPEN = ["cao"];
 // (er valt niets weg). 0 = uit. Gemeten 2026-10-16: met 2 kwamen bij 8 mislukte
 // testvragen de kernfeiten in de context, zonder verlies bij de andere vragen.
 const TREFWOORD_AANVULLING = 2;
+
+// Synoniemen en zoektermen in de gewone zoekroute (2026-10-26, _shared/synoniemzoek.ts,
+// migratie 113): noemt de vraag een synoniem of specifieke zoekterm van een document
+// ("O&S"), dan gaat de documentnaam mee in het trefwoordzoeken en doen de beste
+// SYNONIEM_STUKKEN stukken van hoogstens SYNONIEM_DOCUMENTEN documenten mee. 0 = uit.
+const SYNONIEM_DOCUMENTEN = 3;
+const SYNONIEM_STUKKEN = 2;
 
 // Kleine documenten heel meegeven: wordt een stuk gevonden van een document
 // waarvan alle stukken samen hoogstens zoveel tekens tellen, dan gaan de
@@ -4085,6 +4093,19 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           const vectorFn = zoekMetContext ? "match_document_chunks_ctx" : "match_document_chunks";
           const trefwoordFn = zoekMetContext ? "zoek_chunks_trefwoord_ctx" : "zoek_chunks_trefwoord";
           fglMatchCount = matchCountGebruikt;
+          // Synoniemen en zoektermen: documenten die de vraag bij afkorting of naam noemt.
+          let termDocs: DocTermen[] = [];
+          if (SYNONIEM_DOCUMENTEN > 0) {
+            const { data: td, error: tdErr } = await supabaseAdmin.from("documents")
+              .select("id, naam, synoniemen, zoektermen")
+              .eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false);
+            if (tdErr) console.warn("[Chat] Synoniemen ophalen fout:", tdErr.message);
+            termDocs = (td || []) as DocTermen[];
+          }
+          const viaTermen = documentenViaTermen(vraag, termDocs, SYNONIEM_DOCUMENTEN);
+          const namenViaTermen = viaTermen.map((d) => naamVoorZoeken(d.naam)).filter(Boolean);
+          const trefwoordVraag = namenViaTermen.length > 0 ? `${vraag}\n${namenViaTermen.join("\n")}` : vraag;
+          if (viaTermen.length > 0) console.log(`[Chat] Via synoniem/zoekterm: ${viaTermen.map((d) => `"${d.naam}" (${d.termen.join(", ")})`).join(", ")}`);
           // Trefwoord-zoeken (optie D) loopt tegelijk met vector-zoeken; het
           // zoeken met de herschreven vraag (punt 3) start zodra die klaar is.
           // De klaar-tijden meten hoeveel langer een vraag wacht door punt 3:
@@ -4099,6 +4120,14 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               match_count: 10,
             }))
             : Promise.resolve({ data: null, error: null });
+          const synoniemPromise: Promise<TrefwoordRes> = viaTermen.length > 0
+            ? Promise.resolve(supabaseAdmin.rpc("match_chunks_in_documenten", {
+              query_embedding: JSON.stringify(queryEmbedding),
+              match_org_id: profile.tenant_id,
+              doc_ids: viaTermen.map((d) => d.id),
+              per_doc: SYNONIEM_STUKKEN,
+            }))
+            : Promise.resolve({ data: null, error: null });
           let basisKlaar = 0, herschrijfKlaar = 0;
           const [[vectorRes, trefwoordRes], herschrijfRes] = await Promise.all([
             Promise.all([
@@ -4110,7 +4139,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               }),
               TREFWOORD_AANVULLING > 0
                 ? supabaseAdmin.rpc(trefwoordFn, {
-                  zoekvraag: vraag,
+                  zoekvraag: trefwoordVraag,
                   query_embedding: JSON.stringify(queryEmbedding),
                   match_org_id: profile.tenant_id,
                   match_count: 10,
@@ -4132,7 +4161,11 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           testRetrieval = {
             vector_functie: vectorFn, trefwoord_functie: trefwoordFn, stukken: matchCountGebruikt,
             vector_documenten: [...new Set(((vectorMatches || []) as Array<{ document_id: string }>).map((c) => c.document_id))],
+            synoniem_documenten: viaTermen.map((d) => ({ naam: d.naam, termen: d.termen })),
           };
+          const synoniemRes = await synoniemPromise;
+          if (synoniemRes.error) console.warn("[Chat] Synoniem-stukken fout:", synoniemRes.error.message);
+          const synoniemChunks = (synoniemRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
           if (trefwoordRes.error) console.warn("[Chat] Trefwoord-zoeken fout:", trefwoordRes.error.message);
           if (herschrijfRes.error) console.warn("[Chat] Trefwoord-zoeken (herschreven) fout:", herschrijfRes.error.message);
           const trefwoordMatches = (trefwoordRes.data || []) as { id: string; document_id: string; chunk_text: string; similarity: number }[];
@@ -4149,9 +4182,12 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
           salarisTabelStukken = salarisChunks.length;
           // De tabelstukken tellen mee als treffer: een korte vraag als "schaal 45
           // trede 10" haalt anders soms geen 3 vectortreffers (terugvalroute).
-          const chunkMatches = salarisChunks.length > 0
+          const basisMatches = salarisChunks.length > 0
             ? [...salarisChunks, ...((vectorMatches || []) as { id: string }[]).filter((c) => !salarisChunks.some((sc) => sc.id === c.id))]
             : vectorMatches;
+          // De stukken via een synoniem of zoekterm tellen mee, ook voor de grens van 3.
+          const synoniemNieuw = synoniemChunks.filter((c) => !((basisMatches || []) as { id: string }[]).some((b) => b.id === c.id));
+          const chunkMatches = synoniemNieuw.length > 0 ? [...((basisMatches || []) as { id: string }[]), ...synoniemNieuw] : basisMatches;
           const chunksOpgehaaldVoorFilter = chunkMatches?.length || 0;
           fglChunksOpgehaald = chunksOpgehaaldVoorFilter;
 
@@ -4231,6 +4267,19 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                   ];
                 }
                 console.log(`[Salaris] FWG ${verdienFwg} (${verdienFwgBron}): +${salarisChunks.length} tabelstukken vooraan`);
+              }
+
+              // ---- Synoniemen: stukken die de herrangschikking liet vallen weer erbij ----
+              if (synoniemChunks.length > 0) {
+                const inWerk = new Set(werkChunks.map((c) => (c as { id?: string }).id));
+                const terug = synoniemChunks.filter((c) => !inWerk.has(c.id));
+                if (terug.length > 0) werkChunks = [...werkChunks, ...terug];
+                if (isFeitVraag) {
+                  const inFeit = new Set(feitChunks.map((c) => c.chunk_text));
+                  feitChunks = [...feitChunks, ...synoniemChunks.filter((c) => !inFeit.has(c.chunk_text))
+                    .map((c) => ({ document_id: c.document_id, chunk_text: c.chunk_text, similarity: c.similarity, docNaam: (metaMap.get(c.document_id) as { naam?: string } | undefined)?.naam || "Document" }))];
+                }
+                gebruikteDocIds = [...new Set([...gebruikteDocIds, ...synoniemChunks.map((c) => c.document_id)])];
               }
 
               // ---- Optie D: trefwoord-aanvulling ----
