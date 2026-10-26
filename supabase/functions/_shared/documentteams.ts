@@ -39,18 +39,23 @@ function uniek(teams: string[]): string[] {
 }
 
 // Noemt de vraag dit team duidelijk? Hele woorden, in volgorde. Een korte naam van één
-// woord (VAN, FAN) is vaak ook een gewoon woord ("van"): die telt alleen in hoofdletters
-// zoals geschreven (VAN) of na "team" ("team van").
+// woord (VAN, FAN, FANMN) is vaak ook een gewoon woord ("van", ook in "het team van"):
+// die telt alleen in hoofdletters zoals geschreven ("VAN", "FANMN" of "FAN MN"), en niet
+// als er nog een afkorting in hoofdletters op volgt ("FAN MN" is niet "FAN").
 export function teamGenoemd(vraag: string | null | undefined, team: string): boolean {
   const sleutel = teamSleutel(team).split(" ").filter(Boolean);
   if (sleutel.length === 0) return false;
-  const vw = woorden(vraag);
-  if (sleutel.length === 1 && sleutel[0].length <= 4) {
-    const hoofdletters = sleutel[0].toUpperCase();
-    const tokens = String(vraag ?? "").split(/[^\p{L}\p{N}&]+/u);
-    return tokens.includes(hoofdletters) || bevat(vw, ["team", sleutel[0]]);
+  if (sleutel.length === 1 && sleutel[0].length <= 5) {
+    const naam = sleutel[0].toUpperCase();
+    const t = String(vraag ?? "").split(/[^\p{L}\p{N}&]+/u).filter(Boolean);
+    const afkorting = (w: string | undefined) => !!w && /^[\p{Lu}\p{N}]{2,}$/u.test(w);
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === naam && !afkorting(t[i + 1])) return true;
+      if (afkorting(t[i]) && afkorting(t[i + 1]) && t[i] + t[i + 1] === naam) return true;
+    }
+    return false;
   }
-  return bevat(vw, sleutel);
+  return bevat(woorden(vraag), sleutel);
 }
 
 function bevat(vw: string[], reeks: string[]): boolean {
@@ -71,7 +76,9 @@ export function uitgeslotenDocumenten(docs: DocTeams[], bereik: TeamBereik, vraa
     .map((d) => d.id);
 }
 
-// Deel van de cachesleutel: dezelfde vraag met een ander teambereik is een ander antwoord.
-export function teamBereikSleutel(bereik: TeamBereik): string {
-  return bereik.alles ? "alles" : [...bereik.teams].sort().join("|") || "geen";
+// Deel van de cachesleutel: dezelfde vraag met een ander teambereik of andere uitgesloten
+// documenten (de naamsvermelding hangt af van hoofdletters, de cache niet) is een ander antwoord.
+export function teamBereikSleutel(bereik: TeamBereik, uitsluiten: string[] = []): string {
+  const b = bereik.alles ? "alles" : [...bereik.teams].sort().join("|") || "geen";
+  return uitsluiten.length > 0 ? `${b}#${[...uitsluiten].sort().join(",")}` : b;
 }

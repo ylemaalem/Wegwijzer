@@ -79,9 +79,12 @@ test('naamsvermelding: alleen een duidelijke vermelding telt', () => {
   assert.equal(teamGenoemd('Ik zie een gele auto in het weiland', 'Team Gele Weiland'), false, 'losse woorden');
   assert.equal(teamGenoemd('Wat is de werkwijze van het team?', 'Team VAN'), false, '"van" is een gewoon woord');
   assert.equal(teamGenoemd('Hoe meld ik iemand aan bij VAN?', 'Team VAN'), true);
-  assert.equal(teamGenoemd('Hoe werkt team van?', 'Team VAN'), true);
+  assert.equal(teamGenoemd('Wie zit er in het team van mijn teamleider?', 'Team VAN'), false, '"het team van" is gewone taal');
   assert.equal(teamGenoemd('Wat doet FANMN?', 'Team FAN'), false);
-  assert.equal(teamGenoemd('Wat doet FAN MN?', 'Team FAN'), true);
+  assert.equal(teamGenoemd('Wat doet FANMN?', 'Team FANMN'), true);
+  assert.equal(teamGenoemd('Hoe werkt de intake bij FAN MN?', 'Team FANMN'), true, 'FAN MN = FANMN');
+  assert.equal(teamGenoemd('Hoe werkt de intake bij FAN MN?', 'Team FAN'), false, 'FAN MN is niet FAN');
+  assert.equal(teamGenoemd('Hoe werkt de intake bij FAN?', 'Team FAN'), true);
   assert.equal(teamGenoemd('Hoe gaat het in Veluwe?', 'Team Veluwe 1'), false, 'Veluwe 1 is een ander team dan alleen Veluwe');
 });
 
@@ -100,6 +103,9 @@ test('cache: teambereik zit in de sleutel, Almere en Gele Weiland verschillen', 
   assert.equal(teamBereikSleutel(medewerker(['Team Manuscript', 'Team Almere'])), teamBereikSleutel(medewerker(['Team Almere', 'Team Manuscript'])));
   assert.equal(teamBereikSleutel(medewerker([])), 'geen');
   assert.equal(teamBereikSleutel(teamBereik('admin', [], null)), 'alles');
+  // zelfde vraag na kleine letters, ander uitsluitresultaat: andere sleutel
+  assert.notEqual(teamBereikSleutel(medewerker(['Team Almere']), ['b', 'a']), teamBereikSleutel(medewerker(['Team Almere']), ['a']));
+  assert.equal(teamBereikSleutel(medewerker(['Team Almere']), ['b', 'a']), teamBereikSleutel(medewerker(['Team Almere']), ['a', 'b']));
 });
 
 const BRON = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'chat', 'index.ts'), 'utf8');
@@ -111,7 +117,7 @@ test('chat: filter vóór het zoeken in alle routes', () => {
   assert.equal(aanroepen.length, 4);
   assert.equal((blok.match(/uitsluiten: docUitsluiten,/g) || []).length, 4);
   // synoniemen/zoektermen
-  assert.match(BRON, /termDocs = \(\(td \|\| \[\]\) as DocTermen\[\]\)\.filter\(\(d\) => !docUitsluiten\.includes\(d\.id\)\);/);
+  assert.match(BRON, /termDocs = \(\(td \|\| \[\]\) as DocTermen\[\]\)\.filter\(\(d\) => !docUitsluitenSet\.has\(d\.id\)\);/);
   // terugvalroute
   assert.match(BRON, /ruweOrgDocs \} = await zonderDocumenten\(/);
   // weekstart-briefing en quiz
@@ -119,7 +125,7 @@ test('chat: filter vóór het zoeken in alle routes', () => {
   assert.match(BRON, /const quizTeams = await documentTeamFilter\(/);
   // vóór de cache, en het teambereik in de cachesleutel
   assert.ok(BRON.indexOf('const docTeams = await documentTeamFilter(') < BRON.indexOf('vraagHash = await hashQuestion('));
-  assert.match(BRON, /hashQuestion\(profile\.tenant_id, user\.id, vraag, userFg, teamBereikSleutel\(docTeams\.bereik\)\)/);
+  assert.match(BRON, /hashQuestion\(profile\.tenant_id, user\.id, vraag, userFg, teamBereikSleutel\(docTeams\.bereik, docUitsluiten\)\)/);
   // leidinggevende: rij in teamleiders op e-mail (zoals het dashboard)
   assert.match(BRON, /from\("teamleiders"\)\.select\("rol, teams"\)\s*\n\s*\.eq\("tenant_id", profile\.tenant_id\)\.eq\("email", userEmail\)/);
 });

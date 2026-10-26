@@ -3709,12 +3709,13 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
     // Documenten per team (migratie 114): vóór de cache en vóór elk zoeken.
     const docTeams = await documentTeamFilter(supabaseAdmin, profile, user.email || null, vraag, isTest ? body : null);
     const docUitsluiten = docTeams.uitsluiten;
+    const docUitsluitenSet = new Set(docUitsluiten);
 
     let vraagHash: string | null = null;
     if (!skipCache) {
       try {
         const userFg = profile.functiegroep || null;
-        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg, teamBereikSleutel(docTeams.bereik));
+        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg, teamBereikSleutel(docTeams.bereik, docUitsluiten));
         let cacheQuery = supabaseAdmin
           .from("response_cache")
           .select("antwoord, trainingen, gebruikte_document_ids, herkomst")
@@ -4163,7 +4164,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               .select("id, naam, synoniemen, zoektermen")
               .eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false);
             if (tdErr) console.warn("[Chat] Synoniemen ophalen fout:", tdErr.message);
-            termDocs = ((td || []) as DocTermen[]).filter((d) => !docUitsluiten.includes(d.id));
+            termDocs = ((td || []) as DocTermen[]).filter((d) => !docUitsluitenSet.has(d.id));
           }
           const viaTermen = documentenViaTermen(vraag, termDocs, SYNONIEM_DOCUMENTEN);
           // Documentnaam alleen bij een synoniem (door de beheerder ingevuld); bij een
