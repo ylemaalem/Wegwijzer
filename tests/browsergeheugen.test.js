@@ -57,7 +57,7 @@ test('medewerker.js: wissen vóór de nieuwe vraag, met scheidingsregel; mislukt
 
 test('medewerker.html: gespreksgeheugen.js vóór medewerker.js, nieuwe versies', () => {
   assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') > 0);
-  assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') < html.indexOf('js/medewerker.js?v=22'));
+  assert.ok(html.indexOf('js/gespreksgeheugen.js?v=1') < html.indexOf('js/medewerker.js?v=23'));
 });
 
 // Punt 4 (2026-10-24): gespreksgeheugen.js niet geladen -> doorgaan zonder wissen, geen

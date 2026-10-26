@@ -657,7 +657,9 @@
       } else if (!response.ok || data.error) {
         renderBotBericht('Sorry, er ging iets mis bij het verwerken van je sparring-sessie. Probeer het opnieuw.', null, null, null);
       } else {
-        renderBotBericht(data.antwoord, data.conversation_id, null, null);
+        // Trainingen en herkomst ook hier tonen: de server zet anders "Onder dit antwoord
+        // staan trainingen" in de tekst terwijl het blok ontbreekt (26-10-2026).
+        renderBotBericht(data.antwoord, data.conversation_id, null, null, data.trainingen || [], data.herkomst || null);
         // Voeg toe aan conversatiehistorie zodat opvolgvragen context hebben
         // Bewust zonder t: de samenvatting van een sparsessie is geen vraag en mag niet
         // als "vorige vraag" meetellen voor trainingen of zorginhoud.
