@@ -51,7 +51,6 @@
 
     if (tlRol === 'teamleider') {
       await loadTeamMedewerkers();
-      loadTeamGesprekken();
       loadTeamMeldingen();
       loadTeamVertrouwen();
       loadTeamQuiz();
@@ -112,17 +111,14 @@
     // Pas titels/labels aan per rol
     var statsTitle = document.getElementById('tl-stats-title');
     var gesprekkenTitle = document.getElementById('tl-gesprekken-title');
-    var gesprekkenSub = document.getElementById('tl-gesprekken-subtitle');
     var trendSub = document.getElementById('tl-trendanalyse-sub');
     if (tlRol === 'manager') {
       if (statsTitle) statsTitle.textContent = 'Organisatieoverzicht';
       if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
-      if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
       if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de gekozen periode — hele organisatie.';
     } else if (tlRol === 'hr') {
       if (statsTitle) statsTitle.textContent = 'HR — Organisatieoverzicht';
       if (gesprekkenTitle) gesprekkenTitle.textContent = 'Organisatiebrede trendanalyse';
-      if (gesprekkenSub) gesprekkenSub.textContent = 'Trends over alle teams binnen de organisatie.';
       if (trendSub) trendSub.textContent = 'Analyse van anonieme vragen uit de gekozen periode — hele organisatie.';
     }
   }
@@ -290,73 +286,6 @@
     alert('Verwijderingsaanvraag ingediend.');
     loadMijnAanvragen();
   };
-
-  // =============================================
-  // GESPREKKEN
-  // =============================================
-  async function loadTeamGesprekken() {
-    var tbody = document.getElementById('tl-gesprekken-body');
-
-    // Privacy: gespreks-metadata wordt server-side (Edge Function, service role)
-    // opgehaald en geanonimiseerd. De frontend krijgt GEEN vraag/antwoord-tekst,
-    // GEEN ruwe user_id of naam — alleen een stabiele anon_key per persoon plus
-    // feedback en tijdstip. Directe tabeltoegang tot conversations is voor teamleden
-    // afgesloten in RLS; dit is de enige geautoriseerde route.
-    var metaResult;
-    try {
-      var session = (await supabaseClient.auth.getSession()).data.session;
-      var response = await fetch(SUPABASE_URL + '/functions/v1/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
-        body: JSON.stringify({ get_team_gesprek_metadata: true })
-      });
-      metaResult = await response.json();
-    } catch (err) {
-      console.error('[TL] Metadata ophalen mislukt:', err);
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Kon gesprekken niet laden.</td></tr>';
-      return;
-    }
-
-    var metadata = (metaResult && metaResult.metadata) || [];
-    console.log('[TL] Metadata ontvangen:', metadata.length, 'gesprekken');
-    toonSindsLive(metaResult && metaResult.startdatum_live);
-
-    if (metadata.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">Geen gesprekken van jouw team gevonden.</td></tr>';
-      return;
-    }
-
-    // Groepeer per (dag, anon_key) zodat leidinggevende alleen aantallen ziet
-    var groups = {};
-    metadata.forEach(function (c) {
-      var d = new Date(c.created_at);
-      var dagKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      var key = dagKey + '|' + c.anon_key;
-      if (!groups[key]) {
-        groups[key] = { datum: d, dagKey: dagKey, aantal: 0, positief: 0, negatief: 0 };
-      }
-      groups[key].aantal++;
-      if (c.feedback === 'goed') groups[key].positief++;
-      else if (c.feedback === 'niet_goed') groups[key].negatief++;
-    });
-
-    var rows = Object.keys(groups).map(function (k) { return groups[k]; });
-    rows.sort(function (a, b) { return b.datum - a.datum; });
-
-    tbody.innerHTML = rows.map(function (g) {
-      var datum = g.datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
-      var fbParts = [];
-      if (g.positief > 0) fbParts.push('<span class="badge badge-goed">👍 ' + g.positief + '</span>');
-      if (g.negatief > 0) fbParts.push('<span class="badge badge-niet-goed">👎 ' + g.negatief + '</span>');
-      var fb = fbParts.length > 0 ? fbParts.join(' ') : '<span class="badge badge-geen">—</span>';
-      return '<tr>' +
-        '<td style="white-space:nowrap">' + datum + '</td>' +
-        '<td style="color:var(--text-muted);font-style:italic">Anoniem</td>' +
-        '<td>' + g.aantal + '</td>' +
-        '<td>' + fb + '</td>' +
-        '</tr>';
-    }).join('');
-  }
 
   // =============================================
   // TRENDANALYSE
@@ -534,7 +463,7 @@
   }
 
   async function loadTeamStatistieken() {
-    // Privacy: zelfde geanonimiseerde metadata-route als loadTeamGesprekken. Server-side
+    // Privacy: geanonimiseerde metadata-route (get_team_gesprek_metadata). Server-side
     // scoping (team vs tenant) en anonimisering; geen directe conversations-tabeltoegang.
     var data;
     try {
