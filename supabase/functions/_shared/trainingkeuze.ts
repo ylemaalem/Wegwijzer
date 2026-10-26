@@ -51,6 +51,7 @@ Trainingen zijn zinvol bij:
 - Vakinhoudelijke thema's (ziektebeelden, doelgroepen, problematiek, methodieken)
 - Persoonlijke ontwikkeling en vaardigheden
 - Vragen die gaan over HOE je iets doet als zorgprofessional (zorgplan opstellen, gesprekstechniek, agressiehantering, rapporteren)
+- Wetten, financiering en indicaties in de zorg (Wlz, Wmo, Jeugdwet, PGB, VPT en MPT, indicatiestelling)
 
 Trainingen zijn NIET zinvol bij:
 - Systeemvragen (hoe log ik in, hoe installeer ik een app)
@@ -62,7 +63,8 @@ Huidige vraag: ${vraag}
 Antwoord op één regel, zonder labels, in de vorm: onderwerp, overkoepelend thema.
 - Het onderwerp is het ziektebeeld, de doelgroep, de problematiek of de vaardigheid zelf, in 1 tot 3 woorden. Niet het detail van de situatie.
 - Het overkoepelende thema is de bredere categorie waar het onderwerp onder valt, in 1 tot 3 woorden. Nooit algemene woorden als begeleiding, begeleiden, cliënt, omgaan met, situatie of aanpak.
-Voorbeelden: "schizofrenie, psychische stoornissen", "eetstoornis, psychische stoornissen", "autisme, autismespectrumstoornis", "alcoholgebruik, verslaving", "agressie, spanningsvol gedrag", "rapporteren, rapportage".
+- Gaat de vraag over een wet, financiering of indicatie, dan is het overkoepelende thema die wet of regeling (bijvoorbeeld Wlz, Wmo of PGB).
+Voorbeelden: "schizofrenie, psychische stoornissen", "eetstoornis, psychische stoornissen", "autisme, autismespectrumstoornis", "alcoholgebruik, verslaving", "agressie, spanningsvol gedrag", "rapporteren, rapportage", "VPT en MPT, Wlz langdurige zorg", "PGB, financiering zorg", "Wmo-indicatie, Wmo", "indicatie, Wlz".
 Is een training niet zinvol, antwoord dan alleen GEEN.`;
 }
 

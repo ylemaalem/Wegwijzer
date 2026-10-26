@@ -80,6 +80,16 @@ test('keuzeprompt: onderwerp met thema, lijst vóór de regels, alleen nummers; 
   assert.match(trainingOnderwerpPrompt('x', null), /Nooit algemene woorden als begeleiding/);
 });
 
+// MPT/VPT (26-10-2026): het onderwerp werd "zorgverlening" of iets psychiatrisch,
+// waardoor "Indicatie uitleg WLZ" niet bij de kandidaten kwam.
+test('onderwerpprompt: wetten, financiering en indicaties met voorbeelden', () => {
+  const p = trainingOnderwerpPrompt('Wat is het verschil tussen mpt en vpt?', null);
+  assert.match(p, /- Wetten, financiering en indicaties in de zorg \(Wlz, Wmo, Jeugdwet, PGB, VPT en MPT, indicatiestelling\)/);
+  assert.match(p, /overkoepelende thema die wet of regeling/);
+  for (const v of ['"VPT en MPT, Wlz langdurige zorg"', '"PGB, financiering zorg"', '"Wmo-indicatie, Wmo"', '"indicatie, Wlz"']) assert.ok(p.includes(v), v);
+  assert.ok(p.indexOf('Wetten, financiering') < p.indexOf('Trainingen zijn NIET zinvol'), 'bij zinvol, niet bij niet-zinvol');
+});
+
 test('onderwerp lezen: labels en regels van het model', () => {
   assert.equal(leesOnderwerp('Onderwerp: schizofrenie\nOverkoepelend thema: psychische stoornissen'), 'schizofrenie, psychische stoornissen');
   assert.equal(leesOnderwerp('onderwerp: autisme, autismespectrumstoornis'), 'autisme, autismespectrumstoornis');
