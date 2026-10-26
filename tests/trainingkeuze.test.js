@@ -90,6 +90,14 @@ test('onderwerpprompt: wetten, financiering en indicaties met voorbeelden', () =
   assert.ok(p.indexOf('Wetten, financiering') < p.indexOf('Trainingen zijn NIET zinvol'), 'bij zinvol, niet bij niet-zinvol');
 });
 
+// Stap 3: met onderwerp "VPT en MPT, Wlz langdurige zorg" stond Indicatie uitleg WLZ
+// bovenaan (0,649), maar de keuzestap zei 6/6 "geen".
+test('keuzeprompt: een training over de wet of regeling past', () => {
+  const p = trainingSelectiePrompt('Wat is het verschil tussen mpt en vpt?', 'VPT en MPT, Wlz langdurige zorg', [{ naam: 'Indicatie uitleg WLZ' }]);
+  assert.match(p, /- Is het overkoepelende thema een wet of regeling \(zoals Wlz, Wmo of PGB\), dan past een training over die wet of regeling\.\n- Een training over een ander/);
+  assert.match(p, /algemene training over het overkoepelende thema/, 'bestaande regel blijft');
+});
+
 test('onderwerp lezen: labels en regels van het model', () => {
   assert.equal(leesOnderwerp('Onderwerp: schizofrenie\nOverkoepelend thema: psychische stoornissen'), 'schizofrenie, psychische stoornissen');
   assert.equal(leesOnderwerp('onderwerp: autisme, autismespectrumstoornis'), 'autisme, autismespectrumstoornis');

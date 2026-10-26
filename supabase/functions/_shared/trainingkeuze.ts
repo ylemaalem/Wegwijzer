@@ -110,6 +110,7 @@ ${genummerd}
 Regels:
 - Een training past als de naam of de beschrijving over het onderwerp gaat. De training hoeft niet over het precieze detail van de vraag te gaan.
 - Is er geen training over het onderwerp zelf, dan past een algemene training over het overkoepelende thema (bij schizofrenie of een eetstoornis bijvoorbeeld een algemene training over psychische stoornissen).
+- Is het overkoepelende thema een wet of regeling (zoals Wlz, Wmo of PGB), dan past een training over die wet of regeling.
 - Een training over een ander ziektebeeld, een andere doelgroep of een ander thema is fout, ook als die er zijdelings mee te maken heeft. Past er niets, antwoord dan geen.
 
 Antwoord met alleen de nummers gescheiden door komma's (bijvoorbeeld: 2, 5, 7), of met alleen het woord geen. Geen uitleg.`;
