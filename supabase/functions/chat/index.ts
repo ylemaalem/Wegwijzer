@@ -16,6 +16,7 @@ import { bereikTekst, gebruikerFilter, kiesMonitorIds, normaliseerDashboardRol, 
 import { bevatTest, normaliseerTest } from "../_shared/testvergelijking.ts";
 import { datumTekst, laatsteBegin, leesPeriode, leesStartdatumLive, periodeSinds, periodeTekst, spreidVragen } from "../_shared/trendperiode.ts";
 import { documentenViaTermen, naamVoorZoeken, type DocTermen } from "../_shared/synoniemzoek.ts";
+import { teamBereik, teamBereikSleutel, uitgeslotenDocumenten, type TeamBereik } from "../_shared/documentteams.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -360,9 +361,10 @@ function normalizeQuestion(vraag: string): string {
   return vraag.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!,]/g, '');
 }
 
-async function hashQuestion(tenantId: string, userId: string, vraag: string, functiegroep?: string): Promise<string> {
+async function hashQuestion(tenantId: string, userId: string, vraag: string, functiegroep?: string, teamSleutel?: string): Promise<string> {
   const normalized = normalizeQuestion(vraag);
-  const data = `${tenantId}:${userId}:${functiegroep || 'none'}:${normalized}`;
+  // Teambereik in de sleutel (migratie 114): andere teams = andere documenten = ander antwoord.
+  const data = `${tenantId}:${userId}:${functiegroep || 'none'}:${teamSleutel || 'geen'}:${normalized}`;
   const encoder = new TextEncoder();
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -513,6 +515,59 @@ async function bepaalDashboardRol(
     .eq("email", userEmail)
     .maybeSingle();
   return normaliseerDashboardRol(profile.role, tlRow as { rol: string | null; teams: string[] | null } | null);
+}
+
+// Documenten per team (migratie 114, _shared/documentteams.ts): het teambereik van deze
+// gebruiker en de documenten die voor deze vraag niet meedoen. Alleen relevantie in de
+// chat, geen afscherming. Leidinggevende: de rij in teamleiders op e-mail, net als het
+// teamleiderdashboard. Testmodus (testsleutel): test_rol, test_tl_teams en
+// test_doc_teams ({document-id: [teams]}) bootsen rol en teams na zonder productiedata.
+type DocTeamFilter = { bereik: TeamBereik; uitsluiten: string[] };
+const UUID_PATROON = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function documentTeamFilter(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  profile: { tenant_id: string; role: string | null; teams?: string[] | null },
+  userEmail: string | null,
+  vraag: string | null,
+  test: Record<string, unknown> | null,
+): Promise<DocTeamFilter> {
+  let rol: string | null = profile.role;
+  let rij: { rol: string | null; teams: string[] | null } | null = null;
+  if (test) {
+    const tr = typeof test.test_rol === "string" ? test.test_rol : "medewerker";
+    const tlTeams = Array.isArray(test.test_tl_teams) ? (test.test_tl_teams as unknown[]).map(String) : [];
+    if (tr === "admin") rol = "admin";
+    else if (tr === "teamleider" || tr === "hr" || tr === "manager") { rol = "teamleider"; rij = { rol: tr, teams: tlTeams }; }
+    else rol = "medewerker";
+  } else if (profile.role === "teamleider" && userEmail) {
+    const { data } = await supabaseAdmin.from("teamleiders").select("rol, teams")
+      .eq("tenant_id", profile.tenant_id).eq("email", userEmail).maybeSingle();
+    rij = data as { rol: string | null; teams: string[] | null } | null;
+  }
+  const bereik = teamBereik(rol, profile.teams || [], rij);
+  if (bereik.alles) return { bereik, uitsluiten: [] };
+  const { data, error } = await supabaseAdmin.from("documents").select("id, teams")
+    .eq("tenant_id", profile.tenant_id).neq("teams", "{}");
+  if (error) {
+    console.warn("[Teams] Documentteams ophalen fout:", error.message);
+    return { bereik, uitsluiten: [] };
+  }
+  const perDoc = new Map(((data || []) as Array<{ id: string; teams: string[] | null }>).map((d) => [d.id, d.teams]));
+  if (test && test.test_doc_teams && typeof test.test_doc_teams === "object") {
+    for (const [id, t] of Object.entries(test.test_doc_teams as Record<string, unknown>)) {
+      if (UUID_PATROON.test(id) && Array.isArray(t)) perDoc.set(id, t.map(String));
+    }
+  }
+  const uitsluiten = uitgeslotenDocumenten([...perDoc].map(([id, teams]) => ({ id, teams })), bereik, vraag);
+  if (uitsluiten.length > 0) console.log(`[Teams] ${uitsluiten.length} document(en) met andere teams doen niet mee`);
+  return { bereik, uitsluiten };
+}
+
+// PostgREST-filter op documents: zonder de uitgesloten documenten.
+// deno-lint-ignore no-explicit-any
+function zonderDocumenten(q: any, ids: string[]): any {
+  return ids.length > 0 ? q.not("id", "in", `(${ids.join(",")})`) : q;
 }
 
 // Bepaalt server-side welke medewerker-profiel-ids een teamleider/manager/hr/admin
@@ -2958,12 +3013,14 @@ ${vraagLijst}${trendGedekteContext}`;
         );
       }
 
-      const { data: docs } = await supabaseAdmin
+      // Documenten per team (migratie 114): alleen de documenten voor de teams van deze medewerker.
+      const briefTeams = await documentTeamFilter(supabaseAdmin, profile, user.email || null, null, isTest ? body : null);
+      const { data: docs } = await zonderDocumenten(supabaseAdmin
         .from("documents")
         .select("naam, content")
         .eq("tenant_id", profile.tenant_id)
         .is("user_id", null)
-        .not("content", "is", null)
+        .not("content", "is", null), briefTeams.uitsluiten)
         .limit(10);
 
       let docContext = "";
@@ -3070,7 +3127,9 @@ ${vraagLijst}${trendGedekteContext}`;
       // Stap 2: Relevante kennisbankfragmenten ophalen
       let docContext = "";
       try {
-        const { data: docs } = await supabaseAdmin.from("documents").select("naam, content").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null).limit(20);
+        // Documenten per team (migratie 114): alleen de documenten voor de teams van deze medewerker.
+        const quizTeams = await documentTeamFilter(supabaseAdmin, profile, user.email || null, null, isTest ? body : null);
+        const { data: docs } = await zonderDocumenten(supabaseAdmin.from("documents").select("naam, content").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null), quizTeams.uitsluiten).limit(20);
         if (docs && docs.length > 0) {
           // Score documenten op basis van de weekvragen (niet alleen week+functiegroep)
           const searchTerms = vragenContext.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
@@ -3647,11 +3706,15 @@ ${docContext || "(geen documenten beschikbaar — gebruik algemene kennis over a
       || vraagtBron
       || isFeitVraag;
 
+    // Documenten per team (migratie 114): vóór de cache en vóór elk zoeken.
+    const docTeams = await documentTeamFilter(supabaseAdmin, profile, user.email || null, vraag, isTest ? body : null);
+    const docUitsluiten = docTeams.uitsluiten;
+
     let vraagHash: string | null = null;
     if (!skipCache) {
       try {
         const userFg = profile.functiegroep || null;
-        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg);
+        vraagHash = await hashQuestion(profile.tenant_id, user.id, vraag, userFg, teamBereikSleutel(docTeams.bereik));
         let cacheQuery = supabaseAdmin
           .from("response_cache")
           .select("antwoord, trainingen, gebruikte_document_ids, herkomst")
@@ -4100,7 +4163,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               .select("id, naam, synoniemen, zoektermen")
               .eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false);
             if (tdErr) console.warn("[Chat] Synoniemen ophalen fout:", tdErr.message);
-            termDocs = (td || []) as DocTermen[];
+            termDocs = ((td || []) as DocTermen[]).filter((d) => !docUitsluiten.includes(d.id));
           }
           const viaTermen = documentenViaTermen(vraag, termDocs, SYNONIEM_DOCUMENTEN);
           // Documentnaam alleen bij een synoniem (door de beheerder ingevuld); bij een
@@ -4122,6 +4185,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
               query_embedding: JSON.stringify(queryEmbedding),
               match_org_id: profile.tenant_id,
               match_count: 10,
+              uitsluiten: docUitsluiten,
             }))
             : Promise.resolve({ data: null, error: null });
           const synoniemPromise: Promise<TrefwoordRes> = viaTermen.length > 0
@@ -4139,6 +4203,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 query_embedding: JSON.stringify(queryEmbedding),
                 match_org_id: profile.tenant_id,
                 match_count: matchCountGebruikt,
+                uitsluiten: docUitsluiten,
                 match_threshold: 0.5,
               }),
               TREFWOORD_AANVULLING > 0
@@ -4147,6 +4212,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                   query_embedding: JSON.stringify(queryEmbedding),
                   match_org_id: profile.tenant_id,
                   match_count: 10,
+                  uitsluiten: docUitsluiten,
                 })
                 : Promise.resolve({ data: null, error: null }),
             ]).then((r) => { basisKlaar = Date.now(); return r; }),
@@ -4156,6 +4222,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
                 query_embedding: JSON.stringify(queryEmbedding),
                 match_org_id: profile.tenant_id,
                 match_count: 10,
+                uitsluiten: docUitsluiten,
               })
               : { data: null, error: null })
               .then((r) => { herschrijfKlaar = Date.now(); return r; }),
@@ -4374,7 +4441,7 @@ Instructie: zeg eerlijk en kort dat je dit nu niet kunt achterhalen.`;
     // ---- Fallback: zoektermen + keyword scoring ----
     if (!HEEFT_KENNISBANK_MATCH && !vraagtBron) {
       // Uitgesloten documenten (vinkje in Beheer, migratie 097) doen nergens mee.
-      const { data: ruweOrgDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null);
+      const { data: ruweOrgDocs } = await zonderDocumenten(supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie, map").eq("tenant_id", profile.tenant_id).is("user_id", null).eq("uitgesloten_van_zoeken", false).not("content", "is", null), docUitsluiten);
       const orgDocs = (ruweOrgDocs || []);
       const { data: persDocs } = await supabaseAdmin.from("documents").select("id, naam, content, synoniemen, zoektermen, notitie").eq("tenant_id", profile.tenant_id).eq("user_id", profile.id).eq("uitgesloten_van_zoeken", false).not("content", "is", null);
       const allDocs = [...(orgDocs || []), ...(persDocs || [])];
@@ -5125,6 +5192,7 @@ ${alleKennisbronnen}`;
           trainingen_vooraf: trainingenVooraf,
           trainingen_zinnen: trainingenZinnen,
           retrieval: { ctx: zoekMetContext, stukken: zoekStukken, klein_document_max: kleinDocumentMax, ...testRetrieval },
+          document_teams: { bereik: docTeams.bereik, uitgesloten: docUitsluiten },
           zorginhoud: { lijst: zorgLijst, model_aan: zorgModelAan, model: zorgModelOordeel, eindoordeel: isZorginhoudelijk },
           geheugen: { aantal: gekozenGeheugen.length, vragen: gekozenGeheugen.map((g) => g.vraag) },
           training_onderwerp: { aan: trainingOnderwerpAan, vorige_vraag: vorigeVraag, ...(testTrainingKeuze || {}) },

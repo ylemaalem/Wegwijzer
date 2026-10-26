@@ -1761,7 +1761,7 @@
 
     var result = await supabaseClient
       .from('documents')
-      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, uitgesloten_van_zoeken, parent_url, is_crawled_page, user_id, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
+      .select('id, naam, created_at, bestandspad, content, documenttype, revisiedatum, map, synoniemen, zoektermen, notitie, uitgesloten_van_zoeken, teams, parent_url, is_crawled_page, user_id, indexering_status, indexering_fout, indexering_voltooid_op, aantal_chunks, extractie_methode, heeft_embeddings, feedback_positief, feedback_negatief, kwaliteitsscore, gebruikt_count')
       .eq('tenant_id', tenantId)
       .is('user_id', null)
       .order('created_at', { ascending: false });
@@ -1967,6 +1967,11 @@
       var uitgeslotenBadge = doc.uitgesloten_van_zoeken === true
         ? '<span style="font-size:0.7rem;margin-left:6px;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.1);color:var(--error)" title="Uitgesloten van zoeken: de chatbot gebruikt dit document niet (✏️ om aan te passen)">🚫 uitgesloten</span>'
         : '';
+      // Documenten per team (migratie 114): alleen relevantie in de chat, geen afscherming.
+      var docTeams = Array.isArray(doc.teams) ? doc.teams : [];
+      var teamsBadge = docTeams.length > 0
+        ? '<span style="font-size:0.7rem;margin-left:6px;padding:1px 6px;border-radius:8px;background:var(--bg);color:var(--text-muted)" title="In de chat alleen bedoeld voor deze teams (✏️ om aan te passen)">👥 ' + escapeHtml(docTeams.join(', ')) + '</span>'
+        : '';
 
       // Gecrawlde paginas: geen aparte verwijderknop. Verwijderen kan
       // alleen via 'website-bron verwijderen' (cascade op parent_url).
@@ -1980,7 +1985,7 @@
 
       return '<tr data-doc-naam="' + escapeHtml(doc.naam) + '" data-doc-id="' + doc.id + '" data-doc-pad="' + escapeHtml(doc.bestandspad) + '">' +
         '<td><input type="checkbox" class="doc-select-cb" value="' + doc.id + '" style="accent-color:var(--primary)" onchange="window.updateBulkBar()"></td>' +
-        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + gebruiktBadge + uitgeslotenBadge + '</td>' +
+        '<td>' + escapeHtml(doc.naam) + ' ' + contentStatus + zoekIndicator + chunkBadge + kwaliteitsBadge + gebruiktBadge + uitgeslotenBadge + teamsBadge + '</td>' +
         '<td>' + typeLabel + '</td>' +
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
@@ -3059,6 +3064,18 @@
     var uitgeslotenEl = document.getElementById('edit-doc-uitgesloten');
     if (uitgeslotenEl) uitgeslotenEl.checked = doc.uitgesloten_van_zoeken === true;
 
+    // Teams (migratie 114): de vaste teamlijst plus teams die al op het document staan.
+    var teamsEl = document.getElementById('edit-doc-teams');
+    if (teamsEl) {
+      var docTeamsNu = Array.isArray(doc.teams) ? doc.teams : [];
+      var teamOpties = TEAMS_LIJST.concat(docTeamsNu.filter(function (t) { return TEAMS_LIJST.indexOf(t) < 0; }));
+      teamsEl.innerHTML = teamOpties.map(function (t) {
+        return '<label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer">' +
+          '<input type="checkbox" class="edit-doc-team-cb" value="' + escapeHtml(t) + '"' + (docTeamsNu.indexOf(t) >= 0 ? ' checked' : '') +
+          ' style="accent-color:var(--primary)">' + escapeHtml(t) + '</label>';
+      }).join('');
+    }
+
     // Gegenereerde zoektermen (readonly) — door generate_zoektermen gevuld
     var zgroup = document.getElementById('edit-doc-zoektermen-group');
     var zlijst = document.getElementById('edit-doc-zoektermen-lijst');
@@ -3164,6 +3181,13 @@
         notitie: notitieValue
       };
       if (uitgeslotenVal) updatePayload.uitgesloten_van_zoeken = uitgeslotenVal.checked === true;
+      var teamsGewijzigd = false;
+      if (document.getElementById('edit-doc-teams')) {
+        updatePayload.teams = Array.prototype.slice.call(document.querySelectorAll('.edit-doc-team-cb'))
+          .filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+        var oudeTeams = (huidigDoc && Array.isArray(huidigDoc.teams)) ? huidigDoc.teams.slice().sort().join('|') : '';
+        teamsGewijzigd = !!huidigDoc && updatePayload.teams.slice().sort().join('|') !== oudeTeams;
+      }
       var uitsluitingGewijzigd = !!huidigDoc && 'uitgesloten_van_zoeken' in updatePayload &&
         updatePayload.uitgesloten_van_zoeken !== (huidigDoc.uitgesloten_van_zoeken === true);
       // Synoniemen alleen meesturen als er nieuwe zijn toegevoegd of bestaande zijn
@@ -3183,6 +3207,9 @@
         alertMsg.textContent = 'Document bijgewerkt.';
         if (uitsluitingGewijzigd) {
           await logAudit(updatePayload.uitgesloten_van_zoeken ? 'DOCUMENT_UITGESLOTEN' : 'DOCUMENT_WEER_GEBRUIKT', 'document', docId, { naam: naam });
+        }
+        if (teamsGewijzigd) {
+          await logAudit('DOCUMENT_TEAMS_GEWIJZIGD', 'document', docId, { naam: naam, teams: updatePayload.teams });
         }
         await invalideerResponseCache();
         loadMappen();
