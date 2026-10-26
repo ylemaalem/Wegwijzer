@@ -3071,7 +3071,7 @@
       var teamOpties = TEAMS_LIJST.concat(docTeamsNu.filter(function (t) { return TEAMS_LIJST.indexOf(t) < 0; }));
       teamsEl.innerHTML = teamOpties.map(function (t) {
         return '<label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer">' +
-          '<input type="checkbox" class="edit-doc-team-cb" value="' + escapeHtml(t) + '"' + (docTeamsNu.indexOf(t) >= 0 ? ' checked' : '') +
+          '<input type="checkbox" class="edit-doc-team-cb" value="' + escapeHtml(t).replace(/"/g, '&quot;') + '"' + (docTeamsNu.indexOf(t) >= 0 ? ' checked' : '') +
           ' style="accent-color:var(--primary)">' + escapeHtml(t) + '</label>';
       }).join('');
     }
