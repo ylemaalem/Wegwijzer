@@ -4555,7 +4555,8 @@
   // beoordeling bewaard bleef en tevredenheidscijfers 100% positief leken.
   window.deleteVerbeterpunt = async function (vraag) {
     if (!confirm('Dit verbeterpunt als afgehandeld markeren? Het verdwijnt uit deze lijst; de negatieve feedback blijft bewaard voor de statistieken.')) return;
-    var unescapedVraag = vraag.replace(/\\'/g, "'");
+    // De vraag komt nu letterlijk binnen (data-attribuut), dus niets terugvertalen.
+    var unescapedVraag = vraag;
     console.log('[Verbeterpunt] Afgehandeld markeren voor vraag:', unescapedVraag);
     var result = await supabaseClient
       .from('conversations')
