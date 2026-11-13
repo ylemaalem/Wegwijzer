@@ -11,3 +11,6 @@ Thumbs.db
 
 # Lokale Claude Code-instellingen (kunnen tokens in toestemmingsregels bevatten)
 .claude/settings.local.json
+
+# Auditrapporten beschrijven zwakke plekken; de repo is openbaar.
+audit/
