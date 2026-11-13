@@ -112,7 +112,7 @@
         var zichtbaar = tags.slice(0, 5);
         var rest = tags.length - 5;
         var tagHtml = zichtbaar.map(function (t) {
-          return '<span style="display:inline-block;background:var(--bg-secondary);color:var(--text-secondary);padding:1px 6px;border-radius:4px;font-size:0.75rem;margin:1px 2px">' + t + '</span>';
+          return '<span style="display:inline-block;background:var(--bg-secondary);color:var(--text-secondary);padding:1px 6px;border-radius:4px;font-size:0.75rem;margin:1px 2px">' + escapeHtml(t) + '</span>';
         }).join('');
         if (rest > 0) {
           tagHtml += '<span style="display:inline-block;color:var(--text-secondary);font-size:0.75rem;margin:1px 2px">+' + rest + '</span>';
@@ -1038,12 +1038,21 @@
   // =============================================
   // HULPFUNCTIES
   // =============================================
+  // Gedeelde functie uit js/veilig.js: vervangt & < > " en '.
   function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return window.WegwijzerVeilig.escapeHtml(text);
   }
+  // Getal of andere waarde uit opgeslagen gegevens als tekst (0 blijft 0).
+  function veiligGetal(x) { return escapeHtml(String(x)); }
+  // Klik-actie zonder tekst in onclick: zie js/veilig.js.
+  function actieAttr(naam, args) { return window.WegwijzerVeilig.actieAttr(naam, args); }
+  window.stuurUitnodigingKnop = function (email, naam, isReset) { return window.stuurUitnodiging(this, email, naam, isReset); };
+  window.WegwijzerVeilig.koppelActies(document, [
+    'renameMap', 'deleteMap', 'deleteDocument', 'previewDocument', 'sluitInwerktrajectAf',
+    'stuurUitnodigingKnop', 'deletePersoonlijkDoc', 'openVerbeterModal', 'openKennisnotitie',
+    'deleteVerbeterpunt', 'resendInvite', 'handlePrivacyInzage', 'handlePrivacyVerwijdering',
+    'handlePrivacyCorrectie', 'handlePrivacyAfgehandeld'
+  ], window);
 
   function showToast(message, type) {
     var existing = document.getElementById('wegwijzer-toast');
@@ -1282,8 +1291,8 @@
       return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">' +
         '<span style="font-size:1rem">📁</span>' +
         '<span style="font-weight:600;font-size:0.85rem;flex:1">' + escapeHtml(m.naam) + '</span>' +
-        '<button class="btn-icon" onclick="window.renameMap(\'' + m.id + '\', \'' + escapeHtml(m.naam) + '\')" title="Hernoemen">✏️</button>' +
-        '<button class="btn-icon btn-icon-danger" onclick="window.deleteMap(\'' + m.id + '\', \'' + escapeHtml(m.naam) + '\')" title="Verwijderen">🗑️</button>' +
+        '<button class="btn-icon" ' + actieAttr('renameMap', [m.id, m.naam]) + ' title="Hernoemen">✏️</button>' +
+        '<button class="btn-icon btn-icon-danger" ' + actieAttr('deleteMap', [m.id, m.naam]) + ' title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
   }
@@ -1977,7 +1986,7 @@
       // alleen via 'website-bron verwijderen' (cascade op parent_url).
       var deleteBtn = doc.is_crawled_page
         ? '<span class="btn-icon" title="Verwijder via website-bron" style="opacity:0.3;cursor:not-allowed">🗑️</span>'
-        : '<button class="btn-icon btn-icon-danger" onclick="window.deleteDocument(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\')" title="Verwijderen">🗑️</button>';
+        : '<button class="btn-icon btn-icon-danger" ' + actieAttr('deleteDocument', [doc.id, doc.bestandspad]) + ' title="Verwijderen">🗑️</button>';
 
       var indexBtn = doc.content
         ? '<button class="btn-icon doc-index-btn" data-doc-id="' + doc.id + '" onclick="window.indexDocumentChunks(\'' + doc.id + '\', this)" title="Semantisch indexeren (vector embeddings)">📊</button>'
@@ -1990,7 +1999,7 @@
         '<td>' + revisieLabel + '</td>' +
         '<td>' + datum + '</td>' +
         '<td>' +
-          '<button class="btn-icon" onclick="window.previewDocument(\'' + escapeHtml(doc.bestandspad) + '\')" title="Bekijken">👁️</button>' +
+          '<button class="btn-icon" ' + actieAttr('previewDocument', [doc.bestandspad]) + ' title="Bekijken">👁️</button>' +
           '<button class="btn-icon" onclick="window.editDocument(\'' + doc.id + '\')" title="Bewerken">✏️</button>' +
           '<button class="btn-icon" onclick="window.editSynoniemen(\'' + doc.id + '\')" title="' + synTitle + '">🏷️' + (synCount ? '<sup style="font-size:0.6rem">' + synCount + '</sup>' : '') + '</button>' +
           '<button class="btn-icon doc-zoektermen-btn" data-doc-id="' + doc.id + '" onclick="window.regenerateZoektermenDoc(this)" title="Zoektermen herindexeren">🔄</button>' +
@@ -2422,7 +2431,7 @@
       var docId = documentIds[qi];
       var docNaam = (allDocuments.find(function (d) { return d.id === docId; }) || {}).naam || docId.substring(0, 8);
 
-      if (detailEl) detailEl.textContent = 'Verwerken: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+      if (detailEl) detailEl.textContent = 'Verwerken: ' + docNaam + ' (' + (qi + 1) + '/' + totaal + ')';
 
       try {
         var resp = await fetch(SUPABASE_URL + '/functions/v1/chat', {
@@ -2481,7 +2490,7 @@
       var docId = documentIds[qi];
       var docNaam = (allDocuments.find(function (d) { return d.id === docId; }) || {}).naam || docId.substring(0, 8);
 
-      if (detailEl) detailEl.textContent = '🔤 Zoektermen: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+      if (detailEl) detailEl.textContent = '🔤 Zoektermen: ' + docNaam + ' (' + (qi + 1) + '/' + totaal + ')';
 
       var stap1Ok = false;
       try {
@@ -2494,7 +2503,7 @@
         stap1Ok = resp1.ok && !data1.error;
       } catch (e) { /* stap 1 mislukt */ }
 
-      if (detailEl) detailEl.textContent = '🧠 Semantisch: ' + escapeHtml(docNaam) + ' (' + (qi + 1) + '/' + totaal + ')';
+      if (detailEl) detailEl.textContent = '🧠 Semantisch: ' + docNaam + ' (' + (qi + 1) + '/' + totaal + ')';
 
       var stap2Ok = false;
       try {
@@ -3320,7 +3329,7 @@
         : null;
       var inwerkVerlopen = inwerkWekenVerstreken !== null && inwerkWekenVerstreken >= 6;
       var inwerkBtn = (p.role === 'medewerker' && !p.inwerken_afgerond && !inwerkVerlopen)
-        ? '<button class="btn-icon" onclick="window.sluitInwerktrajectAf(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
+        ? '<button class="btn-icon" ' + actieAttr('sluitInwerktrajectAf', [p.id, p.naam]) + ' title="Inwerktraject afsluiten" style="color:var(--success)">✅</button>'
         : inwerkVerlopen
           ? '<span style="color:var(--text-muted);font-size:11px" title="Het inwerktraject is automatisch afgesloten na 6 weken">✅ Afgerond (automatisch na 6 wkn)</span>'
           : '';
@@ -3328,11 +3337,9 @@
       // Altijd beide knoppen tonen voor niet-admin
       var actieBtns = '';
       if (p.role !== 'admin') {
-        var escEmail = (p.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        var escNaam = (p.naam || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         actieBtns =
-          '<button onclick="window.stuurUitnodiging(this,\'' + escEmail + '\',\'' + escNaam + '\',false)" title="Stuurt een nieuwe activatielink" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap;margin-right:4px">📨 Uitnodiging</button>' +
-          '<button onclick="window.stuurUitnodiging(this,\'' + escEmail + '\',\'' + escNaam + '\',true)" title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑 Reset</button>';
+          '<button' + actieAttr('stuurUitnodigingKnop', [p.email || '', p.naam || '', false]) + ' title="Stuurt een nieuwe activatielink" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #0D5C6B;color:#0D5C6B;background:transparent;cursor:pointer;white-space:nowrap;margin-right:4px">📨 Uitnodiging</button>' +
+          '<button' + actieAttr('stuurUitnodigingKnop', [p.email || '', p.naam || '', true]) + ' title="Stuurt een wachtwoord reset link" style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #999;color:#666;background:transparent;cursor:pointer;white-space:nowrap">🔑 Reset</button>';
       }
 
       var eersteLogin = p.eerste_login_op
@@ -3342,7 +3349,7 @@
       return '<tr' + rowStyle + '>' +
         '<td>' + escapeHtml(p.naam || '-') + ' ' + badge + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
-        '<td class="functiegroep-label">' + fg + '</td>' +
+        '<td class="functiegroep-label">' + escapeHtml(fg) + '</td>' +
         '<td>' + escapeHtml(teamsStr) + '</td>' +
         '<td>' + escapeHtml(p.afdeling || '-') + '</td>' +
         '<td>' + escapeHtml(p.werkuren || '-') + '</td>' +
@@ -3541,7 +3548,7 @@
       });
       return '<div class="pers-doc-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
         '<span>' + escapeHtml(doc.naam) + ' <small style="color:var(--text-muted)">' + datum + '</small></span>' +
-        '<button class="btn-icon btn-icon-danger" onclick="window.deletePersoonlijkDoc(\'' + doc.id + '\', \'' + escapeHtml(doc.bestandspad) + '\', \'' + profileId + '\')" title="Verwijderen">🗑️</button>' +
+        '<button class="btn-icon btn-icon-danger" ' + actieAttr('deletePersoonlijkDoc', [doc.id, doc.bestandspad, profileId]) + ' title="Verwijderen">🗑️</button>' +
         '</div>';
     }).join('');
   }
@@ -4522,12 +4529,11 @@
       var statusBadge = isBeantwoord
         ? '<span class="badge badge-goed">Beantwoord</span>'
         : '<span class="badge badge-niet-goed">Open</span>';
-      var escapedVraag = escapeHtml(item.vraag.replace(/'/g, "\\'"));
       var actieBtn = !isBeantwoord
-        ? '<button class="btn btn-sm" onclick="window.openVerbeterModal(\'' + escapedVraag + '\')">Beantwoord</button> ' +
-          '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" onclick="window.openKennisnotitie(\'' + escapedVraag + '\')">+ Notitie</button> '
+        ? '<button class="btn btn-sm" ' + actieAttr('openVerbeterModal', [item.vraag]) + '>Beantwoord</button> ' +
+          '<button class="btn btn-sm" style="font-size:0.75rem;padding:4px 8px" ' + actieAttr('openKennisnotitie', [item.vraag]) + '>+ Notitie</button> '
         : '<span class="badge badge-goed" style="font-size:0.7rem">✓</span> ';
-      actieBtn += '<button class="btn-icon" onclick="window.deleteVerbeterpunt(\'' + escapedVraag + '\')" title="Markeren als afgehandeld (feedback blijft bewaard)">✔️</button>';
+      actieBtn += '<button class="btn-icon" ' + actieAttr('deleteVerbeterpunt', [item.vraag]) + ' title="Markeren als afgehandeld (feedback blijft bewaard)">✔️</button>';
 
       return '<tr>' +
         '<td title="' + escapeHtml(item.vraag) + '">' + escapeHtml(truncated) + '</td>' +
@@ -4606,9 +4612,9 @@
         '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px">' +
         '<div style="flex:1">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">' +
-        '<strong style="font-size:0.85rem">' + (categorieLabels[f.categorie] || f.categorie) + '</strong>' +
+        '<strong style="font-size:0.85rem">' + (categorieLabels[f.categorie] || escapeHtml(f.categorie)) + '</strong>' +
         '<span class="badge ' + statusClass + '" style="font-size:0.7rem">' + statusLabels[f.status] + '</span>' +
-        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + (fg ? ' • ' + fg : '') + '</span>' +
+        '<span style="font-size:0.7rem;color:var(--text-muted)">' + datum + (fg ? ' • ' + escapeHtml(fg) : '') + '</span>' +
         '</div>' +
         '<div style="font-size:0.85rem;white-space:pre-wrap">' + escapeHtml(f.bericht) + '</div>' +
         '</div>' +
@@ -5261,7 +5267,7 @@
         '<td>' + statusCel + '</td>' +
         '<td>' +
           '<button class="btn-icon" onclick="window.editTeamleider(\'' + tl.id + '\')" title="Bewerken">✏️</button>' +
-          (tl.email ? '<button class="btn-icon" onclick="window.resendInvite(\'' + escapeHtml(tl.email) + '\', \'' + escapeHtml(tl.naam) + '\')" title="' + escapeHtml(knopTitel) + '">' + knopTekst + '</button>' : '') +
+          (tl.email ? '<button class="btn-icon" ' + actieAttr('resendInvite', [tl.email, tl.naam]) + ' title="' + escapeHtml(knopTitel) + '">' + knopTekst + '</button>' : '') +
           '<button class="btn-icon btn-icon-danger" onclick="window.deleteTeamleider(\'' + tl.id + '\')" title="Verwijderen">🗑️</button>' +
         '</td>' +
         '</tr>';
@@ -6088,8 +6094,8 @@
     // Logo en organisatienaam in admin header
     console.log('[Admin] logo_url uit settings:', waarden.logo_url || '(leeg)');
     var adminLogoContainer = document.getElementById('admin-logo-container');
-    if (adminLogoContainer && waarden.logo_url) {
-      adminLogoContainer.innerHTML = '<img src="' + waarden.logo_url + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
+    if (adminLogoContainer && window.WegwijzerVeilig.veiligeUrl(waarden.logo_url)) {
+      adminLogoContainer.innerHTML = '<img src="' + escapeHtml(window.WegwijzerVeilig.veiligeUrl(waarden.logo_url)) + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
     }
     if (waarden.organisatienaam) {
       var adminTitle = document.getElementById('admin-header-title');
@@ -6655,32 +6661,32 @@
 
       if (secties.gebruik !== false && r.gebruik) {
         html += '<h4 style="margin-top:16px;color:var(--primary)">📊 Gebruik</h4>' +
-          '<p>Actieve medewerkers: <strong>' + r.gebruik.actief + '</strong> | Inactief: <strong>' + r.gebruik.inactief + '</strong> | Totaal vragen: <strong>' + r.gebruik.totaal_vragen + '</strong></p>';
+          '<p>Actieve medewerkers: <strong>' + veiligGetal(r.gebruik.actief) + '</strong> | Inactief: <strong>' + veiligGetal(r.gebruik.inactief) + '</strong> | Totaal vragen: <strong>' + veiligGetal(r.gebruik.totaal_vragen) + '</strong></p>';
       }
       if (secties.kwaliteit !== false && r.kwaliteit) {
         html += '<h4 style="margin-top:16px;color:var(--primary)">⭐ Kwaliteit</h4>' +
-          '<p>Positieve feedback: <strong>' + r.kwaliteit.positief_percentage + '%</strong> (van ' + r.kwaliteit.totaal_met_feedback + ' beoordeelde antwoorden)</p>';
+          '<p>Positieve feedback: <strong>' + veiligGetal(r.kwaliteit.positief_percentage) + '%</strong> (van ' + veiligGetal(r.kwaliteit.totaal_met_feedback) + ' beoordeelde antwoorden)</p>';
       }
       if (secties.tijdwinst !== false && r.tijdwinst) {
         if (typeof r.tijdwinst.medewerker_minuten_bespaard !== 'undefined') {
           html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst</h4>' +
-            '<p><strong>Teamleider tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 6 min (zonder Wegwijzer) = ' + r.tijdwinst.teamleider_minuten_vrij + ' minuten (' + r.tijdwinst.teamleider_uren + ' uur) vrijgekomen</p>' +
-            '<p><strong>Medewerker tijdwinst:</strong> ' + r.tijdwinst.vragen + ' vragen × 5 min (wachten + zoeken − 1 min Wegwijzer gebruik) = ' + r.tijdwinst.medewerker_minuten_bespaard + ' minuten (' + r.tijdwinst.medewerker_uren + ' uur) bespaard</p>' +
+            '<p><strong>Teamleider tijdwinst:</strong> ' + veiligGetal(r.tijdwinst.vragen) + ' vragen × 6 min (zonder Wegwijzer) = ' + veiligGetal(r.tijdwinst.teamleider_minuten_vrij) + ' minuten (' + veiligGetal(r.tijdwinst.teamleider_uren) + ' uur) vrijgekomen</p>' +
+            '<p><strong>Medewerker tijdwinst:</strong> ' + veiligGetal(r.tijdwinst.vragen) + ' vragen × 5 min (wachten + zoeken − 1 min Wegwijzer gebruik) = ' + veiligGetal(r.tijdwinst.medewerker_minuten_bespaard) + ' minuten (' + veiligGetal(r.tijdwinst.medewerker_uren) + ' uur) bespaard</p>' +
             '<p style="margin-top:8px"><strong>Voordelen:</strong></p>' +
             '<ul style="margin:4px 0 0 18px"><li>Antwoord direct beschikbaar zonder wachten</li><li>Antwoord terug te lezen wanneer nodig</li><li>Brondocument direct zichtbaar</li><li>Beschikbaar buiten kantooruren</li></ul>' +
             '<p style="font-size:0.72rem;color:var(--text-muted);font-style:italic;margin-top:8px">Disclaimer: schatting op basis van gemiddeld 6 minuten per vraag zonder Wegwijzer vs 1 minuut met Wegwijzer.</p>';
         } else {
           html += '<h4 style="margin-top:16px;color:var(--primary)">⏱️ Tijdwinst (oud rapport)</h4>' +
-            '<p>' + (r.tijdwinst.vragen || 0) + ' vragen × 10 min = ' + (r.tijdwinst.geschatte_minuten || 0) + ' minuten</p>';
+            '<p>' + veiligGetal((r.tijdwinst.vragen || 0)) + ' vragen × 10 min = ' + veiligGetal((r.tijdwinst.geschatte_minuten || 0)) + ' minuten</p>';
         }
       }
       if (secties.vertrouwen && r.vertrouwen) {
         html += '<h4 style="margin-top:16px;color:var(--primary)">🤝 Weekcheck</h4>' +
-          '<p>Gemiddelde score: <strong>' + r.vertrouwen.gemiddelde + '/5</strong> (' + r.vertrouwen.aantal + ' metingen)</p>';
+          '<p>Gemiddelde score: <strong>' + veiligGetal(r.vertrouwen.gemiddelde) + '/5</strong> (' + veiligGetal(r.vertrouwen.aantal) + ' metingen)</p>';
       }
       if (secties.quiz && r.quiz) {
         html += '<h4 style="margin-top:16px;color:var(--primary)">📝 Quiz</h4>' +
-          '<p>Gemiddelde score: <strong>' + r.quiz.gemiddelde + '</strong> (' + r.quiz.aantal + ' resultaten)</p>';
+          '<p>Gemiddelde score: <strong>' + veiligGetal(r.quiz.gemiddelde) + '</strong> (' + veiligGetal(r.quiz.aantal) + ' resultaten)</p>';
       }
 
       if (r.aanbevelingen && r.aanbevelingen.length > 0) {
@@ -6789,7 +6795,7 @@
             if (data.error) {
               resultEl.innerHTML = '<div class="alert alert-error show">' + escapeHtml(data.error) + '</div>';
             } else {
-              var namen = data.ontvangers ? data.ontvangers.join('<br>') : (data.aantal_ontvangers + ' ontvanger(s)');
+              var namen = data.ontvangers ? data.ontvangers.map(function (o) { return escapeHtml(o); }).join('<br>') : (veiligGetal(data.aantal_ontvangers) + ' ontvanger(s)');
               resultEl.innerHTML = '<div class="alert alert-success show">Terugblik verstuurd naar:<br><strong>' + namen + '</strong></div>';
               loadTerugblikLog();
               setTimeout(function () { modal.classList.remove('show'); }, 3000);
@@ -7082,10 +7088,10 @@
 
       var acties = '';
       if (pv.status !== 'afgehandeld') {
-        acties = '<button class="btn-icon" onclick="window.handlePrivacyInzage(\'' + escapeHtml(pv.email) + '\')" title="Inzage (export)">📋</button>' +
-          '<button class="btn-icon btn-icon-danger" onclick="window.handlePrivacyVerwijdering(\'' + pv.id + '\', \'' + escapeHtml(pv.email) + '\')" title="Verwijdering">🗑️</button>' +
-          '<button class="btn-icon" onclick="window.handlePrivacyCorrectie(\'' + escapeHtml(pv.email) + '\')" title="Correctie (profiel)">✏️</button>' +
-          '<button class="btn btn-primary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-top:4px" onclick="window.handlePrivacyAfgehandeld(\'' + pv.id + '\', \'' + escapeHtml(pv.naam) + '\', \'' + escapeHtml(pv.email) + '\', \'' + escapeHtml(pv.type) + '\')">✅ Markeer als afgehandeld</button>';
+        acties = '<button class="btn-icon" ' + actieAttr('handlePrivacyInzage', [pv.email]) + ' title="Inzage (export)">📋</button>' +
+          '<button class="btn-icon btn-icon-danger" ' + actieAttr('handlePrivacyVerwijdering', [pv.id, pv.email]) + ' title="Verwijdering">🗑️</button>' +
+          '<button class="btn-icon" ' + actieAttr('handlePrivacyCorrectie', [pv.email]) + ' title="Correctie (profiel)">✏️</button>' +
+          '<button class="btn btn-primary" style="padding:4px 8px;font-size:0.7rem;width:auto;margin-top:4px" ' + actieAttr('handlePrivacyAfgehandeld', [pv.id, pv.naam, pv.email, pv.type]) + '>✅ Markeer als afgehandeld</button>';
       }
 
       return '<tr>' +
@@ -7276,8 +7282,8 @@
       var gebruiker = r.user_naam || r.user_email || '-';
       var actieLabel = AUDIT_LABELS[r.actie] || r.actie;
       var object = r.object_type ? (r.object_type + (r.object_id ? ' ' + r.object_id.substring(0, 8) : '')) : '-';
-      var details = r.details ? '<code>' + JSON.stringify(r.details).substring(0, 80) + '</code>' : '-';
-      return '<tr><td>' + datum + '</td><td>' + gebruiker + '</td><td>' + actieLabel + '</td><td>' + object + '</td><td>' + details + '</td></tr>';
+      var details = r.details ? '<code>' + escapeHtml(JSON.stringify(r.details).substring(0, 80)) + '</code>' : '-';
+      return '<tr><td>' + datum + '</td><td>' + escapeHtml(gebruiker) + '</td><td>' + escapeHtml(actieLabel) + '</td><td>' + escapeHtml(object) + '</td><td>' + details + '</td></tr>';
     }).join('');
   }
 

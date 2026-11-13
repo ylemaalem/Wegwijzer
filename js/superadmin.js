@@ -226,10 +226,8 @@
     });
   }
 
+  // Gedeelde functie uit js/veilig.js: vervangt & < > " en '.
   function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return window.WegwijzerVeilig.escapeHtml(text);
   }
 })();

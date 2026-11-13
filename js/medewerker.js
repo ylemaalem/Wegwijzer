@@ -1158,8 +1158,8 @@
     var logoContainer = document.getElementById('header-logo-container');
     console.log('[Wegwijzer] logo container element:', logoContainer ? 'gevonden' : 'NIET gevonden');
     if (logoContainer) {
-      if (instellingen.logo_url) {
-        var imgHtml = '<img src="' + instellingen.logo_url + '" alt="' + escapeHtml(instellingen.organisatienaam || 'Logo') + '" style="max-height:40px;width:auto;object-fit:contain;border-radius:6px" onerror="console.error(\'[Wegwijzer] Logo laden mislukt:\', this.src)">';
+      if (window.WegwijzerVeilig.veiligeUrl(instellingen.logo_url)) {
+        var imgHtml = '<img src="' + escapeHtml(window.WegwijzerVeilig.veiligeUrl(instellingen.logo_url)) + '" alt="' + escapeHtml(instellingen.organisatienaam || 'Logo') + '" style="max-height:40px;width:auto;object-fit:contain;border-radius:6px" onerror="console.error(\'[Wegwijzer] Logo laden mislukt:\', this.src)">';
         logoContainer.innerHTML = imgHtml;
         console.log('[Wegwijzer] Logo img toegevoegd aan header');
       } else {
@@ -1805,11 +1805,9 @@
     return map[fg] || '';
   }
 
+  // Gedeelde functie uit js/veilig.js: vervangt & < > " en '.
   function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return window.WegwijzerVeilig.escapeHtml(text);
   }
 
   function initLogout() {

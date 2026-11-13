@@ -12,7 +12,7 @@ test('teamleider: geen gesprekkentabel en geen loadTeamGesprekken meer', () => {
   const js = bron('js/teamleider.js');
   assert.doesNotMatch(h, /tl-gesprekken-body|tl-gesprekken-subtitle|Gegevens zijn geanonimiseerd/);
   assert.doesNotMatch(js, /loadTeamGesprekken|tl-gesprekken-body/);
-  assert.match(h, /js\/teamleider\.js\?v=25/);
+  assert.match(h, /js\/teamleider\.js\?v=26/);
   // De rest blijft: trendanalyse in hetzelfde tabblad, statistieken met hun eigen ophaalcode.
   assert.match(h, /id="tl-trendanalyse-periode"/);
   assert.match(js, /async function loadTeamStatistieken\(\)/);

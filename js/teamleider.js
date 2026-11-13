@@ -166,8 +166,8 @@
     result.data.forEach(function (s) { settings[s.sleutel] = s.waarde; });
     console.log('[Teamleider] logo_url uit settings:', settings.logo_url || '(leeg)');
     var tlLogoContainer = document.getElementById('tl-logo-container');
-    if (tlLogoContainer && settings.logo_url) {
-      tlLogoContainer.innerHTML = '<img src="' + settings.logo_url + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
+    if (tlLogoContainer && window.WegwijzerVeilig.veiligeUrl(settings.logo_url)) {
+      tlLogoContainer.innerHTML = '<img src="' + escapeHtml(window.WegwijzerVeilig.veiligeUrl(settings.logo_url)) + '" alt="Logo" style="max-height:36px;width:auto;object-fit:contain;border-radius:6px">';
     }
     if (settings.organisatienaam) {
       var title = document.getElementById('tl-header-title');
@@ -263,10 +263,10 @@
       return '<tr>' +
         '<td>' + escapeHtml(p.naam || '-') + '</td>' +
         '<td>' + escapeHtml(p.email) + '</td>' +
-        '<td class="functiegroep-label">' + fg + '</td>' +
+        '<td class="functiegroep-label">' + escapeHtml(fg) + '</td>' +
         '<td>' + sd + '</td>' +
         '<td>' + laatsteCel + '</td>' +
-        '<td><button class="btn-icon btn-icon-danger" onclick="window.vraagVerwijdering(\'' + p.id + '\', \'' + escapeHtml(p.naam) + '\')" title="Verwijdering aanvragen">🗑️</button></td>' +
+        '<td><button class="btn-icon btn-icon-danger" ' + actieAttr('vraagVerwijdering', [p.id, p.naam]) + ' title="Verwijdering aanvragen">🗑️</button></td>' +
         '</tr>';
     }).join('');
   }
@@ -1631,12 +1631,12 @@
     }).join('');
   }
 
+  // Gedeelde functie uit js/veilig.js: vervangt & < > " en '.
   function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return window.WegwijzerVeilig.escapeHtml(text);
   }
+  function actieAttr(naam, args) { return window.WegwijzerVeilig.actieAttr(naam, args); }
+  window.WegwijzerVeilig.koppelActies(document, ['vraagVerwijdering'], window);
 
   function formatFunctiegroep(fg) {
     // Zoek eerst in dynamische functiegroepen uit DB

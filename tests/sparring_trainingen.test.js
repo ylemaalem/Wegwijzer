@@ -19,5 +19,5 @@ test('sparring: antwoord met trainingen en herkomst renderen', () => {
 });
 
 test('medewerker.js versie opgehoogd', () => {
-  assert.match(html, /js\/medewerker\.js\?v=23/);
+  assert.match(html, /js\/medewerker\.js\?v=24/);
 });

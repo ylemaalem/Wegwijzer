@@ -167,7 +167,9 @@ function laadPagina(opties) {
   const opVangen = (err) => fouten.push(err);
   process.on('unhandledRejection', opVangen);
 
-  for (const bestand of opties.bestanden || ['js/medewerker-opslaan.js', 'js/admin.js']) {
+  // js/veilig.js (gedeelde escape-functie) laadt in elke pagina vóór het pagina-script.
+  const bestanden = (opties.bestanden || ['js/medewerker-opslaan.js', 'js/admin.js']).filter((b) => b !== 'js/veilig.js');
+  for (const bestand of ['js/veilig.js'].concat(bestanden)) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, bestand), 'utf8'), ctx, { filename: bestand });
   }
 
