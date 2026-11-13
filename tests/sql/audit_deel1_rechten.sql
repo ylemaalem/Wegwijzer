@@ -53,6 +53,7 @@ DECLARE
     'medewerker|aanvraag: van collega verwijderen|dml|N|DELETE FROM public.document_aanvragen WHERE id = ''{DX}''',
     'medewerker|aanvraag: eigen lezen|cnt|Y|SELECT count(*) FROM public.document_aanvragen WHERE id = ''{DM}''',
     'medewerker|aanvraag: indienen zoals de app (zonder organisatie)|dml|Y|INSERT INTO public.document_aanvragen (user_id, vraag, status) VALUES (''{USELF}'', ''x'', ''nieuw'')',
+    'medewerker|aanvraag: ingediend zoals de app krijgt de eigen organisatie (zichtbaar voor beheer)|cnt|Y|WITH n AS (INSERT INTO public.document_aanvragen (user_id, vraag, status) VALUES (''{USELF}'', ''x'', ''nieuw'') RETURNING tenant_id) SELECT count(*) FROM n WHERE tenant_id = ''{T}''',
     'medewerker|aanvraag: indienen bij andere organisatie|dml|N|INSERT INTO public.document_aanvragen (user_id, vraag, status, tenant_id) VALUES (''{USELF}'', ''x'', ''nieuw'', ''{T2}'')',
     'medewerker|aanvraag: indienen op naam van collega|dml|N|INSERT INTO public.document_aanvragen (user_id, vraag, status, tenant_id) VALUES (''{UX}'', ''x'', ''nieuw'', ''{T}'')',
     'teamleider|aanvraag: van medewerker lezen|cnt|N|SELECT count(*) FROM public.document_aanvragen WHERE id = ''{DM}''',
